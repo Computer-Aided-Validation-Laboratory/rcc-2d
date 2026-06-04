@@ -1,3 +1,25 @@
+# Repo Specific Excludes
+*.csv
+*.e
+*.msh
+*.bmp
+*.tiff
+*.fimg
+*.png
+*.jpg
+
+temp/
+plans/
+notes/
+refs/
+examples/
+out/
+
+.venv/
+.antigravitycli/
+.vscode/
+
+#-------------------------------------------------------------------------------
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[codz]
