@@ -71,18 +71,32 @@ def process_chunk(args):
     query_pts[:, 0] = pts_x.ravel()
     query_pts[:, 1] = pts_y.ravel()
 
+    # Rebuild mesh locally to avoid sharing VTK pointers
     mesh = build_pv_mesh(coords, connect)
     mesh.point_data["disp_x"] = disp_x_ff
     mesh.point_data["disp_y"] = disp_y_ff
 
-    grid_query = pv.PolyData(query_pts)
-    sampled = grid_query.sample(mesh)
+    # Sub-chunk PyVista sampling to keep memory extremely low (<150MB per worker)
+    N_total = len(query_pts)
+    sub_chunk_size = 2000000
+    u_x = np.zeros(N_total, dtype=np.float64)
+    u_y = np.zeros(N_total, dtype=np.float64)
 
-    u_x = sampled.point_data["disp_x"]
-    u_y = sampled.point_data["disp_y"]
-    valid = sampled.point_data["vtkValidPointMask"].astype(bool)
-    u_x[~valid] = 0.0
-    u_y[~valid] = 0.0
+    for i in range(0, N_total, sub_chunk_size):
+        end_i = min(i + sub_chunk_size, N_total)
+        sub_pts = query_pts[i:end_i]
+
+        grid_query = pv.PolyData(sub_pts)
+        sampled = grid_query.sample(mesh)
+
+        sub_ux = sampled.point_data["disp_x"]
+        sub_uy = sampled.point_data["disp_y"]
+        valid = sampled.point_data["vtkValidPointMask"].astype(bool)
+        sub_ux[~valid] = 0.0
+        sub_uy[~valid] = 0.0
+
+        u_x[i:end_i] = sub_ux
+        u_y[i:end_i] = sub_uy
 
     x_def = query_pts[:, 0] - u_x
     y_def = query_pts[:, 1] - u_y
@@ -271,7 +285,7 @@ def generate_grid_images(
                 S = param * param
             else:
                 S = param
-            chunk_size_y = min(TARG_PX_Y, max(1, 262144 // S))
+            chunk_size_y = min(TARG_PX_Y, max(1, 65536 // S))
             for y_start in range(0, TARG_PX_Y, chunk_size_y):
                 y_end = min(y_start + chunk_size_y, TARG_PX_Y)
                 cur_num_y = y_end - y_start
@@ -297,12 +311,11 @@ def generate_grid_images(
                     axis=2,
                 )
         else:
-            # Parallel processing of chunks using Multiprocessing Pool
             if method == "rect" or method == "gauss":
                 S = param * param
             else:
                 S = param
-            chunk_size_y = min(TARG_PX_Y, max(1, 262144 // S))
+            chunk_size_y = min(TARG_PX_Y, max(1, 65536 // S))
 
             tasks = []
             for y_start in range(0, TARG_PX_Y, chunk_size_y):
@@ -401,4 +414,10 @@ def main() -> None:
 
 
 if __name__ == "__main__":
+    # Safe start method for parallel PyVista/VTK multiprocessing
+    import multiprocessing
+    try:
+        multiprocessing.set_start_method('spawn')
+    except RuntimeError:
+        pass
     main()
