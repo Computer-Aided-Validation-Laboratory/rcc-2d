@@ -74,7 +74,10 @@ def main() -> None:
 
             for ff in range(num_frames):
                 # 1. Load analytic NPY (float) and TIFF (quantized)
-                prefix_a = f"targ_px256_ss{ss}_b{bb}_frame{ff:02d}"
+                prefix_a = (
+                    f"targ_px256_int_rect_param_{ss}_b{bb}"
+                    f"_frame{ff:02d}"
+                )
                 npy_path = ANALYTIC_DIR / f"{prefix_a}.npy"
                 tiff_path_a = ANALYTIC_DIR / f"{prefix_a}.tiff"
 
@@ -128,7 +131,10 @@ def main() -> None:
                     continue
 
                 for ff in range(num_frames):
-                    prefix_a = f"targ_px256_ss{ss}_b{bb}_frame{ff:02d}"
+                    prefix_a = (
+                        f"targ_px256_int_rect_param_{ss}_b{bb}"
+                        f"_frame{ff:02d}"
+                    )
                     npy_path = ANALYTIC_DIR / f"{prefix_a}.npy"
                     tiff_path_a = ANALYTIC_DIR / f"{prefix_a}.tiff"
 

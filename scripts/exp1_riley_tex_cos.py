@@ -142,7 +142,7 @@ def main() -> None:
                 
                 # Load texture
                 tex_filename = (
-                    f"tex_px{p_val}_b{bb}_ss{ss}"
+                    f"tex_px{p_val}_int_rect_param_{ss}_b{bb}"
                     f"_pad{TEX_PX_PAD}_oversamp{oversamp}.tiff"
                 )
                 tex_path = tex_dir / tex_filename

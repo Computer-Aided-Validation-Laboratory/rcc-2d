@@ -8,14 +8,36 @@
 # --------------------------------------------------------------------------
 
 from pathlib import Path
-from typing import List
+from typing import List, Tuple
 
 TARG_PX_X: int = 256
 TARG_PX_Y: int = 256
 TEX_PX_PAD: int = 4
 TEX_OVERSAMPLES: List[int] = [1, 2, 4, 8]
 BIT_DEPTHS: List[int] = [8, 12, 16]
-SSAA_LEVELS: List[int] = [1, 2, 4]
+
+# Integration methods and parameters
+INTEGRATION_METHODS: List[Tuple[str, int]] = [
+    ("rect", 1),
+    ("rect", 2),
+    ("rect", 4),
+    ("rect", 8),
+    ("rect", 16),
+    ("rect", 32),
+    ("rect", 64),
+    ("rect", 128),
+    ("rect", 256),
+    ("mc", 16),
+    ("mc", 64),
+    ("mc", 256),
+    ("mc", 1024),
+    ("gauss", 2),
+    ("gauss", 4),
+    ("gauss", 8),
+    ("gauss", 16),
+    ("gauss", 32),
+    ("analytic", 0),
+]
 
 # Grid pattern parameters
 P_PIXELS: float = 5.0
