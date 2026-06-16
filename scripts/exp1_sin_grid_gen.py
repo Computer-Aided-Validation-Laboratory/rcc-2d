@@ -99,9 +99,7 @@ def generate_texture(
         img: Image.Image = Image.fromarray(pixel_8)
         img.save(tex_out_dir / f"{prefix}.tiff")
     else:
-        pixel_16: np.ndarray = np.round(
-            pixel_bb * (65535.0 / max_val_bb)
-        ).astype(np.uint16)
+        pixel_16: np.ndarray = pixel_bb.astype(np.uint16)
         img: Image.Image = Image.fromarray(pixel_16)
         img.save(tex_out_dir / f"{prefix}.tiff")
 
@@ -193,8 +191,8 @@ def generate_grid_images(
         u_x[~valid] = 0.0
         u_y[~valid] = 0.0
 
-        x_def: np.ndarray = grid_x.ravel() + u_x
-        y_def: np.ndarray = grid_y.ravel() + u_y
+        x_def: np.ndarray = grid_x.ravel() - u_x
+        y_def: np.ndarray = grid_y.ravel() - u_y
 
         cos_x: np.ndarray = np.cos(2.0 * np.pi * x_def / p_phys)
         cos_y: np.ndarray = np.cos(2.0 * np.pi * y_def / p_phys)
@@ -223,15 +221,13 @@ def generate_grid_images(
             img: Image.Image = Image.fromarray(pixel_8)
             img.save(case_out_dir / f"{prefix}.tiff")
         else:
-            pixel_16: np.ndarray = np.round(
-                pixel_bb * (65535.0 / max_val_bb)
-            ).astype(np.uint16)
+            pixel_16: np.ndarray = pixel_bb.astype(np.uint16)
             img = Image.fromarray(pixel_16)
             img.save(case_out_dir / f"{prefix}.tiff")
 
         np.save(
             case_out_dir / f"{prefix}.npy",
-            pixel_raw_flipped * float(2**bb),
+            pixel_raw_flipped * max_val_bb,
         )
 
 
