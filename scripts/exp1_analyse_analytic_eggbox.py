@@ -17,30 +17,30 @@ from exp1params import (
     BIT_DEPTHS,
     INTEGRATION_METHODS,
     OUTPUT_DIR,
+    DEFORMATION_CASES,
+    ACTIVE_FRAMES,
 )
 
 # Output directory for results / plots
 RESULTS_DIR = Path("./out/exp1_results")
 
 
-def analyze_case(case_dir: Path) -> None:
+def analyze_case(case_dir: Path) -> tuple[list, list]:
     """Analyze convergence metrics for a specific case."""
     case_name = case_dir.name
     print(80 * "=")
     print(f"Analyzing case: {case_name}")
     print(80 * "=")
 
-    frames_to_analyze = [0, 5]
+    frames_to_analyze = ACTIVE_FRAMES
+    float_rows = []
+    bit_rows = []
 
     for ff in frames_to_analyze:
         print(f"\n--- Frame {ff:02d} ---")
 
-        if ff == 0:
-            ref_method, ref_param = "analytic", 0
-            ref_name = "Analytic"
-        else:
-            ref_method, ref_param = "gauss", 8
-            ref_name = "Gauss-8 Proxy"
+        ref_method, ref_param = "gauss", 128
+        ref_name = "Gauss-128 Reference"
 
         # Float data container: {method: {samples: [], e_f64: [], e_inf: []}}
         float_data = {
@@ -101,8 +101,6 @@ def analyze_case(case_dir: Path) -> None:
         # Evaluate all methods and parameters
         for method, param in INTEGRATION_METHODS:
             if method == "analytic":
-                continue
-            if ff > 0 and method == "gauss" and param == 8:
                 continue
 
             if method == "rect":
@@ -165,7 +163,7 @@ def analyze_case(case_dir: Path) -> None:
                 f"\n--- Bit Depth: {bb}-bit (Reference: {ref_name}) ---"
             )
             print(
-                f"{'Method':<10} {'Param':<6} {'Samples':<8} "
+                f"{'Method':<12} {'Param':<6} {'Samples':<8} "
                 f"{'e_f64':<11} {'e_inf':<11} {'e_b (bits)':<11} "
                 f"{'delta_b':<11} {'max_eb (bits)':<8}"
             )
@@ -173,8 +171,6 @@ def analyze_case(case_dir: Path) -> None:
 
             for method, param in INTEGRATION_METHODS:
                 if method == "analytic":
-                    continue
-                if ff > 0 and method == "gauss" and param == 8:
                     continue
 
                 if method == "rect":
@@ -200,11 +196,128 @@ def analyze_case(case_dir: Path) -> None:
                 else:
                     e_f64, e_inf = 0.0, 0.0
 
+                is_ref = (method == ref_method and param == ref_param)
+                method_str = f"{method} (ref)" if is_ref else method
+
                 print(
-                    f"{method:<10} {param:<6d} {samples:<8d} "
+                    f"{method_str:<12} {param:<6d} {samples:<8d} "
                     f"{e_f64:<11.4e} {e_inf:<11.4e} {e_b:<11.4f} "
                     f"{delta_b:<11.4f} {max_eb:<8.1f}"
                 )
+
+        # Write Float Convergence CSV (Plot 1 data)
+        float_csv_path = (
+            RESULTS_DIR
+            / f"convergence_{case_name}_float_frame{ff:02d}.csv"
+        )
+        with open(float_csv_path, "w") as f:
+            f.write("Method,Param,Samples,e_f64,e_inf\n")
+            for method, param in INTEGRATION_METHODS:
+                if method == "analytic":
+                    continue
+
+                if method == "rect":
+                    samples = param * param
+                elif method == "gauss":
+                    samples = param * param
+                else:
+                    samples = param
+
+                f_info = float_data[method]
+                if samples in f_info["samples"]:
+                    f_idx = f_info["samples"].index(samples)
+                    e_f64 = f_info["e_f64"][f_idx]
+                    e_inf = f_info["e_inf"][f_idx]
+                    is_ref = (
+                        method == ref_method and param == ref_param
+                    )
+                    method_str = (
+                        f"{method} (ref)" if is_ref else method
+                    )
+                    f.write(
+                        f"{method_str},{param},{samples},"
+                        f"{e_f64:.4e},{e_inf:.4e}\n"
+                    )
+                    # Accumulate for summary
+                    float_rows.append(
+                        (
+                            case_name,
+                            ff,
+                            method_str,
+                            param,
+                            samples,
+                            e_f64,
+                            e_inf,
+                        )
+                    )
+
+        # Write Digitised Convergence CSVs (Plot 2 data)
+        for bb in BIT_DEPTHS:
+            if bb not in ref_dig_by_bb:
+                continue
+            bit_csv_path = (
+                RESULTS_DIR
+                / f"convergence_{case_name}_b{bb}_frame{ff:02d}.csv"
+            )
+            with open(bit_csv_path, "w") as f:
+                f.write(
+                    "Method,Param,Samples,e_f64,e_inf,e_b,delta_b,max_eb\n"
+                )
+                for method, param in INTEGRATION_METHODS:
+                    if method == "analytic":
+                        continue
+
+                    if method == "rect":
+                        samples = param * param
+                    elif method == "gauss":
+                        samples = param * param
+                    else:
+                        samples = param
+
+                    d_info = digitised_data[bb][method]
+                    if samples not in d_info["samples"]:
+                        continue
+                    idx = d_info["samples"].index(samples)
+                    e_b = d_info["e_b"][idx]
+                    delta_b = d_info["delta_b"][idx]
+                    max_eb = d_info["max_eb"][idx]
+
+                    f_info = float_data[method]
+                    if samples in f_info["samples"]:
+                        f_idx = f_info["samples"].index(samples)
+                        e_f64 = f_info["e_f64"][f_idx]
+                        e_inf = f_info["e_inf"][f_idx]
+                    else:
+                        e_f64, e_inf = 0.0, 0.0
+
+                    is_ref = (
+                        method == ref_method and param == ref_param
+                    )
+                    method_str = (
+                        f"{method} (ref)" if is_ref else method
+                    )
+
+                    f.write(
+                        f"{method_str},{param},{samples},"
+                        f"{e_f64:.4e},{e_inf:.4e},"
+                        f"{e_b:.4f},{delta_b:.4f},{max_eb:.1f}\n"
+                    )
+                    # Accumulate for summary
+                    bit_rows.append(
+                        (
+                            case_name,
+                            ff,
+                            bb,
+                            method_str,
+                            param,
+                            samples,
+                            e_f64,
+                            e_inf,
+                            e_b,
+                            delta_b,
+                            max_eb,
+                        )
+                    )
 
         # Plot 1: Continuous convergence (e_f64)
         plt.figure(figsize=(10, 6))
@@ -230,6 +343,13 @@ def analyze_case(case_dir: Path) -> None:
             idx = np.argsort(m_info["samples"])
             s_sorted = np.array(m_info["samples"])[idx]
             ef_sorted = np.array(m_info["e_f64"])[idx]
+
+            # Filter out zero errors to prevent log(0) warnings
+            valid = ef_sorted > 0.0
+            if not np.any(valid):
+                continue
+            s_sorted = s_sorted[valid]
+            ef_sorted = ef_sorted[valid]
 
             plt.loglog(
                 s_sorted,
@@ -327,6 +447,8 @@ def analyze_case(case_dir: Path) -> None:
         print(f"Saved float convergence plot: {RESULTS_DIR / plot_name1}")
         print(f"Saved bit-res convergence plot: {RESULTS_DIR / plot_name2}")
 
+    return float_rows, bit_rows
+
 
 def main() -> None:
     print(80 * "=")
@@ -335,16 +457,55 @@ def main() -> None:
 
     RESULTS_DIR.mkdir(parents=True, exist_ok=True)
 
-    cases = [
-        OUTPUT_DIR / "plate260_cam256_quad9_rigid",
-        OUTPUT_DIR / "plate260_cam256_quad9_affine",
-    ]
+    cases = [OUTPUT_DIR / name for name in DEFORMATION_CASES]
+    all_float_rows = []
+    all_bit_rows = []
 
     for case_path in cases:
         if not case_path.exists():
             print(f"Warning: Directory {case_path} does not exist. Skipping.")
             continue
-        analyze_case(case_path)
+        float_rows, bit_rows = analyze_case(case_path)
+        all_float_rows.extend(float_rows)
+        all_bit_rows.extend(bit_rows)
+
+    # Write summary_float.csv
+    float_summary_path = RESULTS_DIR / "summary_float.csv"
+    with open(float_summary_path, "w") as f:
+        f.write("Case,Frame,Method,Param,Samples,e_f64,e_inf\n")
+        for row in all_float_rows:
+            f.write(
+                f"{row[0]},{row[1]},{row[2]},{row[3]},{row[4]},"
+                f"{row[5]:.4e},{row[6]:.4e}\n"
+            )
+
+    # Write summary_bits.csv
+    bit_summary_path = RESULTS_DIR / "summary_bits.csv"
+    with open(bit_summary_path, "w") as f:
+        f.write(
+            "Case,Frame,BitDepth,Method,Param,Samples,"
+            "e_f64,e_inf,e_b,delta_b,max_eb\n"
+        )
+        for row in all_bit_rows:
+            f.write(
+                f"{row[0]},{row[1]},{row[2]},{row[3]},{row[4]},{row[5]},"
+                f"{row[6]:.4e},{row[7]:.4e},"
+                f"{row[8]:.4f},{row[9]:.4f},{row[10]:.1f}\n"
+            )
+
+    # Write unified summary.csv
+    unified_summary_path = RESULTS_DIR / "summary.csv"
+    with open(unified_summary_path, "w") as f:
+        f.write(
+            "Case,Frame,BitDepth,Method,Param,Samples,"
+            "e_f64,e_inf,e_b,delta_b,max_eb\n"
+        )
+        for row in all_bit_rows:
+            f.write(
+                f"{row[0]},{row[1]},{row[2]},{row[3]},{row[4]},{row[5]},"
+                f"{row[6]:.4e},{row[7]:.4e},"
+                f"{row[8]:.4f},{row[9]:.4f},{row[10]:.1f}\n"
+            )
 
     print("\nAnalysis completed successfully!")
 
