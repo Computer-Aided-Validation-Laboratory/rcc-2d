@@ -290,11 +290,15 @@ def generate_grid_images(
             continue
 
         if method == "analytic":
-            if ff > 0:
+            # Only Frame 0 is analytic, and Frame 10 if it is the rigid case
+            is_rigid = case_name.endswith("rigid")
+            if ff > 0 and not (ff == 10 and is_rigid):
                 continue
+            dx = disp_x[0, ff] if ff > 0 else 0.0
+            dy = disp_y[0, ff] if ff > 0 else 0.0
             pixel_raw = evaluate_eggbox_analytic_average(
-                start_x=-roi_size / 2.0,
-                start_y=-roi_size / 2.0,
+                start_x=-roi_size / 2.0 - dx,
+                start_y=-roi_size / 2.0 - dy,
                 pixel_size=pixel_size,
                 num_px_x=TARG_PX_X,
                 num_px_y=TARG_PX_Y,

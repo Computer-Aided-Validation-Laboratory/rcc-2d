@@ -35,18 +35,30 @@ def analyze_case(case_dir: Path) -> tuple[list, list]:
     frames_to_analyze = ACTIVE_FRAMES
     float_rows = []
     bit_rows = []
+    ssaa_ticks = [1, 4, 16, 64, 256, 1024, 4096, 16384, 65536, 262144]
 
     for ff in frames_to_analyze:
         print(f"\n--- Frame {ff:02d} ---")
 
-        ref_method, ref_param = "gauss", 128
-        ref_name = "Gauss-128 Reference"
+        # Check if analytic reference exists for this frame
+        analytic_prefix = (
+            f"targ_px256_int_analytic_param_0_b16_frame{ff:02d}"
+        )
+        if (case_dir / f"{analytic_prefix}.npy").exists():
+            ref_method, ref_param = "analytic", 0
+            ref_name = "Analytic Reference"
+        else:
+            ref_method, ref_param = "gauss", 128
+            ref_name = "Gauss-128 Reference"
 
-        # Float data container: {method: {samples: [], e_f64: [], e_inf: []}}
+        # Float data container: {bb: {method: {samples: ...}}}
         float_data = {
-            "rect": {"samples": [], "e_f64": [], "e_inf": []},
-            "mc": {"samples": [], "e_f64": [], "e_inf": []},
-            "gauss": {"samples": [], "e_f64": [], "e_inf": []},
+            bb: {
+                "rect": {"samples": [], "e_f64": [], "e_inf": []},
+                "mc": {"samples": [], "e_f64": [], "e_inf": []},
+                "gauss": {"samples": [], "e_f64": [], "e_inf": []},
+            }
+            for bb in BIT_DEPTHS
         }
 
         # Digitised data container
@@ -111,24 +123,26 @@ def analyze_case(case_dir: Path) -> tuple[list, list]:
                 samples = param
 
             # Continuous floating point evaluation
-            bb_for_float = 16 if 16 in ref_float_by_bb else BIT_DEPTHS[0]
-            max_val_f = float(2**bb_for_float - 1)
-            prefix_f = (
-                f"targ_px256_int_{method}_param_{param}"
-                f"_b{bb_for_float}_frame{ff:02d}"
-            )
-            npy_path_f = case_dir / f"{prefix_f}.npy"
+            for bb in BIT_DEPTHS:
+                if bb not in ref_float_by_bb:
+                    continue
+                max_val_f = float(2**bb - 1)
+                prefix_f = (
+                    f"targ_px256_int_{method}_param_{param}"
+                    f"_b{bb}_frame{ff:02d}"
+                )
+                npy_path_f = case_dir / f"{prefix_f}.npy"
 
-            if npy_path_f.exists():
-                img_float = np.load(npy_path_f) / max_val_f
-                ref_float = ref_float_by_bb[bb_for_float]
-                diff = img_float - ref_float
-                e_f64 = np.sqrt(np.mean(diff**2))
-                e_inf = np.max(np.abs(diff))
+                if npy_path_f.exists():
+                    img_float = np.load(npy_path_f) / max_val_f
+                    ref_float = ref_float_by_bb[bb]
+                    diff = img_float - ref_float
+                    e_f64 = np.sqrt(np.mean(diff**2))
+                    e_inf = np.max(np.abs(diff))
 
-                float_data[method]["samples"].append(samples)
-                float_data[method]["e_f64"].append(e_f64)
-                float_data[method]["e_inf"].append(e_inf)
+                    float_data[bb][method]["samples"].append(samples)
+                    float_data[bb][method]["e_f64"].append(e_f64)
+                    float_data[bb][method]["e_inf"].append(e_inf)
 
             # Digitised evaluation for each bit depth
             for bb in BIT_DEPTHS:
@@ -188,7 +202,7 @@ def analyze_case(case_dir: Path) -> tuple[list, list]:
                 delta_b = d_info["delta_b"][idx]
                 max_eb = d_info["max_eb"][idx]
 
-                f_info = float_data[method]
+                f_info = float_data[bb][method]
                 if samples in f_info["samples"]:
                     f_idx = f_info["samples"].index(samples)
                     e_f64 = f_info["e_f64"][f_idx]
@@ -211,45 +225,49 @@ def analyze_case(case_dir: Path) -> tuple[list, list]:
             / f"convergence_{case_name}_float_frame{ff:02d}.csv"
         )
         with open(float_csv_path, "w") as f:
-            f.write("Method,Param,Samples,e_f64,e_inf\n")
-            for method, param in INTEGRATION_METHODS:
-                if method == "analytic":
+            f.write("BitDepth,Method,Param,Samples,e_f64,e_inf\n")
+            for bb in BIT_DEPTHS:
+                if bb not in ref_float_by_bb:
                     continue
+                for method, param in INTEGRATION_METHODS:
+                    if method == "analytic":
+                        continue
 
-                if method == "rect":
-                    samples = param * param
-                elif method == "gauss":
-                    samples = param * param
-                else:
-                    samples = param
+                    if method == "rect":
+                        samples = param * param
+                    elif method == "gauss":
+                        samples = param * param
+                    else:
+                        samples = param
 
-                f_info = float_data[method]
-                if samples in f_info["samples"]:
-                    f_idx = f_info["samples"].index(samples)
-                    e_f64 = f_info["e_f64"][f_idx]
-                    e_inf = f_info["e_inf"][f_idx]
-                    is_ref = (
-                        method == ref_method and param == ref_param
-                    )
-                    method_str = (
-                        f"{method} (ref)" if is_ref else method
-                    )
-                    f.write(
-                        f"{method_str},{param},{samples},"
-                        f"{e_f64:.4e},{e_inf:.4e}\n"
-                    )
-                    # Accumulate for summary
-                    float_rows.append(
-                        (
-                            case_name,
-                            ff,
-                            method_str,
-                            param,
-                            samples,
-                            e_f64,
-                            e_inf,
+                    f_info = float_data[bb][method]
+                    if samples in f_info["samples"]:
+                        f_idx = f_info["samples"].index(samples)
+                        e_f64 = f_info["e_f64"][f_idx]
+                        e_inf = f_info["e_inf"][f_idx]
+                        is_ref = (
+                            method == ref_method and param == ref_param
                         )
-                    )
+                        method_str = (
+                            f"{method} (ref)" if is_ref else method
+                        )
+                        f.write(
+                            f"{bb},{method_str},{param},{samples},"
+                            f"{e_f64:.4e},{e_inf:.4e}\n"
+                        )
+                        # Accumulate for summary
+                        float_rows.append(
+                            (
+                                case_name,
+                                ff,
+                                bb,
+                                method_str,
+                                param,
+                                samples,
+                                e_f64,
+                                e_inf,
+                            )
+                        )
 
         # Write Digitised Convergence CSVs (Plot 2 data)
         for bb in BIT_DEPTHS:
@@ -282,7 +300,7 @@ def analyze_case(case_dir: Path) -> tuple[list, list]:
                     delta_b = d_info["delta_b"][idx]
                     max_eb = d_info["max_eb"][idx]
 
-                    f_info = float_data[method]
+                    f_info = float_data[bb][method]
                     if samples in f_info["samples"]:
                         f_idx = f_info["samples"].index(samples)
                         e_f64 = f_info["e_f64"][f_idx]
@@ -320,7 +338,7 @@ def analyze_case(case_dir: Path) -> tuple[list, list]:
                     )
 
         # Plot 1: Continuous convergence (e_f64)
-        plt.figure(figsize=(10, 6))
+        plt.figure(figsize=(11, 7))
         colors = {
             "rect": "#1f77b4",
             "gauss": "#2ca02c",
@@ -337,7 +355,11 @@ def analyze_case(case_dir: Path) -> tuple[list, list]:
             "mc": "Monte Carlo",
         }
 
-        for m_name, m_info in float_data.items():
+        # We only plot a single bit depth (16-bit) to avoid redundant curves
+        bb_for_float = 16 if 16 in ref_float_by_bb else BIT_DEPTHS[-1]
+
+        for m_name in ["rect", "gauss", "mc"]:
+            m_info = float_data[bb_for_float][m_name]
             if not m_info["samples"]:
                 continue
             idx = np.argsort(m_info["samples"])
@@ -357,12 +379,41 @@ def analyze_case(case_dir: Path) -> tuple[list, list]:
                 marker=markers[m_name],
                 color=colors[m_name],
                 label=labels[m_name],
-                linewidth=2,
+                linewidth=2.0,
                 markersize=8,
             )
 
+        # Plot horizontal threshold lines for each bit depth
+        # 1) LSB line: 1.0 / (2**bb - 1)
+        # 2) No pixels different limit (0.5 LSB): 0.5 / (2**bb - 1)
+        linestyles_ref = {8: "-", 12: "--", 16: ":"}
+        for bb in BIT_DEPTHS:
+            if bb not in ref_float_by_bb:
+                continue
+            max_val_bb = float(2**bb - 1)
+
+            # LSB Line (black)
+            plt.axhline(
+                1.0 / max_val_bb,
+                color="black",
+                linestyle=linestyles_ref[bb],
+                alpha=0.6,
+                linewidth=1.2,
+                label=f"{bb}-bit LSB Line",
+            )
+
+            # No pixels different line (red)
+            plt.axhline(
+                0.5 / max_val_bb,
+                color="red",
+                linestyle=linestyles_ref[bb],
+                alpha=0.6,
+                linewidth=1.2,
+                label=f"{bb}-bit No Pixels Diff (0.5 LSB)",
+            )
+
         plt.title(
-            f"Continuous Floating-Point Convergence ($e_{{f64}}$):\n"
+            f"Continuous Floating-Point RMSE ($e_{{f64}}$) Convergence:\n"
             f"{case_name} (Frame {ff:02d}) | Reference: {ref_name}",
             fontsize=12,
             fontweight="bold",
@@ -370,18 +421,193 @@ def analyze_case(case_dir: Path) -> tuple[list, list]:
         )
         plt.xlabel("Total Samples per Pixel", fontsize=10)
         plt.ylabel("Floating-Point RMSE ($e_{f64}$)", fontsize=10)
+        plt.xticks(ssaa_ticks, [str(t) for t in ssaa_ticks])
         plt.grid(True, which="both", ls="--", alpha=0.5)
-        plt.legend(frameon=True, facecolor="white", edgecolor="none")
+        plt.legend(
+            frameon=True,
+            facecolor="white",
+            edgecolor="none",
+            loc="lower left",
+            fontsize=9,
+            ncol=2,
+        )
         plt.tight_layout()
 
-        plot_name1 = f"convergence_{case_name}_float_frame{ff:02d}.png"
-        plt.savefig(RESULTS_DIR / plot_name1, dpi=150)
+        plot_name1a = (
+            f"convergence_{case_name}_float_rmse_frame{ff:02d}.png"
+        )
+        plt.savefig(RESULTS_DIR / plot_name1a, dpi=150)
         plt.close()
 
-        # Plot 2: Bit Resolution Convergence (delta_b)
+        # Plot 1b: Continuous Max Error convergence (e_inf)
+        plt.figure(figsize=(11, 7))
+
+        for m_name in ["rect", "gauss", "mc"]:
+            m_info = float_data[bb_for_float][m_name]
+            if not m_info["samples"]:
+                continue
+            idx = np.argsort(m_info["samples"])
+            s_sorted = np.array(m_info["samples"])[idx]
+            einf_sorted = np.array(m_info["e_inf"])[idx]
+
+            # Filter out zero errors to prevent log(0) warnings
+            valid = einf_sorted > 0.0
+            if not np.any(valid):
+                continue
+            s_sorted = s_sorted[valid]
+            einf_sorted = einf_sorted[valid]
+
+            plt.loglog(
+                s_sorted,
+                einf_sorted,
+                marker=markers[m_name],
+                color=colors[m_name],
+                label=labels[m_name],
+                linewidth=2.0,
+                markersize=8,
+            )
+
+        # Plot horizontal threshold lines for each bit depth
+        for bb in BIT_DEPTHS:
+            if bb not in ref_float_by_bb:
+                continue
+            max_val_bb = float(2**bb - 1)
+
+            # LSB Line (black)
+            plt.axhline(
+                1.0 / max_val_bb,
+                color="black",
+                linestyle=linestyles_ref[bb],
+                alpha=0.6,
+                linewidth=1.2,
+                label=f"{bb}-bit LSB Line",
+            )
+
+            # No pixels different line (red)
+            plt.axhline(
+                0.5 / max_val_bb,
+                color="red",
+                linestyle=linestyles_ref[bb],
+                alpha=0.6,
+                linewidth=1.2,
+                label=f"{bb}-bit No Pixels Diff (0.5 LSB)",
+            )
+
+        plt.title(
+            f"Continuous Floating-Point Max Error ($e_{{\\infty}}$) "
+            f"Convergence:\n"
+            f"{case_name} (Frame {ff:02d}) | Reference: {ref_name}",
+            fontsize=12,
+            fontweight="bold",
+            pad=15,
+        )
+        plt.xlabel("Total Samples per Pixel", fontsize=10)
+        plt.ylabel("Floating-Point Max Error ($e_{\\infty}$)", fontsize=10)
+        plt.xticks(ssaa_ticks, [str(t) for t in ssaa_ticks])
+        plt.grid(True, which="both", ls="--", alpha=0.5)
+        plt.legend(
+            frameon=True,
+            facecolor="white",
+            edgecolor="none",
+            loc="lower left",
+            fontsize=9,
+            ncol=2,
+        )
+        plt.tight_layout()
+
+        plot_name1b = (
+            f"convergence_{case_name}_float_max_frame{ff:02d}.png"
+        )
+        plt.savefig(RESULTS_DIR / plot_name1b, dpi=150)
+        plt.close()
+
+        # Plot 2: Digitised Maximum Error Convergence (Raw LSB, Log scale)
         plt.figure(figsize=(11, 7))
         linestyles = {8: "-", 12: "--", 16: ":"}
-        floor_val = 5e-6
+        floor_val = 0.2
+
+        for bb in BIT_DEPTHS:
+            if bb not in ref_dig_by_bb:
+                continue
+            for m_name in ["rect", "gauss", "mc"]:
+                m_info = digitised_data[bb][m_name]
+                if not m_info["samples"]:
+                    continue
+                idx = np.argsort(m_info["samples"])
+                s_sorted = np.array(m_info["samples"])[idx]
+                max_eb_sorted = np.array(m_info["max_eb"])[idx]
+
+                max_eb_plot = np.where(
+                    max_eb_sorted == 0.0, floor_val, max_eb_sorted
+                )
+
+                plt.loglog(
+                    s_sorted,
+                    max_eb_plot,
+                    linestyle=linestyles[bb],
+                    marker=markers[m_name],
+                    color=colors[m_name],
+                    label=f"{labels[m_name]} ({bb}-bit)",
+                    linewidth=1.8,
+                    markersize=7,
+                )
+
+        # Plot horizontal line at exactly 1 LSB mismatch
+        plt.axhline(
+            1.0,
+            color="black",
+            linestyle="-",
+            alpha=0.6,
+            linewidth=1.2,
+            label="1 LSB Mismatch Line",
+        )
+
+        # Plot horizontal line at floor (no pixels different / 0 LSB)
+        plt.axhline(
+            floor_val,
+            color="red",
+            linestyle=":",
+            alpha=0.6,
+            linewidth=1.2,
+            label="No Mismatch (0 LSB)",
+        )
+
+        plt.title(
+            f"Digitised Maximum Error Convergence (LSB Mismatch):\n"
+            f"{case_name} (Frame {ff:02d}) | Reference: {ref_name}",
+            fontsize=12,
+            fontweight="bold",
+            pad=15,
+        )
+        plt.xlabel("Total Samples per Pixel", fontsize=10)
+        plt.ylabel("Maximum Digitised Mismatch (LSB levels)", fontsize=10)
+        plt.xticks(ssaa_ticks, [str(t) for t in ssaa_ticks])
+
+        # Set explicit y-ticks on log scale for readability
+        y_ticks = [0.2, 1, 2, 5, 10, 20, 50, 100, 200, 500, 1000, 2000, 5000]
+        y_labels = [
+            "0", "1", "2", "5", "10", "20", "50", "100",
+            "200", "500", "1000", "2000", "5000"
+        ]
+        plt.yticks(y_ticks, y_labels)
+        plt.ylim(floor_val * 0.8, 10000.0)
+        plt.grid(True, which="both", ls="--", alpha=0.5)
+        plt.legend(
+            frameon=True,
+            facecolor="white",
+            edgecolor="none",
+            loc="lower left",
+            fontsize=9,
+            ncol=2,
+        )
+        plt.tight_layout()
+
+        plot_name2 = f"convergence_{case_name}_max_eb_frame{ff:02d}.png"
+        plt.savefig(RESULTS_DIR / plot_name2, dpi=150)
+        plt.close()
+
+        # Plot 3: Fraction of Differing Pixels (delta_b, Linear y-axis)
+        plt.figure(figsize=(11, 7))
 
         for bb in BIT_DEPTHS:
             if bb not in ref_dig_by_bb:
@@ -394,13 +620,9 @@ def analyze_case(case_dir: Path) -> tuple[list, list]:
                 s_sorted = np.array(m_info["samples"])[idx]
                 delta_sorted = np.array(m_info["delta_b"])[idx]
 
-                delta_plot = np.where(
-                    delta_sorted == 0.0, floor_val, delta_sorted
-                )
-
-                plt.loglog(
+                plt.plot(
                     s_sorted,
-                    delta_plot,
+                    delta_sorted,
                     linestyle=linestyles[bb],
                     marker=markers[m_name],
                     color=colors[m_name],
@@ -409,19 +631,19 @@ def analyze_case(case_dir: Path) -> tuple[list, list]:
                     markersize=7,
                 )
 
-        # Plot horizontal line at exactly 1 pixel mismatch
-        one_px_thresh = 1.0 / 65536.0
+        # Plot horizontal line at exactly 0.0 (no pixels different)
         plt.axhline(
-            one_px_thresh,
+            0.0,
             color="red",
-            linestyle="-.",
+            linestyle=":",
             alpha=0.6,
-            label="1 Pixel Mismatch Threshold ($1.53 \\times 10^{-5}$)",
+            linewidth=1.2,
+            label="No Pixels Different (0 pixels)",
         )
 
+        plt.xscale("log")
         plt.title(
-            f"Bit Resolution Convergence (Fraction of Differing Pixels "
-            f"$\\delta_b$):\n"
+            f"Fraction of Differing Pixels ($\\delta_b$):\n"
             f"{case_name} (Frame {ff:02d}) | Reference: {ref_name}",
             fontsize=12,
             fontweight="bold",
@@ -429,7 +651,8 @@ def analyze_case(case_dir: Path) -> tuple[list, list]:
         )
         plt.xlabel("Total Samples per Pixel", fontsize=10)
         plt.ylabel("Fraction of Differing Pixels ($\\delta_b$)", fontsize=10)
-        plt.ylim(floor_val * 0.8, 1.2)
+        plt.xticks(ssaa_ticks, [str(t) for t in ssaa_ticks])
+        plt.ylim(-0.05, 1.05)
         plt.grid(True, which="both", ls="--", alpha=0.5)
         plt.legend(
             frameon=True,
@@ -441,11 +664,26 @@ def analyze_case(case_dir: Path) -> tuple[list, list]:
         )
         plt.tight_layout()
 
-        plot_name2 = f"convergence_{case_name}_bits_frame{ff:02d}.png"
-        plt.savefig(RESULTS_DIR / plot_name2, dpi=150)
+        plot_name3 = f"convergence_{case_name}_bits_frame{ff:02d}.png"
+        plt.savefig(RESULTS_DIR / plot_name3, dpi=150)
         plt.close()
-        print(f"Saved float convergence plot: {RESULTS_DIR / plot_name1}")
-        print(f"Saved bit-res convergence plot: {RESULTS_DIR / plot_name2}")
+
+        print(
+            f"Saved float RMSE convergence plot: "
+            f"{RESULTS_DIR / plot_name1a}"
+        )
+        print(
+            f"Saved float max convergence plot: "
+            f"{RESULTS_DIR / plot_name1b}"
+        )
+        print(
+            f"Saved bit-res max mismatch plot: "
+            f"{RESULTS_DIR / plot_name2}"
+        )
+        print(
+            f"Saved bit-res fraction plot: "
+            f"{RESULTS_DIR / plot_name3}"
+        )
 
     return float_rows, bit_rows
 
@@ -472,11 +710,11 @@ def main() -> None:
     # Write summary_float.csv
     float_summary_path = RESULTS_DIR / "summary_float.csv"
     with open(float_summary_path, "w") as f:
-        f.write("Case,Frame,Method,Param,Samples,e_f64,e_inf\n")
+        f.write("Case,Frame,BitDepth,Method,Param,Samples,e_f64,e_inf\n")
         for row in all_float_rows:
             f.write(
-                f"{row[0]},{row[1]},{row[2]},{row[3]},{row[4]},"
-                f"{row[5]:.4e},{row[6]:.4e}\n"
+                f"{row[0]},{row[1]},{row[2]},{row[3]},{row[4]},{row[5]},"
+                f"{row[6]:.4e},{row[7]:.4e}\n"
             )
 
     # Write summary_bits.csv
