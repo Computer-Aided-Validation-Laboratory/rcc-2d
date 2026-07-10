@@ -84,6 +84,94 @@ def compute_padded_uvs(
     return uvs
 
 
+def compute_riley_bbox_uvs(
+    coords: np.ndarray,
+    camera_pixels: int,
+    pad: int,
+) -> np.ndarray:
+    """Match Riley's planar bbox UV projection for the xy plane."""
+    x_proj = coords[:, 0]
+    y_proj = coords[:, 1]
+
+    x_min = np.min(x_proj)
+    x_max = np.max(x_proj)
+    y_min = np.min(y_proj)
+    y_max = np.max(y_proj)
+
+    mesh_w = x_max - x_min
+    mesh_h = y_max - y_min
+    px_x_l = float(pad)
+    px_y_l = float(pad)
+    px_x_u = float(camera_pixels + pad)
+    px_y_u = float(camera_pixels + pad)
+    px_w = px_x_u - px_x_l
+    px_h = px_y_u - px_y_l
+
+    scale_x = px_w / mesh_w if mesh_w > 0.0 else 1.0
+    scale_y = px_h / mesh_h if mesh_h > 0.0 else 1.0
+    scale = 0.5 * (scale_x + scale_y)
+
+    mesh_cx = 0.5 * (x_min + x_max)
+    mesh_cy = 0.5 * (y_min + y_max)
+    px_cx = 0.5 * (px_x_l + px_x_u)
+    px_cy = 0.5 * (px_y_l + px_y_u)
+
+    px_x = px_cx + (x_proj - mesh_cx) * scale
+    px_y = px_cy + (y_proj - mesh_cy) * scale
+
+    tex_w = float(camera_pixels + 2 * pad)
+    tex_h = float(camera_pixels + 2 * pad)
+    uvs = np.zeros((coords.shape[0], 2), dtype=np.float64)
+    uvs[:, 0] = px_x / (tex_w - 1.0)
+    uvs[:, 1] = 1.0 - (px_y / (tex_h - 1.0))
+    return np.ascontiguousarray(uvs, dtype=np.float64)
+
+
+def get_riley_bbox_uv_transform(
+    coords: np.ndarray,
+    camera_pixels: int,
+    pad: int,
+) -> tuple[float, float, float]:
+    """Return affine terms for Riley bbox UVs on the xy plane.
+
+    For reference world coordinates x_ref, y_ref:
+    u = uv_scale * x_ref + u_offset
+    v = -uv_scale * y_ref + v_offset
+    """
+    x_proj = coords[:, 0]
+    y_proj = coords[:, 1]
+
+    x_min = np.min(x_proj)
+    x_max = np.max(x_proj)
+    y_min = np.min(y_proj)
+    y_max = np.max(y_proj)
+
+    mesh_w = x_max - x_min
+    mesh_h = y_max - y_min
+    px_x_l = float(pad)
+    px_y_l = float(pad)
+    px_x_u = float(camera_pixels + pad)
+    px_y_u = float(camera_pixels + pad)
+    px_w = px_x_u - px_x_l
+    px_h = px_y_u - px_y_l
+
+    scale_x = px_w / mesh_w if mesh_w > 0.0 else 1.0
+    scale_y = px_h / mesh_h if mesh_h > 0.0 else 1.0
+    scale = 0.5 * (scale_x + scale_y)
+
+    mesh_cx = 0.5 * (x_min + x_max)
+    mesh_cy = 0.5 * (y_min + y_max)
+    px_cx = 0.5 * (px_x_l + px_x_u)
+    px_cy = 0.5 * (px_y_l + px_y_u)
+
+    tex_w = float(camera_pixels + 2 * pad)
+    tex_h = float(camera_pixels + 2 * pad)
+    uv_scale = scale / (tex_w - 1.0)
+    u_offset = (px_cx - mesh_cx * scale) / (tex_w - 1.0)
+    v_offset = 1.0 - (px_cy - mesh_cy * scale) / (tex_h - 1.0)
+    return uv_scale, u_offset, v_offset
+
+
 def get_integration_points_2d(
     method: str,
     param: int,

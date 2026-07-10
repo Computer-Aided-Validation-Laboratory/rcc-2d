@@ -29,6 +29,7 @@ from exp1params import (
 
 SSAA_LEVELS = [1, 2, 4, 8, 16]
 RESULTS_DIR_FUNC = Path("./out/exp1_riley_func")
+RILEY_FUNC_WORLD_DIR = Path("./out/exp1_riley_func_world")
 RESULTS_DIR_TEX = Path("./out/exp1_riley_tex")
 
 
@@ -140,7 +141,7 @@ def analyze_riley_case(case_name: str) -> None:
         }
 
         # Load Riley Function Shader data
-        func_dir_base = Path("./out") / f"riley_{case_name}_func"
+        func_dir_base = RILEY_FUNC_WORLD_DIR / case_name
         for ss in SSAA_LEVELS:
             samples = ss * ss
             for bb in BIT_DEPTHS:
@@ -252,7 +253,7 @@ def analyze_riley_case(case_name: str) -> None:
                 linewidth=2.0,
                 markersize=8,
             )
-        # Riley Func (red)
+        # Riley Func (black, plotted last)
         f_info = riley_func[bb_float]
         if f_info["samples"]:
             idx = np.argsort(f_info["samples"])
@@ -260,7 +261,7 @@ def analyze_riley_case(case_name: str) -> None:
                 np.array(f_info["samples"])[idx],
                 np.array(f_info["e_f64"])[idx],
                 marker="x",
-                color="#d62728",
+                color="black",
                 label="Riley Function Shader",
                 linewidth=2.0,
                 linestyle="--",
@@ -347,7 +348,7 @@ def analyze_riley_case(case_name: str) -> None:
                 np.array(f_info["samples"])[idx],
                 np.array(f_info["e_inf"])[idx],
                 marker="x",
-                color="#d62728",
+                color="black",
                 label="Riley Function Shader",
                 linewidth=2.0,
                 linestyle="--",
@@ -431,7 +432,7 @@ def analyze_riley_case(case_name: str) -> None:
                     np.array(rf["samples"])[idx],
                     np.array(rf["delta_b"])[idx],
                     marker="x",
-                    color=bit_colors[bb],
+                    color="black",
                     label=f"Riley Func {bb}-bit",
                     linewidth=1.5,
                     linestyle="--",
@@ -497,7 +498,7 @@ def analyze_riley_case(case_name: str) -> None:
                     s_s[valid],
                     m_s[valid],
                     marker="x",
-                    color=bit_colors[bb],
+                    color="black",
                     label=f"Riley Func {bb}-bit",
                     linewidth=1.5,
                     linestyle="--",
@@ -566,9 +567,22 @@ def analyze_riley_case(case_name: str) -> None:
                 markersize=8,
             )
 
-        # Riley Tex curves for different oversamples
-        tex_colors = {1: "#ff7f0e", 2: "#bcbd22", 4: "#9467bd", 8: "#17becf"}
-        tex_markers = {1: "^", 2: "v", 4: "<", 8: ">"}
+        tex_colors = {
+            1: "#ff7f0e",
+            2: "#bcbd22",
+            4: "#9467bd",
+            8: "#17becf",
+            16: "#e377c2",
+            32: "#8c564b",
+        }
+        tex_markers = {
+            1: "^",
+            2: "v",
+            4: "<",
+            8: ">",
+            16: "p",
+            32: "h",
+        }
 
         for oversamp in TEX_OVERSAMPLES:
             rt_info = riley_tex[bb_float][oversamp]

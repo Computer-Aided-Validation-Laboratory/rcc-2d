@@ -8,6 +8,7 @@
 *.png
 *.jpg
 
+archive/
 temp/
 plans/
 notes/
