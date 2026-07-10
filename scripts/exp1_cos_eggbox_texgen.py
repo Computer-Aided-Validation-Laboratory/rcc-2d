@@ -78,6 +78,15 @@ def process_pixel_chunk(args):
         weights = (
             np.ones(param * param, dtype=np.float64) / (param * param)
         )
+    # 1. Integration offsets relative to pixel bottom-left
+    if method == "rect":
+        offsets = (np.arange(param) + 0.5) * (pixel_size / param)
+        dx_grid, dy_grid = np.meshgrid(offsets, offsets)
+        dx = dx_grid.ravel()
+        dy = dy_grid.ravel()
+        weights = (
+            np.ones(param * param, dtype=np.float64) / (param * param)
+        )
     elif method == "gauss":
         pts_1d, wts_1d = np.polynomial.legendre.leggauss(param)
         offsets = 0.5 * (pts_1d + 1.0) * pixel_size
@@ -92,14 +101,11 @@ def process_pixel_chunk(args):
         dy = np.random.uniform(0.0, pixel_size, param)
         weights = np.ones(param, dtype=np.float64) / param
     elif method == "analytic":
-        # Query at 4 corners of the pixel to determine local affine mapping
         dx = np.array([0.0, pixel_size, 0.0, pixel_size])
         dy = np.array([0.0, 0.0, pixel_size, pixel_size])
         weights = np.array([1.0, 1.0, 1.0, 1.0])
     else:
         raise ValueError(f"Unknown integration method: {method}")
-
-    num_pts = len(weights)
 
     # Compute pixel grid coordinates
     px_indices = pixel_indices % TARG_PX_X
@@ -110,17 +116,21 @@ def process_pixel_chunk(args):
     px_x = start_x + px_indices * pixel_size
     px_y = start_y + py_indices * pixel_size
 
-    # Broadcast to (num_pixels, num_pts)
-    pts_x = px_x[:, None] + dx[None, :]
-    pts_y = px_y[:, None] + dy[None, :]
-
-    query_pts = np.zeros((num_pixels * num_pts, 3), dtype=np.float64)
-    query_pts[:, 0] = pts_x.ravel()
-    query_pts[:, 1] = pts_y.ravel()
-
+    # Get local affine mapping from 4 corner displacements
+    h = 0.5 * pixel_size
     global _worker_mesh
     if _worker_mesh is not None:
-        grid_query = pv.PolyData(query_pts)
+        # Query corners only (4 points per pixel)
+        dx_c = np.array([0.0, pixel_size, 0.0, pixel_size])
+        dy_c = np.array([0.0, 0.0, pixel_size, pixel_size])
+        pts_xc = px_x[:, None] + dx_c[None, :]
+        pts_yc = px_y[:, None] + dy_c[None, :]
+
+        query_c = np.zeros((num_pixels * 4, 3), dtype=np.float64)
+        query_c[:, 0] = pts_xc.ravel()
+        query_c[:, 1] = pts_yc.ravel()
+
+        grid_query = pv.PolyData(query_c)
         sampled = grid_query.sample(_worker_mesh)
 
         sub_ux = sampled.point_data["disp_x"]
@@ -129,17 +139,6 @@ def process_pixel_chunk(args):
         sub_ux[~valid] = 0.0
         sub_uy[~valid] = 0.0
 
-        x_def = query_pts[:, 0] - sub_ux
-        y_def = query_pts[:, 1] - sub_uy
-    else:
-        # Undeformed coordinates
-        x_def = query_pts[:, 0]
-        y_def = query_pts[:, 1]
-        sub_ux = np.zeros(num_pixels * num_pts)
-        sub_uy = np.zeros(num_pixels * num_pts)
-
-    if method == "analytic":
-        # Extract displacements at the 4 pixel corners
         ux00 = sub_ux[0::4]
         ux10 = sub_ux[1::4]
         ux01 = sub_ux[2::4]
@@ -150,8 +149,6 @@ def process_pixel_chunk(args):
         uy01 = sub_uy[2::4]
         uy11 = sub_uy[3::4]
 
-        # Fit local affine transformation: u(x) = M * x + u0
-        h = 0.5 * pixel_size
         M11 = (-ux00 + ux10 - ux01 + ux11) / (4.0 * h)
         M12 = (-ux00 - ux10 + ux01 + ux11) / (4.0 * h)
         M21 = (-uy00 + uy10 - uy01 + uy11) / (4.0 * h)
@@ -160,13 +157,19 @@ def process_pixel_chunk(args):
         u0x = (ux00 + ux10 + ux01 + ux11) / 4.0
         u0y = (uy00 + uy10 + uy01 + uy11) / 4.0
 
-        # Linear coordinate mapping: J = I - M and c = xc - u0
         J11 = 1.0 - M11
         J12 = -M12
         J21 = -M21
         J22 = 1.0 - M22
+    else:
+        u0x = np.zeros(num_pixels)
+        u0y = np.zeros(num_pixels)
+        J11 = np.ones(num_pixels)
+        J12 = np.zeros(num_pixels)
+        J21 = np.zeros(num_pixels)
+        J22 = np.ones(num_pixels)
 
-        # Shift to pixel center (xc, yc)
+    if method == "analytic":
         xc = px_x + h
         yc = px_y + h
         cx = xc - u0x
@@ -244,17 +247,34 @@ def process_pixel_chunk(args):
         total_int = val_const + val_t2 + val_t3 + val_t4 + val_t5
         chunk_raw = total_int / (pixel_size * pixel_size)
     else:
-        cos_x = np.cos(2.0 * np.pi * x_def / p_phys)
-        cos_y = np.cos(2.0 * np.pi * y_def / p_phys)
+        # Local coordinates relative to pixel center
+        x_local = dx - h
+        y_local = dy - h
+
+        # Map to reference space using local affine parameters
+        x_ref = (
+            px_x[:, None]
+            + h
+            - u0x[:, None]
+            + J11[:, None] * x_local[None, :]
+            + J12[:, None] * y_local[None, :]
+        )
+        y_ref = (
+            px_y[:, None]
+            + h
+            - u0y[:, None]
+            + J21[:, None] * x_local[None, :]
+            + J22[:, None] * y_local[None, :]
+        )
+
+        cos_x = np.cos(2.0 * np.pi * x_ref / p_phys)
+        cos_y = np.cos(2.0 * np.pi * y_ref / p_phys)
         sub_intensity = (
             I0 + 0.5 * GAMMA * (1.0 + cos_x) * (1.0 + cos_y) - GAMMA
         )
 
-        sub_intensity = sub_intensity.reshape(num_pixels, num_pts)
-        chunk_raw = np.sum(
-            sub_intensity * weights[None, :],
-            axis=1,
-        )
+        chunk_raw = np.sum(sub_intensity * weights[None, :], axis=1)
+
     return start_idx, end_idx, chunk_raw
 
 
@@ -385,11 +405,22 @@ def generate_grid_images(
     num_frames: int = disp_x.shape[1]
 
     uvs_path = case_dir / "uvs_exp1_sin_grid.csv"
-    if not uvs_path.exists():
-        uvs: np.ndarray = compute_padded_uvs(
-            coords, roi_size, camera_pixels, TEX_PX_PAD
-        )
-        np.savetxt(uvs_path, uvs, delimiter=",")
+    tex_w_uv = camera_pixels + 2 * TEX_PX_PAD
+    tex_h_uv = camera_pixels + 2 * TEX_PX_PAD
+    px_bbox = (
+        float(TEX_PX_PAD),
+        float(TEX_PX_PAD),
+        float(camera_pixels + TEX_PX_PAD),
+        float(camera_pixels + TEX_PX_PAD),
+    )
+    import riley
+    uvs = riley.project_uvs_planar_bbox(
+        coords,
+        (tex_w_uv, tex_h_uv),
+        px_bbox,
+        riley.ProjectionPlane.xy,
+    )
+    np.savetxt(uvs_path, uvs, delimiter=",")
 
     case_out_dir: Path = OUTPUT_DIR / case_name
     case_out_dir.mkdir(parents=True, exist_ok=True)
@@ -485,16 +516,18 @@ def main() -> None:
         cases = [Path("data") / name for name in DEFORMATION_CASES]
 
     print("\nGenerating reference textures...")
-    for method, param in INTEGRATION_METHODS:
-        if method != "rect" or param not in [1, 2, 4]:
-            continue
-        for bb in BIT_DEPTHS:
-            for oversamp in TEX_OVERSAMPLES:
-                print(
-                    f"  Texture: {method}={param}, bb={bb}, "
-                    f"oversamp={oversamp}"
-                )
-                generate_texture(method, param, bb, oversamp)
+    tex_dir_ref = OUTPUT_DIR / "textures"
+    if tex_dir_ref.exists():
+        for p in tex_dir_ref.glob("*_int_rect_*"):
+            p.unlink()
+
+    for bb in BIT_DEPTHS:
+        for oversamp in TEX_OVERSAMPLES:
+            print(
+                f"  Texture: analytic=0, bb={bb}, "
+                f"oversamp={oversamp}"
+            )
+            generate_texture("analytic", 0, bb, oversamp)
 
     print("\nGenerating deformed target images...")
     for case_path in cases:

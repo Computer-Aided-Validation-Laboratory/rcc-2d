@@ -22,11 +22,10 @@ from exp1params import (
     I0,
     GAMMA,
     BIT_DEPTHS,
-    SSAA_LEVELS,
+    DEFORMATION_CASES,
 )
 
-# Configurable constants
-CASE_DIR: Path = Path("data/plate260_cam256_quad9_rigid")
+SSAA_LEVELS = [1, 2, 4, 8, 16]
 
 
 def get_riley_mesh_type(nodes_per_elem: int) -> riley.MeshType:
@@ -51,85 +50,81 @@ def main() -> None:
     print("Riley Function Shader Render (Experiment 1)")
     print(80 * "=")
 
-    if not CASE_DIR.exists():
-        print(f"Error: Case directory {CASE_DIR} does not exist.")
-        sys.exit(1)
+    if len(sys.argv) > 1:
+        cases = [Path(sys.argv[1])]
+    else:
+        cases = [Path("data") / c for c in DEFORMATION_CASES]
 
-    case_name: str = CASE_DIR.name
-    out_base: Path = Path(f"./out/riley_{case_name}_func")
-    shutil.rmtree(out_base, ignore_errors=True)
-    out_base.mkdir(parents=True, exist_ok=True)
+    for case_path in cases:
+        if not case_path.exists():
+            print(f"Warning: {case_path} does not exist. Skipping.")
+            continue
 
-    # Load coordinates, connectivity, displacements, and UVs
-    coords: np.ndarray = np.loadtxt(
-        CASE_DIR / "coords.csv", delimiter=","
-    )
-    connect_raw: np.ndarray = np.loadtxt(
-        CASE_DIR / "connectivity.csv", delimiter=",", dtype=np.uintp
-    )
-    disp_x: np.ndarray = np.loadtxt(
-        CASE_DIR / "field_disp_x.csv", delimiter=","
-    )
-    disp_y: np.ndarray = np.loadtxt(
-        CASE_DIR / "field_disp_y.csv", delimiter=","
-    )
-    uvs: np.ndarray = np.loadtxt(
-        CASE_DIR / "uvs_exp1_sin_grid.csv", delimiter=","
-    )
+        case_name = case_path.name
+        print(f"\nProcessing case: {case_name}")
 
-    if connect_raw.ndim == 1:
-        connect_raw = connect_raw.reshape(1, -1)
-    if disp_x.ndim == 1:
-        disp_x = disp_x.reshape(-1, 1)
-    if disp_y.ndim == 1:
-        disp_y = disp_y.reshape(-1, 1)
+        out_base = Path(f"./out/riley_{case_name}_func")
+        shutil.rmtree(out_base, ignore_errors=True)
+        out_base.mkdir(parents=True, exist_ok=True)
 
-    connect: np.ndarray = np.ascontiguousarray(
-        connect_raw, dtype=np.uintp
-    )
-    num_nodes: int
-    num_frames: int
-    num_nodes, num_frames = disp_x.shape
+        # Load coordinates, connectivity, displacements, and UVs
+        coords = np.loadtxt(case_path / "coords.csv", delimiter=",")
+        connect_raw = np.loadtxt(
+            case_path / "connectivity.csv", delimiter=",", dtype=np.uintp
+        )
+        disp_x = np.loadtxt(case_path / "field_disp_x.csv", delimiter=",")
+        disp_y = np.loadtxt(case_path / "field_disp_y.csv", delimiter=",")
+        uvs = np.loadtxt(
+            case_path / "uvs_exp1_sin_grid.csv", delimiter=","
+        )
 
-    # Pad displacements to 3D: (num_frames, num_nodes, 3)
-    disp: np.ndarray = np.zeros(
-        (num_frames, num_nodes, 3), dtype=np.float64
-    )
-    disp[:, :, 0] = disp_x.T
-    disp[:, :, 1] = disp_y.T
+        if connect_raw.ndim == 1:
+            connect_raw = connect_raw.reshape(1, -1)
+        if disp_x.ndim == 1:
+            disp_x = disp_x.reshape(-1, 1)
+        if disp_y.ndim == 1:
+            disp_y = disp_y.reshape(-1, 1)
 
-    # Setup the mesh input
-    mtype: riley.MeshType = get_riley_mesh_type(connect.shape[1])
-    
-    # Grid pitch in normalized UV space
-    # Total width of the padded coordinate system is TARG_PX_X + 2 * pad
-    total_pad_px: float = float(TARG_PX_X + 2 * TEX_PX_PAD)
-    pitch_u: float = P_PIXELS / total_pad_px
-    pitch_v: float = P_PIXELS / total_pad_px
+        connect = np.ascontiguousarray(connect_raw, dtype=np.uintp)
+        num_nodes, num_frames = disp_x.shape
 
-    func_params: riley.FuncShaderParams = riley.FuncShaderParams(
-        eggbox_mean=I0,
-        eggbox_contrast=GAMMA,
-        eggbox_pitch=(pitch_u, pitch_v),
-        eggbox_phase=(-0.5, -0.5),
-    )
+        # Pad displacements to 3D: (num_frames, num_nodes, 3)
+        disp = np.zeros((num_frames, num_nodes, 3), dtype=np.float64)
+        disp[:, :, 0] = disp_x.T
+        disp[:, :, 1] = disp_y.T
 
-    # Auto-placement of camera
-    # We define dummy ROI coordinates centered at origin (256x256 units)
-    roi_coords: np.ndarray = np.array([
-        [-128.0, -128.0, 0.0],
-        [ 128.0, -128.0, 0.0],
-        [ 128.0,  128.0, 0.0],
-        [-128.0,  128.0, 0.0],
-    ], dtype=np.float64)
+        # Setup the mesh input
+        mtype = get_riley_mesh_type(connect.shape[1])
 
-    camera_pixels, roi_size = parse_case_params(CASE_DIR)
-    pixels_num: tuple[int, int] = (TARG_PX_X, TARG_PX_Y)
-    pixels_size: tuple[float, float] = (1.0, 1.0)
-    focal_length: float = 1000.0
+        # Grid pitch in normalized UV space
+        total_pad_px = float(TARG_PX_X + 2 * TEX_PX_PAD)
+        pitch_u = P_PIXELS / total_pad_px
+        pitch_v = P_PIXELS / total_pad_px
 
-    camera_pos: tuple[float, float, float] = (
-        riley.pos_fill_frame_from_rot(
+        func_params = riley.FuncShaderParams(
+            eggbox_mean=I0,
+            eggbox_contrast=GAMMA,
+            eggbox_pitch=(pitch_u, pitch_v),
+            eggbox_phase=(-0.5, -0.5),
+        )
+
+        # Auto-placement of camera
+        roi_coords = np.array(
+            [
+                [-128.0, -128.0, 0.0],
+                [128.0, -128.0, 0.0],
+                [128.0, 128.0, 0.0],
+                [-128.0, 128.0, 0.0],
+            ],
+            dtype=np.float64,
+        )
+
+        camera_pixels, roi_size = parse_case_params(case_path)
+        pixels_num = (TARG_PX_X, TARG_PX_Y)
+        pixels_size = (1.0, 1.0)
+        focal_length = 1000.0
+
+        camera_pos = riley.pos_fill_frame_from_rot(
             roi_coords,
             pixels_num,
             pixels_size,
@@ -137,70 +132,68 @@ def main() -> None:
             (0.0, 0.0, 0.0),
             1.0,
         )
-    )
 
-    roi_pos: tuple[float, float, float] = tuple(
-        riley.roi_cent_from_coords(roi_coords)
-    )
+        roi_pos = tuple(riley.roi_cent_from_coords(roi_coords))
 
-    for ss in SSAA_LEVELS:
-        for bb in BIT_DEPTHS:
-            print(
-                f"Running Riley function render: SSAA={ss}, bits={bb}"
-            )
-            case_out = out_base / f"ss{ss}_b{bb}"
-            case_out.mkdir(parents=True, exist_ok=True)
+        for ss in SSAA_LEVELS:
+            for bb in BIT_DEPTHS:
+                print(
+                    f"  Running Riley function render: "
+                    f"SSAA={ss}, bits={bb}"
+                )
+                case_out = out_base / f"ss{ss}_b{bb}"
+                case_out.mkdir(parents=True, exist_ok=True)
 
-            mesh = riley.Mesh(
-                mesh_type=mtype,
-                coords=coords,
-                connect=connect,
-                disp=disp,
-                shader_type=riley.ShaderType.func,
-                uvs=uvs,
-                func_shader_builtin=riley.FuncShaderBuiltin.eggbox,
-                func_shader_coord_mode=riley.FuncCoordMode.uv,
-                func_shader_params=func_params,
-                bits=bb,
-                scaling_type=riley.ScaleStrategy.fixed,
-                scaling_min=0.0,
-                scaling_max=1.0,
-            )
+                mesh = riley.Mesh(
+                    mesh_type=mtype,
+                    coords=coords,
+                    connect=connect,
+                    disp=disp,
+                    shader_type=riley.ShaderType.func,
+                    uvs=uvs,
+                    func_shader_builtin=riley.FuncShaderBuiltin.eggbox,
+                    func_shader_coord_mode=riley.FuncCoordMode.uv,
+                    func_shader_params=func_params,
+                    bits=bb,
+                    scaling_type=riley.ScaleStrategy.fixed,
+                    scaling_min=0.0,
+                    scaling_max=1.0,
+                )
 
-            camera = riley.Camera(
-                pixels_num=pixels_num,
-                pixels_size=pixels_size,
-                pos_world=camera_pos,
-                rot_world=(0.0, 0.0, 0.0),
-                roi_cent_world=roi_pos,
-                focal_length=focal_length,
-                sub_sample=ss,
-                coord_sys=riley.CameraCoordSys.opengl,
-            )
+                camera = riley.Camera(
+                    pixels_num=pixels_num,
+                    pixels_size=pixels_size,
+                    pos_world=camera_pos,
+                    rot_world=(0.0, 0.0, 0.0),
+                    roi_cent_world=roi_pos,
+                    focal_length=focal_length,
+                    sub_sample=ss,
+                    coord_sys=riley.CameraCoordSys.opengl,
+                )
 
-            config = riley.build_config(
-                num_frames=num_frames,
-                total_threads=4,
-                save_strategy=riley.SaveStrategy.both,
-            )
-            config.save_format = riley.ImageFormat.tiff
-            config.save_bits = 16 if bb in (12, 16) else 8
-            config.save_scaling = riley.ScaleStrategy.none
+                config = riley.create_raster_config(
+                    num_frames=num_frames,
+                    total_threads=4,
+                    save_strategy=riley.SaveStrategy.both,
+                )
+                config.save_format = riley.ImageFormat.tiff
+                config.save_bits = 16 if bb in (12, 16) else 8
+                config.save_scaling = riley.ScaleStrategy.none
 
-            images = riley.raster(
-                [mesh],
-                [camera],
-                config,
-                out_dir=str(case_out),
-            )
+                images = riley.raster(
+                    [mesh],
+                    [camera],
+                    config,
+                    out_dir=str(case_out),
+                )
 
-            if images is not None:
-                for ff in range(num_frames):
-                    frame_img = images[0, ff, 0]
-                    np.save(
-                        case_out / f"image_c00_f{ff:02d}.npy",
-                        frame_img,
-                    )
+                if images is not None:
+                    for ff in range(num_frames):
+                        frame_img = images[0, ff, 0]
+                        np.save(
+                            case_out / f"image_c00_f{ff:02d}.npy",
+                            frame_img,
+                        )
 
     print("All renders completed.")
 

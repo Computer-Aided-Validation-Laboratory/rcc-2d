@@ -22,7 +22,7 @@ from exp1params import (
 )
 
 # Output directory for results / plots
-RESULTS_DIR = Path("./out/exp1_results")
+RESULTS_DIR = Path("./out/exp1_analytic_results")
 
 
 def analyze_case(case_dir: Path) -> tuple[list, list]:
@@ -211,109 +211,33 @@ def analyze_case(case_dir: Path) -> tuple[list, list]:
                     f"{delta_b:<11.4f} {max_eb:<8.1f}"
                 )
 
-        # Write Float Convergence CSV (Plot 1 data)
-        float_csv_path = (
-            RESULTS_DIR
-            / f"convergence_{case_name}_float_frame{ff:02d}.csv"
-        )
-        with open(float_csv_path, "w") as f:
-            f.write("BitDepth,Method,Param,Samples,e_f64,e_inf\n")
-            for bb in BIT_DEPTHS:
-                if bb not in ref_float_by_bb:
-                    continue
-                for method, param in INTEGRATION_METHODS:
-                    if method == "analytic":
-                        continue
-
-                    if method == "rect":
-                        samples = param * param
-                    elif method == "gauss":
-                        samples = param * param
-                    else:
-                        samples = param
-
-                    f_info = float_data[bb][method]
-                    if samples in f_info["samples"]:
-                        f_idx = f_info["samples"].index(samples)
-                        e_f64 = f_info["e_f64"][f_idx]
-                        e_inf = f_info["e_inf"][f_idx]
-                        is_ref = (
-                            method == ref_method and param == ref_param
-                        )
-                        method_str = (
-                            f"{method} (ref)" if is_ref else method
-                        )
-                        f.write(
-                            f"{bb},{method_str},{param},{samples},"
-                            f"{e_f64:.4e},{e_inf:.4e}\n"
-                        )
-                        # Accumulate for summary
-                        float_rows.append(
-                            (
-                                case_name,
-                                ff,
-                                bb,
-                                method_str,
-                                param,
-                                samples,
-                                e_f64,
-                                e_inf,
-                            )
-                        )
-
-        # Write Digitised Convergence CSVs (Plot 2 data)
+        # Accumulate float convergence data
         for bb in BIT_DEPTHS:
-            if bb not in ref_dig_by_bb:
+            if bb not in ref_float_by_bb:
                 continue
-            bit_csv_path = (
-                RESULTS_DIR
-                / f"convergence_{case_name}_b{bb}_frame{ff:02d}.csv"
-            )
-            with open(bit_csv_path, "w") as f:
-                f.write(
-                    "Method,Param,Samples,e_f64,e_inf,e_b,delta_b,max_eb\n"
-                )
-                for method, param in INTEGRATION_METHODS:
-                    if method == "analytic":
-                        continue
+            for method, param in INTEGRATION_METHODS:
+                if method == "analytic":
+                    continue
 
-                    if method == "rect":
-                        samples = param * param
-                    elif method == "gauss":
-                        samples = param * param
-                    else:
-                        samples = param
+                if method == "rect":
+                    samples = param * param
+                elif method == "gauss":
+                    samples = param * param
+                else:
+                    samples = param
 
-                    d_info = digitised_data[bb][method]
-                    if samples not in d_info["samples"]:
-                        continue
-                    idx = d_info["samples"].index(samples)
-                    e_b = d_info["e_b"][idx]
-                    delta_b = d_info["delta_b"][idx]
-                    max_eb = d_info["max_eb"][idx]
-
-                    f_info = float_data[bb][method]
-                    if samples in f_info["samples"]:
-                        f_idx = f_info["samples"].index(samples)
-                        e_f64 = f_info["e_f64"][f_idx]
-                        e_inf = f_info["e_inf"][f_idx]
-                    else:
-                        e_f64, e_inf = 0.0, 0.0
-
+                f_info = float_data[bb][method]
+                if samples in f_info["samples"]:
+                    f_idx = f_info["samples"].index(samples)
+                    e_f64 = f_info["e_f64"][f_idx]
+                    e_inf = f_info["e_inf"][f_idx]
                     is_ref = (
                         method == ref_method and param == ref_param
                     )
                     method_str = (
                         f"{method} (ref)" if is_ref else method
                     )
-
-                    f.write(
-                        f"{method_str},{param},{samples},"
-                        f"{e_f64:.4e},{e_inf:.4e},"
-                        f"{e_b:.4f},{delta_b:.4f},{max_eb:.1f}\n"
-                    )
-                    # Accumulate for summary
-                    bit_rows.append(
+                    float_rows.append(
                         (
                             case_name,
                             ff,
@@ -323,11 +247,61 @@ def analyze_case(case_dir: Path) -> tuple[list, list]:
                             samples,
                             e_f64,
                             e_inf,
-                            e_b,
-                            delta_b,
-                            max_eb,
                         )
                     )
+
+        # Accumulate digitized convergence data
+        for bb in BIT_DEPTHS:
+            if bb not in ref_dig_by_bb:
+                continue
+            for method, param in INTEGRATION_METHODS:
+                if method == "analytic":
+                    continue
+
+                if method == "rect":
+                    samples = param * param
+                elif method == "gauss":
+                    samples = param * param
+                else:
+                    samples = param
+
+                d_info = digitised_data[bb][method]
+                if samples not in d_info["samples"]:
+                    continue
+                idx = d_info["samples"].index(samples)
+                e_b = d_info["e_b"][idx]
+                delta_b = d_info["delta_b"][idx]
+                max_eb = d_info["max_eb"][idx]
+
+                f_info = float_data[bb][method]
+                if samples in f_info["samples"]:
+                    f_idx = f_info["samples"].index(samples)
+                    e_f64 = f_info["e_f64"][f_idx]
+                    e_inf = f_info["e_inf"][f_idx]
+                else:
+                    e_f64, e_inf = 0.0, 0.0
+
+                is_ref = (
+                    method == ref_method and param == ref_param
+                )
+                method_str = (
+                    f"{method} (ref)" if is_ref else method
+                )
+                bit_rows.append(
+                    (
+                        case_name,
+                        ff,
+                        bb,
+                        method_str,
+                        param,
+                        samples,
+                        e_f64,
+                        e_inf,
+                        e_b,
+                        delta_b,
+                        max_eb,
+                    )
+                )
 
         # Plot 1: Continuous convergence (e_f64)
         plt.figure(figsize=(11, 7))
@@ -677,6 +651,31 @@ def analyze_case(case_dir: Path) -> tuple[list, list]:
             f"{RESULTS_DIR / plot_name3}"
         )
 
+    # Write case-specific float CSV
+    float_csv_path = RESULTS_DIR / f"convergence_{case_name}_float.csv"
+    with open(float_csv_path, "w") as f:
+        f.write("Frame,BitDepth,Method,Param,Samples,e_f64,e_inf\n")
+        for row in float_rows:
+            f.write(
+                f"{row[1]},{row[2]},{row[3]},{row[4]},{row[5]},"
+                f"{row[6]:.4e},{row[7]:.4e}\n"
+            )
+
+    # Write case-specific bit depth CSVs
+    for bb in BIT_DEPTHS:
+        bit_csv_path = RESULTS_DIR / f"convergence_{case_name}_b{bb}.csv"
+        with open(bit_csv_path, "w") as f:
+            f.write(
+                "Frame,Method,Param,Samples,e_f64,e_inf,e_b,delta_b,max_eb\n"
+            )
+            for row in bit_rows:
+                if row[2] == bb:
+                    f.write(
+                        f"{row[1]},{row[3]},{row[4]},{row[5]},"
+                        f"{row[6]:.4e},{row[7]:.4e},"
+                        f"{row[8]:.4f},{row[9]:.4f},{row[10]:.1f}\n"
+                    )
+
     return float_rows, bit_rows
 
 
@@ -685,6 +684,8 @@ def main() -> None:
     print("Experiment 1: Convergence Analysis of Integration Methods")
     print(80 * "=")
 
+    import shutil
+    shutil.rmtree(RESULTS_DIR, ignore_errors=True)
     RESULTS_DIR.mkdir(parents=True, exist_ok=True)
 
     cases = [OUTPUT_DIR / name for name in DEFORMATION_CASES]

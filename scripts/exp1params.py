@@ -13,7 +13,7 @@ from typing import List, Tuple
 TARG_PX_X: int = 256
 TARG_PX_Y: int = 256
 TEX_PX_PAD: int = 4
-TEX_OVERSAMPLES: List[int] = [1, 2, 4, 8]
+TEX_OVERSAMPLES: List[int] = [1, 2, 4, 8, 16, 32]
 BIT_DEPTHS: List[int] = [8, 12, 16]
 NUM_PROCESSES: int = 8
 
