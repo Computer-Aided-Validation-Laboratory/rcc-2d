@@ -1,0 +1,127 @@
+\documentclass[11pt,a4paper]{article}
+\usepackage[utf8]{inputenc}
+\usepackage{amsmath,amssymb,amsfonts}
+\usepackage{geometry}
+\usepackage{hyperref}
+\usepackage{booktabs}
+\usepackage{microtype}
+
+\geometry{margin=1in}
+
+\title{Analytical Integration of the Eggbox Intensity Pattern\\Under Local Pixel Affine Transformations}
+\author{Antigravity Coding Assistant}
+\date{\today}
+
+\begin{document}
+
+\maketitle
+
+\section{Introduction}
+This document outlines the analytical integration of a 2D eggbox intensity pattern over rectangular camera pixel windows under local pixel affine transformations. This formulation is implemented directly inside our 2D orthographic image generator to serve as an exact analytical reference for convergence analyses of spatial integration methods (e.g., Gauss Quadrature, Monte Carlo, and rectangular sub-pixel grid integration).
+
+\section{The Eggbox Intensity Pattern}
+In the undeformed reference configuration, the eggbox intensity function $I(\mathbf{x}_{\text{ref}})$ with spatial coordinates $\mathbf{x}_{\text{ref}} = (x_{\text{ref}}, y_{\text{ref}})$ is defined as:
+\begin{equation}
+I(x_{\text{ref}}, y_{\text{ref}}) = I_0 + 0.5\gamma(1 + \cos(k x_{\text{ref}}))(1 + \cos(k y_{\text{ref}})) - \gamma
+\end{equation}
+where $I_0$ is the base intensity, $\gamma$ is the contrast parameter, and $k = \frac{2\pi}{p_{\text{phys}}}$ is the spatial wavenumber. Expanding this product yields:
+\begin{equation}
+I(x_{\text{ref}}, y_{\text{ref}}) = (I_0 - 0.5\gamma) + 0.5\gamma\cos(k x_{\text{ref}}) + 0.5\gamma\cos(k y_{\text{ref}}) + 0.5\gamma\cos(k x_{\text{ref}})\cos(k y_{\text{ref}})
+\end{equation}
+
+\section{Local Pixel Affine Displacement Fields}
+A camera pixel $P$ is centered at $\mathbf{x}_{\text{pixel}} = (x_c, y_c)$ with dimensions $\Delta x = \Delta y = \text{pixel\_size}$. Let $\mathbf{x}' = (x', y') \in [-h, h] \times [-h, h]$ be the local coordinates relative to the pixel center, where $h = 0.5 \cdot \text{pixel\_size}$. The camera coordinates within the pixel are given by:
+\begin{equation}
+\mathbf{x} = \mathbf{x}_{\text{pixel}} + \mathbf{x}'
+\end{equation}
+The displacement field $\mathbf{u}(\mathbf{x})$ within the pixel box is approximated using a local linear (affine) projection:
+\begin{equation}
+\mathbf{u}(\mathbf{x}') \approx \mathbf{u}_0 + \mathbf{M} \mathbf{x}'
+\end{equation}
+where $\mathbf{u}_0 = (u_{0x}, u_{0y})$ is the displacement at the pixel center, and $\mathbf{M}$ is the local displacement gradient matrix:
+\begin{equation}
+\mathbf{M} = \begin{bmatrix} M_{11} & M_{12} \\ M_{21} & M_{22} \end{bmatrix}
+\end{equation}
+
+\subsection{Closed-Form Parameter Fitting from Shape Functions}
+The displacement field $\mathbf{u}$ is sampled at the four corner points of the pixel cell directly from the mesh shape functions:
+\begin{align}
+\mathbf{u}_{00} &= \mathbf{u}(-h, -h) \\
+\mathbf{u}_{10} &= \mathbf{u}(h, -h) \\
+\mathbf{u}_{01} &= \mathbf{u}(-h, h) \\
+\mathbf{u}_{11} &= \mathbf{u}(h, h)
+\end{align}
+Fitting the local linear transformation to these four corner displacements via least-squares yields a simple, closed-form diagonal projection:
+\begin{align}
+M_{11} &= \frac{-u_{x00} + u_{x10} - u_{x01} + u_{x11}}{4h} \\
+M_{12} &= \frac{-u_{x00} - u_{x10} + u_{x01} + u_{x11}}{4h} \\
+M_{21} &= \frac{-u_{y00} + u_{y10} - u_{y01} + u_{y11}}{4h} \\
+M_{22} &= \frac{-u_{y00} - u_{y10} + u_{y01} + u_{y11}}{4h}
+\end{align}
+The displacement at the pixel center $\mathbf{u}_0$ is the average of the corner displacements:
+\begin{align}
+u_{0x} &= \frac{u_{x00} + u_{x10} + u_{x01} + u_{x11}}{4} \\
+u_{0y} &= \frac{u_{y00} + u_{y10} + u_{y01} + u_{y11}}{4}
+\end{align}
+
+\section{Coordinate Mapping}
+The reference configuration coordinates $\mathbf{x}_{\text{ref}}$ are computed by subtracting the local displacement from the camera coordinates:
+\begin{equation}
+\mathbf{x}_{\text{ref}}(\mathbf{x}') = \mathbf{x} - \mathbf{u}(\mathbf{x}) = \mathbf{x}_{\text{pixel}} + \mathbf{x}' - (\mathbf{u}_0 + \mathbf{M} \mathbf{x}')
+\end{equation}
+Grouping terms yields a direct linear mapping:
+\begin{equation}
+\mathbf{x}_{\text{ref}}(\mathbf{x}') = \mathbf{J} \mathbf{x}' + \mathbf{c}
+\end{equation}
+where the linear mapping matrix $\mathbf{J}$ and phase vector $\mathbf{c} = (c_x, c_y)$ are:
+\begin{align}
+\mathbf{J} &= \mathbf{I} - \mathbf{M} = \begin{bmatrix} 1 - M_{11} & -M_{12} \\ -M_{21} & 1 - M_{22} \end{bmatrix} \\
+\mathbf{c} &= \mathbf{x}_{\text{pixel}} - \mathbf{u}_0 = \begin{bmatrix} x_c - u_{0x} \\ y_c - u_{0y} \end{bmatrix}
+\end{align}
+
+\section{Integration and Sum of 2D Plane Waves}
+Substituting the mapping $x_{\text{ref}} = J_{11} x' + J_{12} y' + c_x$ and $y_{\text{ref}} = J_{21} x' + J_{22} y' + c_y$ into the intensity function $I(x_{\text{ref}}, y_{\text{ref}})$ and applying the product-to-sum trigonometric identity $\cos(A)\cos(B) = 0.5[\cos(A+B) + \cos(A-B)]$ yields:
+\begin{equation}
+I_{\text{cam}}(\mathbf{x}') = (I_0 - 0.5\gamma) + \sum_{n=1}^4 w_n \cos(\omega_{x,n} x' + \omega_{y,n} y' + \phi_n)
+\end{equation}
+where the components are:
+\begin{table}[h]
+\centering
+\begin{tabular}{ccccc}
+\toprule
+Term $n$ & Weight $w_n$ & X Frequency $\omega_{x,n}$ & Y Frequency $\omega_{y,n}$ & Phase Offset $\phi_n$ \\
+\midrule
+1 & $0.5\gamma$  & $k J_{11}$ & $k J_{12}$ & $k c_x$ \\
+2 & $0.5\gamma$  & $k J_{21}$ & $k J_{22}$ & $k c_y$ \\
+3 & $0.25\gamma$ & $k (J_{11} + J_{21})$ & $k (J_{12} + J_{22})$ & $k (c_x + c_y)$ \\
+4 & $0.25\gamma$ & $k (J_{11} - J_{21})$ & $k (J_{12} - J_{22})$ & $k (c_x - c_y)$ \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+Each wave component is integrated analytically over $x' \in [-h, h]$ and $y' \in [-h, h]$:
+\begin{equation}
+S = \int_{-h}^h \int_{-h}^h \cos(\omega_x x' + \omega_y y' + \phi) \, dx' \, dy'
+\end{equation}
+This is evaluated based on whether the frequencies vanish:
+\begin{itemize}
+    \item \textbf{Case 1: $\omega_x \neq 0, \omega_y \neq 0$}
+    \begin{equation}
+    S = -\frac{1}{\omega_x \omega_y} \left[ \cos(\omega_x h + \omega_y h + \phi) - \cos(-\omega_x h + \omega_y h + \phi) - \cos(\omega_x h - \omega_y h + \phi) + \cos(-\omega_x h - \omega_y h + \phi) \right]
+    \end{equation}
+    \item \textbf{Case 2: $\omega_x \neq 0, \omega_y = 0$}
+    \begin{equation}
+    S = \frac{2h}{\omega_x} \left[ \sin(\omega_x h + \phi) - \sin(-\omega_x h + \phi) \right]
+    \end{equation}
+    \item \textbf{Case 3: $\omega_x = 0, \omega_y \neq 0$}
+    \begin{equation}
+    S = \frac{2h}{\omega_y} \left[ \sin(\omega_y h + \phi) - \sin(-\omega_y h + \phi) \right]
+    \end{equation}
+    \item \textbf{Case 4: $\omega_x = 0, \omega_y = 0$}
+    \begin{equation}
+    S = 4h^2 \cos(\phi)
+    \end{equation}
+\end{itemize}
+Dividing the total integrated sum by the pixel area $4h^2$ yields the exact average intensity over each camera pixel cell.
+
+\end{document}

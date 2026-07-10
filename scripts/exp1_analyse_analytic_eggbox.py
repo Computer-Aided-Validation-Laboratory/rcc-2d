@@ -40,16 +40,8 @@ def analyze_case(case_dir: Path) -> tuple[list, list]:
     for ff in frames_to_analyze:
         print(f"\n--- Frame {ff:02d} ---")
 
-        # Check if analytic reference exists for this frame
-        analytic_prefix = (
-            f"targ_px256_int_analytic_param_0_b16_frame{ff:02d}"
-        )
-        if (case_dir / f"{analytic_prefix}.npy").exists():
-            ref_method, ref_param = "analytic", 0
-            ref_name = "Analytic Reference"
-        else:
-            ref_method, ref_param = "gauss", 128
-            ref_name = "Gauss-128 Reference"
+        ref_method, ref_param = "analytic", 0
+        ref_name = "Analytic Reference"
 
         # Float data container: {bb: {method: {samples: ...}}}
         float_data = {

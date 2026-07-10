@@ -91,6 +91,11 @@ def process_pixel_chunk(args):
         dx = np.random.uniform(0.0, pixel_size, param)
         dy = np.random.uniform(0.0, pixel_size, param)
         weights = np.ones(param, dtype=np.float64) / param
+    elif method == "analytic":
+        # Query at 4 corners of the pixel to determine local affine mapping
+        dx = np.array([0.0, pixel_size, 0.0, pixel_size])
+        dy = np.array([0.0, 0.0, pixel_size, pixel_size])
+        weights = np.array([1.0, 1.0, 1.0, 1.0])
     else:
         raise ValueError(f"Unknown integration method: {method}")
 
@@ -130,18 +135,126 @@ def process_pixel_chunk(args):
         # Undeformed coordinates
         x_def = query_pts[:, 0]
         y_def = query_pts[:, 1]
+        sub_ux = np.zeros(num_pixels * num_pts)
+        sub_uy = np.zeros(num_pixels * num_pts)
 
-    cos_x = np.cos(2.0 * np.pi * x_def / p_phys)
-    cos_y = np.cos(2.0 * np.pi * y_def / p_phys)
-    sub_intensity = (
-        I0 + 0.5 * GAMMA * (1.0 + cos_x) * (1.0 + cos_y) - GAMMA
-    )
+    if method == "analytic":
+        # Extract displacements at the 4 pixel corners
+        ux00 = sub_ux[0::4]
+        ux10 = sub_ux[1::4]
+        ux01 = sub_ux[2::4]
+        ux11 = sub_ux[3::4]
 
-    sub_intensity = sub_intensity.reshape(num_pixels, num_pts)
-    chunk_raw = np.sum(
-        sub_intensity * weights[None, :],
-        axis=1,
-    )
+        uy00 = sub_uy[0::4]
+        uy10 = sub_uy[1::4]
+        uy01 = sub_uy[2::4]
+        uy11 = sub_uy[3::4]
+
+        # Fit local affine transformation: u(x) = M * x + u0
+        h = 0.5 * pixel_size
+        M11 = (-ux00 + ux10 - ux01 + ux11) / (4.0 * h)
+        M12 = (-ux00 - ux10 + ux01 + ux11) / (4.0 * h)
+        M21 = (-uy00 + uy10 - uy01 + uy11) / (4.0 * h)
+        M22 = (-uy00 - uy10 + uy01 + uy11) / (4.0 * h)
+
+        u0x = (ux00 + ux10 + ux01 + ux11) / 4.0
+        u0y = (uy00 + uy10 + uy01 + uy11) / 4.0
+
+        # Linear coordinate mapping: J = I - M and c = xc - u0
+        J11 = 1.0 - M11
+        J12 = -M12
+        J21 = -M21
+        J22 = 1.0 - M22
+
+        # Shift to pixel center (xc, yc)
+        xc = px_x + h
+        yc = px_y + h
+        cx = xc - u0x
+        cy = yc - u0y
+
+        k = 2.0 * np.pi / p_phys
+
+        def integrate_local_wave(
+            wx: np.ndarray, wy: np.ndarray, phi: np.ndarray
+        ) -> np.ndarray:
+            eps = 1e-12
+            cond_both = (np.abs(wx) > eps) & (np.abs(wy) > eps)
+            cond_xonly = (np.abs(wx) > eps) & (np.abs(wy) <= eps)
+            cond_yonly = (np.abs(wx) <= eps) & (np.abs(wy) > eps)
+            cond_none = (np.abs(wx) <= eps) & (np.abs(wy) <= eps)
+
+            val = np.zeros_like(wx)
+
+            if np.any(cond_both):
+                wxb = wx[cond_both]
+                wyb = wy[cond_both]
+                phib = phi[cond_both]
+                factor = -1.0 / (wxb * wyb)
+                c4 = factor * np.cos(wxb * h + wyb * h + phib)
+                c3 = factor * np.cos(-wxb * h + wyb * h + phib)
+                c2 = factor * np.cos(wxb * h - wyb * h + phib)
+                c1 = factor * np.cos(-wxb * h - wyb * h + phib)
+                val[cond_both] = c4 - c3 - c2 + c1
+
+            if np.any(cond_xonly):
+                wxx = wx[cond_xonly]
+                phix = phi[cond_xonly]
+                factor = h / wxx
+                c4 = factor * np.sin(wxx * h + phix)
+                c3 = factor * np.sin(-wxx * h + phix)
+                c2 = -factor * np.sin(wxx * h + phix)
+                c1 = -factor * np.sin(-wxx * h + phix)
+                val[cond_xonly] = c4 - c3 - c2 + c1
+
+            if np.any(cond_yonly):
+                wyy = wy[cond_yonly]
+                phiy = phi[cond_yonly]
+                factor = h / wyy
+                c4 = factor * np.sin(wyy * h + phiy)
+                c3 = -factor * np.sin(wyy * h + phiy)
+                c2 = factor * np.sin(-wyy * h + phiy)
+                c1 = -factor * np.sin(-wyy * h + phiy)
+                val[cond_yonly] = c4 - c3 - c2 + c1
+
+            if np.any(cond_none):
+                phin = phi[cond_none]
+                val[cond_none] = 4.0 * h * h * np.cos(phin)
+
+            return val
+
+        # Term 1: Constant
+        val_const = (I0 - 0.5 * GAMMA) * (4.0 * h * h)
+
+        # Term 2: cos(k * x_ref)
+        val_t2 = 0.5 * GAMMA * integrate_local_wave(k * J11, k * J12, k * cx)
+
+        # Term 3: cos(k * y_ref)
+        val_t3 = 0.5 * GAMMA * integrate_local_wave(k * J21, k * J22, k * cy)
+
+        # Term 4: 0.25 * cos(k * (x_ref + y_ref))
+        val_t4 = 0.25 * GAMMA * integrate_local_wave(
+            k * (J11 + J21), k * (J12 + J22), k * (cx + cy)
+        )
+
+        # Term 5: 0.25 * cos(k * (x_ref - y_ref))
+        val_t5 = 0.25 * GAMMA * integrate_local_wave(
+            k * (J11 - J21), k * (J12 - J22), k * (cx - cy)
+        )
+
+        total_int = val_const + val_t2 + val_t3 + val_t4 + val_t5
+        chunk_raw = total_int / (pixel_size * pixel_size)
+    else:
+        cos_x = np.cos(2.0 * np.pi * x_def / p_phys)
+        cos_y = np.cos(2.0 * np.pi * y_def / p_phys)
+        sub_intensity = (
+            I0 + 0.5 * GAMMA * (1.0 + cos_x) * (1.0 + cos_y) - GAMMA
+        )
+
+        sub_intensity = sub_intensity.reshape(num_pixels, num_pts)
+        chunk_raw = np.sum(
+            sub_intensity * weights[None, :],
+            axis=1,
+        )
     return start_idx, end_idx, chunk_raw
 
 
@@ -289,65 +402,49 @@ def generate_grid_images(
         if not (is_rect_base or is_needed_frame):
             continue
 
-        if method == "analytic":
-            # Only Frame 0 is analytic, and Frame 10 if it is the rigid case
-            is_rigid = case_name.endswith("rigid")
-            if ff > 0 and not (ff == 10 and is_rigid):
-                continue
-            dx = disp_x[0, ff] if ff > 0 else 0.0
-            dy = disp_y[0, ff] if ff > 0 else 0.0
-            pixel_raw = evaluate_eggbox_analytic_average(
-                start_x=-roi_size / 2.0 - dx,
-                start_y=-roi_size / 2.0 - dy,
-                pixel_size=pixel_size,
-                num_px_x=TARG_PX_X,
-                num_px_y=TARG_PX_Y,
-                p_phys=p_phys,
-                i0=I0,
-                gamma=GAMMA,
-            )
+        if method == "rect" or method == "gauss":
+            S = param * param
+        elif method == "analytic":
+            S = 1
         else:
-            if method == "rect" or method == "gauss":
-                S = param * param
-            else:
-                S = param
+            S = param
 
-            # Limit memory usage by restricting integration points per chunk
-            MAX_PTS_PER_CHUNK = 1000000
-            pixels_per_chunk = max(1, MAX_PTS_PER_CHUNK // S)
-            total_pixels = TARG_PX_X * TARG_PX_Y
+        # Limit memory usage by restricting integration points per chunk
+        MAX_PTS_PER_CHUNK = 1000000
+        pixels_per_chunk = max(1, MAX_PTS_PER_CHUNK // S)
+        total_pixels = TARG_PX_X * TARG_PX_Y
 
-            tasks = []
-            for start_idx in range(0, total_pixels, pixels_per_chunk):
-                end_idx = min(start_idx + pixels_per_chunk, total_pixels)
-                tasks.append(
-                    (
-                        start_idx,
-                        end_idx,
-                        method,
-                        param,
-                        pixel_size,
-                        roi_size,
-                        p_phys,
-                    )
+        tasks = []
+        for start_idx in range(0, total_pixels, pixels_per_chunk):
+            end_idx = min(start_idx + pixels_per_chunk, total_pixels)
+            tasks.append(
+                (
+                    start_idx,
+                    end_idx,
+                    method,
+                    param,
+                    pixel_size,
+                    roi_size,
+                    p_phys,
                 )
+            )
 
-            if ff == 0:
-                init_args = (None, None, None, None)
-            else:
-                init_args = (coords, connect, disp_x[:, ff], disp_y[:, ff])
+        if ff == 0:
+            init_args = (None, None, None, None)
+        else:
+            init_args = (coords, connect, disp_x[:, ff], disp_y[:, ff])
 
-            with Pool(
-                processes=NUM_PROCESSES,
-                initializer=init_worker,
-                initargs=init_args,
-            ) as pool:
-                results = pool.map(process_pixel_chunk, tasks)
+        with Pool(
+            processes=NUM_PROCESSES,
+            initializer=init_worker,
+            initargs=init_args,
+        ) as pool:
+            results = pool.map(process_pixel_chunk, tasks)
 
-            pixel_raw_flat = np.zeros(total_pixels, dtype=np.float64)
-            for start_idx, end_idx, chunk_raw in results:
-                pixel_raw_flat[start_idx:end_idx] = chunk_raw
-            pixel_raw = pixel_raw_flat.reshape(TARG_PX_Y, TARG_PX_X)
+        pixel_raw_flat = np.zeros(total_pixels, dtype=np.float64)
+        for start_idx, end_idx, chunk_raw in results:
+            pixel_raw_flat[start_idx:end_idx] = chunk_raw
+        pixel_raw = pixel_raw_flat.reshape(TARG_PX_Y, TARG_PX_X)
 
         pixel_raw_flipped: np.ndarray = np.flipud(pixel_raw)
 
