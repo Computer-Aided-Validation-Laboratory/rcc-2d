@@ -23,7 +23,7 @@ from exp1params import (
     P_PIXELS,
     I0,
     GAMMA,
-    OUTPUT_DIR,
+    TEXTURE_OUTPUT_DIR,
 )
 
 
@@ -73,7 +73,7 @@ def generate_texture(
     pixel_bb: np.ndarray = np.round(pixel_raw_flipped * max_val_bb)
     pixel_bb = np.clip(pixel_bb, 0.0, max_val_bb)
 
-    tex_out_dir: Path = OUTPUT_DIR / "textures"
+    tex_out_dir = TEXTURE_OUTPUT_DIR
     tex_out_dir.mkdir(parents=True, exist_ok=True)
 
     p_val: int = max(TARG_PX_X, TARG_PX_Y)
@@ -98,7 +98,7 @@ def main() -> None:
     print(80 * "=")
 
     print("\nGenerating reference textures...")
-    tex_dir_ref = OUTPUT_DIR / "textures"
+    tex_dir_ref = TEXTURE_OUTPUT_DIR
     if tex_dir_ref.exists():
         for p in tex_dir_ref.glob("*_int_rect_*"):
             p.unlink()

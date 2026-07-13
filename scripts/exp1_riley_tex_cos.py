@@ -21,6 +21,7 @@ from exp1params import (
     TEX_PX_PAD,
     BIT_DEPTHS,
     TEX_OVERSAMPLES,
+    TEXTURE_OUTPUT_DIR,
     DEFORMATION_CASES,
 )
 
@@ -54,7 +55,7 @@ def main() -> None:
     else:
         cases = [Path("data") / c for c in DEFORMATION_CASES]
 
-    tex_dir = Path("./out/exp1_analytic_grid/textures")
+    tex_dir = TEXTURE_OUTPUT_DIR
     p_val = max(TARG_PX_X, TARG_PX_Y)
 
     for case_path in cases:

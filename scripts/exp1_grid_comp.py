@@ -20,10 +20,10 @@ from exp1params import (
 
 # Output directory paths
 ANALYTIC_DIR = Path(
-    "./out/exp1_analytic_grid/plate260_cam256_quad9_rigid"
+    "./out/exp1_2d_analytic_render_world/plate260_cam256_quad9_rigid"
 )
 RILEY_FUNC_DIR = Path(
-    "./out/riley_plate260_cam256_quad9_rigid_func"
+    "./out/exp1_riley_render_world/plate260_cam256_quad9_rigid"
 )
 RILEY_TEX_DIR = Path(
     "./out/riley_plate260_cam256_quad9_rigid_tex"

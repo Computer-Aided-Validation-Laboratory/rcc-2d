@@ -51,6 +51,7 @@ GAMMA: float = 0.4
 
 # Output directory for Exp 1
 OUTPUT_DIR: Path = Path("./out/exp1_analytic_grid")
+TEXTURE_OUTPUT_DIR: Path = Path("./out/exp1_analytic_textures")
 
 # List of deformation cases to process (e.g. rigid, affine)
 DEFORMATION_CASES: List[str] = [
