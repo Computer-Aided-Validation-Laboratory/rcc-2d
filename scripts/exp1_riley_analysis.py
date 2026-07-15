@@ -28,9 +28,8 @@ from exp1params import (
 )
 
 SSAA_LEVELS = [1, 2, 4, 8, 16]
-RESULTS_DIR_FUNC = Path("./out/exp1_riley_func")
-RILEY_FUNC_WORLD_DIR = Path("./out/exp1_riley_func_world")
-RESULTS_DIR_TEX = Path("./out/exp1_riley_tex")
+RESULTS_DIR_FUNC = Path("./out/exp1_riley_analysis_func_world")
+RESULTS_DIR_TEX = Path("./out/exp1_riley_analysis_tex")
 
 
 def analyze_riley_case(case_name: str) -> None:
@@ -141,7 +140,7 @@ def analyze_riley_case(case_name: str) -> None:
         }
 
         # Load Riley Function Shader data
-        func_dir_base = RILEY_FUNC_WORLD_DIR / case_name
+        func_dir_base = RILEY_FUNC_DIR / case_name
         for ss in SSAA_LEVELS:
             samples = ss * ss
             for bb in BIT_DEPTHS:

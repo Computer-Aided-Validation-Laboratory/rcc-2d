@@ -23,9 +23,8 @@ from exp1params import (
     TEX_OVERSAMPLES,
     TEXTURE_OUTPUT_DIR,
     DEFORMATION_CASES,
+    SSAA_LEVELS,
 )
-
-SSAA_LEVELS = [1, 2, 4, 8, 16]
 
 
 def get_riley_mesh_type(nodes_per_elem: int) -> riley.MeshType:
@@ -66,7 +65,7 @@ def main() -> None:
         case_name = case_path.name
         print(f"\nProcessing case: {case_name}")
 
-        out_base = Path(f"./out/riley_{case_name}_tex")
+        out_base = Path(f"./out/exp1_riley_render_tex/{case_name}")
         shutil.rmtree(out_base, ignore_errors=True)
         out_base.mkdir(parents=True, exist_ok=True)
 
@@ -175,8 +174,8 @@ def main() -> None:
                         shader_type=riley.ShaderType.tex,
                         uvs=uvs,
                         texture=texture,
-                        sample=riley.TextureSample.cubic_catmull_rom,
-                        sample_mode=riley.TextureSampleMode.lut_lerp,
+                        sample=riley.TextureSample.linear,
+                        sample_mode=riley.TextureSampleMode.direct,
                         bits=bb,
                         scaling_type=riley.ScaleStrategy.fixed,
                         scaling_min=0.0,
@@ -199,6 +198,7 @@ def main() -> None:
                         total_threads=4,
                         save_strategy=riley.SaveStrategy.both,
                     )
+                    config.tile_size_min = 1
                     config.save_format = riley.ImageFormat.tiff
                     config.save_bits = 16 if bb in (12, 16) else 8
                     config.save_scaling = riley.ScaleStrategy.none

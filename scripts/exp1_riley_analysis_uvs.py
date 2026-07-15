@@ -9,10 +9,11 @@
 
 from pathlib import Path
 
-import exp1_analysis_riley as riley_analysis
+import exp1_riley_analysis as riley_analysis
 
-riley_analysis.OUTPUT_DIR = Path("./out/exp1_2d_analytic_render_uvs")
-riley_analysis.RILEY_FUNC_WORLD_DIR = Path("./out/exp1_riley_render_uvs")
+riley_analysis.OUTPUT_DIR = Path("./out/exp1_gridint2d_render_uvs")
+riley_analysis.RILEY_FUNC_DIR = Path("./out/exp1_riley_render_func_uvs")
+riley_analysis.RILEY_FUNC_TEX = Path("./out/exp1_riley_render_tex")
 riley_analysis.RESULTS_DIR_FUNC = Path("./out/exp1_riley_analysis_uvs")
 riley_analysis.RESULTS_DIR_TEX = Path("./out/exp1_riley_analysis_uvs_tex")
 

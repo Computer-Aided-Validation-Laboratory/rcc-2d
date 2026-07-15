@@ -21,10 +21,6 @@ from exp1params import (
     ACTIVE_FRAMES,
 )
 
-# Output directory for results / plots
-RESULTS_DIR = Path("./out/exp1_analytic_results")
-
-
 def analyze_case(case_dir: Path) -> tuple[list, list]:
     """Analyze convergence metrics for a specific case."""
     case_name = case_dir.name

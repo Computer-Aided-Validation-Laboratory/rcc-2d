@@ -8,12 +8,20 @@
 # --------------------------------------------------------------------------
 
 from pathlib import Path
+import multiprocessing
 
-import exp1_analyse_analytic_eggbox as analytic_analysis
+import exp1_pxint2d_numerical_render_uvs as renderer
 
-analytic_analysis.OUTPUT_DIR = Path("./out/exp1_2d_analytic_render_world")
-analytic_analysis.RESULTS_DIR = Path("./out/exp1_2d_analytic_analysis_world")
-
+renderer.OUTPUT_DIR = Path("./out/exp1_gridint2d_render_uvs")
+renderer.INTEGRATION_METHODS = [
+    ("analytic", 0),
+]
 
 if __name__ == "__main__":
-    analytic_analysis.main()
+    
+    try:
+        multiprocessing.set_start_method("spawn")
+    except RuntimeError:
+        pass
+
+    renderer.main()

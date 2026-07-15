@@ -11,7 +11,6 @@ import sys
 import os
 from pathlib import Path
 from multiprocessing import Pool
-
 import numpy as np
 import pyvista as pv
 from PIL import Image
@@ -19,6 +18,7 @@ from PIL import Image
 from exp1common import (
     build_pv_mesh,
     compute_riley_bbox_uvs,
+    get_riley_bbox_uv_transform,
     parse_case_params,
 )
 from exp1params import (
@@ -30,11 +30,33 @@ from exp1params import (
     P_PIXELS,
     I0,
     GAMMA,
-    OUTPUT_DIR,
     NUM_PROCESSES,
     DEFORMATION_CASES,
     ACTIVE_FRAMES,
 )
+
+OUTPUT_DIR = Path("./out/exp1_gridint2d_render_uvs")
+INTEGRATION_METHODS = [
+    ("rect", 1),
+    ("rect", 2),
+    ("rect", 4),
+    ("rect", 8),
+    ("rect", 16),
+    # ("rect", 32),
+    # ("rect", 64),
+    # ("rect", 128),
+    # ("rect", 256),
+    # ("rect", 512),
+    # ("rect", 1024), TODO: check we have the RAM for this
+    ("gauss", 2),
+    ("gauss", 4),
+    ("gauss", 8),
+    ("gauss", 16),
+    # ("gauss", 32),
+    # ("gauss", 64),
+    # ("gauss", 128),
+    ("analytic", 0),
+]
 
 _worker_mesh = None
 MAX_PTS_PER_CHUNK = int(
@@ -89,6 +111,9 @@ def process_pixel_chunk(args) -> tuple[int, int, np.ndarray]:
         pixel_size,
         roi_size,
         p_phys,
+        uv_scale,
+        u_offset,
+        v_offset,
     ) = args
 
     pixel_indices = np.arange(start_idx, end_idx)
@@ -181,7 +206,8 @@ def process_pixel_chunk(args) -> tuple[int, int, np.ndarray]:
         A22 = np.ones(num_pixels)
 
     if method == "analytic":
-        k = 2.0 * np.pi / p_phys
+        pitch_uv = uv_scale * p_phys
+        k_uv = 2.0 * np.pi / pitch_uv
 
         def integrate_local_wave(
             wx: np.ndarray, wy: np.ndarray, phi: np.ndarray
@@ -234,24 +260,32 @@ def process_pixel_chunk(args) -> tuple[int, int, np.ndarray]:
         # Term 1: Constant
         val_const = (I0 - 0.5 * GAMMA) * (4.0 * h * h)
 
-        # Term 2: cos(k * x_ref)
+        # Term 2: cos(2pi * u_ref / pitch_uv)
         val_t2 = 0.5 * GAMMA * integrate_local_wave(
-            k * A11, k * A12, k * x0_ref
+            k_uv * uv_scale * A11,
+            k_uv * uv_scale * A12,
+            k_uv * uv_scale * x0_ref,
         )
 
-        # Term 3: cos(k * y_ref)
+        # Term 3: cos(2pi * v_ref / pitch_uv)
         val_t3 = 0.5 * GAMMA * integrate_local_wave(
-            k * A21, k * A22, k * y0_ref
+            -k_uv * uv_scale * A21,
+            -k_uv * uv_scale * A22,
+            -k_uv * uv_scale * y0_ref,
         )
 
-        # Term 4: 0.25 * cos(k * (x_ref + y_ref))
+        # Term 4: 0.25 * cos(2pi * (u_ref + v_ref) / pitch_uv)
         val_t4 = 0.25 * GAMMA * integrate_local_wave(
-            k * (A11 + A21), k * (A12 + A22), k * (x0_ref + y0_ref)
+            k_uv * uv_scale * (A11 - A21),
+            k_uv * uv_scale * (A12 - A22),
+            k_uv * uv_scale * (x0_ref - y0_ref),
         )
 
-        # Term 5: 0.25 * cos(k * (x_ref - y_ref))
+        # Term 5: 0.25 * cos(2pi * (u_ref - v_ref) / pitch_uv)
         val_t5 = 0.25 * GAMMA * integrate_local_wave(
-            k * (A11 - A21), k * (A12 - A22), k * (x0_ref - y0_ref)
+            k_uv * uv_scale * (A11 + A21),
+            k_uv * uv_scale * (A12 + A22),
+            k_uv * uv_scale * (x0_ref + y0_ref),
         )
 
         total_int = val_const + val_t2 + val_t3 + val_t4 + val_t5
@@ -271,8 +305,11 @@ def process_pixel_chunk(args) -> tuple[int, int, np.ndarray]:
             + A22[:, None] * y_local[None, :]
         )
 
-        cos_x = np.cos(2.0 * np.pi * x_ref / p_phys)
-        cos_y = np.cos(2.0 * np.pi * y_ref / p_phys)
+        u_ref = uv_scale * x_ref
+        v_ref = -uv_scale * y_ref
+        pitch_uv = uv_scale * p_phys
+        cos_x = np.cos(2.0 * np.pi * u_ref / pitch_uv)
+        cos_y = np.cos(2.0 * np.pi * v_ref / pitch_uv)
         sub_intensity = (
             I0 + 0.5 * GAMMA * (1.0 + cos_x) * (1.0 + cos_y) - GAMMA
         )
@@ -310,13 +347,15 @@ def generate_grid_images(case_dir: Path, method: str, param: int) -> None:
     num_frames: int = disp_x.shape[1]
 
     uvs = compute_riley_bbox_uvs(coords, camera_pixels, TEX_PX_PAD)
-    np.savetxt(case_dir / "uvs_exp1_sin_grid.csv", uvs, delimiter=",")
-    np.savetxt(case_dir / "uvs_exp1_sin_grid_world.csv", uvs, delimiter=",")
+    np.savetxt(case_dir / "uvs_exp1_sin_grid_uvs.csv", uvs, delimiter=",")
 
     case_out_dir: Path = OUTPUT_DIR / case_name
     case_out_dir.mkdir(parents=True, exist_ok=True)
 
     p_phys: float = P_PIXELS * pixel_size
+    uv_scale, u_offset, v_offset = get_riley_bbox_uv_transform(
+        coords, camera_pixels, TEX_PX_PAD
+    )
     active_frames = get_active_frames()
 
     for ff in range(num_frames):
@@ -347,6 +386,9 @@ def generate_grid_images(case_dir: Path, method: str, param: int) -> None:
                     pixel_size,
                     roi_size,
                     p_phys,
+                    uv_scale,
+                    u_offset,
+                    v_offset,
                 )
             )
 
@@ -397,7 +439,7 @@ def generate_grid_images(case_dir: Path, method: str, param: int) -> None:
 
 def main() -> None:
     print(80 * "=")
-    print("Experiment 1: Custom Renderer Numerical Integration (World)")
+    print("Experiment 1: Custom Renderer Numerical Integration (UVs)")
     print(80 * "=")
 
     if len(sys.argv) > 1:

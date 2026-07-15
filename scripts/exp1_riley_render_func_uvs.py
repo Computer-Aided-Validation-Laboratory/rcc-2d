@@ -14,7 +14,11 @@ from pathlib import Path
 import numpy as np
 import riley
 
-from exp1common import compute_riley_bbox_uvs, parse_case_params
+from exp1common import (
+    compute_riley_bbox_uvs,
+    get_riley_bbox_uv_transform,
+    parse_case_params,
+)
 from exp1params import (
     TARG_PX_X,
     TARG_PX_Y,
@@ -24,10 +28,10 @@ from exp1params import (
     GAMMA,
     BIT_DEPTHS,
     DEFORMATION_CASES,
+    SSAA_LEVELS,
 )
 
-SSAA_LEVELS = [1, 2, 4, 8, 16]
-OUTPUT_ROOT = Path("./out/exp1_riley_func_world")
+OUTPUT_ROOT = Path("./out/exp1_riley_render_func_uvs")
 
 
 def get_ssaa_levels() -> list[int]:
@@ -63,7 +67,7 @@ def get_riley_mesh_type(nodes_per_elem: int) -> riley.MeshType:
 
 def main() -> None:
     print(80 * "=")
-    print("Riley Function Shader Render (Experiment 1, World)")
+    print("Riley Function Shader Render (Experiment 1, UVs)")
     print(80 * "=")
 
     if len(sys.argv) > 1:
@@ -106,7 +110,7 @@ def main() -> None:
         disp[:, :, 1] = disp_y.T
 
         camera_pixels, roi_size = parse_case_params(case_path)
-        uvs_path = case_path / "uvs_exp1_sin_grid_world.csv"
+        uvs_path = case_path / "uvs_exp1_sin_grid_uvs.csv"
         if uvs_path.exists():
             uvs = np.loadtxt(uvs_path, delimiter=",")
         else:
@@ -115,12 +119,16 @@ def main() -> None:
         # Setup the mesh input
         mtype = get_riley_mesh_type(connect.shape[1])
         p_phys = P_PIXELS * (roi_size / camera_pixels)
+        uv_scale, u_offset, v_offset = get_riley_bbox_uv_transform(
+            coords, camera_pixels, TEX_PX_PAD
+        )
+        pitch_uv = uv_scale * p_phys
 
         func_params = riley.FuncShaderParams(
             eggbox_mean=I0,
             eggbox_contrast=GAMMA,
-            eggbox_pitch=(p_phys, p_phys),
-            eggbox_phase=(0.0, 0.0),
+            eggbox_pitch=(pitch_uv, pitch_uv),
+            eggbox_phase=(-u_offset, -v_offset),
         )
 
         # Auto-placement of camera
@@ -166,7 +174,7 @@ def main() -> None:
                     shader_type=riley.ShaderType.func,
                     uvs=uvs,
                     func_shader_builtin=riley.FuncShaderBuiltin.eggbox,
-                    func_shader_coord_mode=riley.FuncCoordMode.world_reference,
+                    func_shader_coord_mode=riley.FuncCoordMode.uv,
                     func_shader_params=func_params,
                     bits=bb,
                     scaling_type=riley.ScaleStrategy.fixed,
@@ -187,9 +195,10 @@ def main() -> None:
 
                 config = riley.create_raster_config(
                     num_frames=num_frames,
-                    total_threads=int(os.environ.get("EXP1_RILEY_THREADS", "2")),
+                    total_threads=int(os.environ.get("EXP1_RILEY_THREADS", "4")),
                     save_strategy=riley.SaveStrategy.both,
                 )
+                config.tile_size_min = 1 
                 config.save_format = riley.ImageFormat.tiff
                 config.save_bits = 16 if bb in (12, 16) else 8
                 config.save_scaling = riley.ScaleStrategy.none

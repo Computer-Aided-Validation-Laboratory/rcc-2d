@@ -9,16 +9,11 @@
 
 from pathlib import Path
 
-import exp1_cos_eggbox_numint_world as analytic_render
+import exp1_pxint2d_analysis as analytic_analysis
 
-analytic_render.OUTPUT_DIR = Path("./out/exp1_2d_analytic_render_world")
+analytic_analysis.OUTPUT_DIR = Path("./out/exp1_gridint2d_render_uvs")
+analytic_analysis.RESULTS_DIR = Path("./out/exp1_gridint2d_analysis_uvs")
 
 
 if __name__ == "__main__":
-    import multiprocessing
-
-    try:
-        multiprocessing.set_start_method("spawn")
-    except RuntimeError:
-        pass
-    analytic_render.main()
+    analytic_analysis.main()
