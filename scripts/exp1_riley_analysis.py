@@ -27,7 +27,7 @@ from exp1params import (
     TEX_OVERSAMPLES,
 )
 
-SSAA_LEVELS = [1, 2, 4, 8, 16]
+SSAA_LEVELS = [1, 2, 4, 8]
 RESULTS_DIR_FUNC = Path("./out/exp1_riley_analysis_func_world")
 RESULTS_DIR_TEX = Path("./out/exp1_riley_analysis_tex")
 
@@ -185,7 +185,7 @@ def analyze_riley_case(case_name: str) -> None:
         }
 
         # Load Riley Texture Shader data
-        tex_dir_base = Path("./out") / RILEY_TEX_DIR / f"{case_name}"
+        tex_dir_base = RILEY_TEX_DIR / case_name
         for ss in SSAA_LEVELS:
             samples = ss * ss
             for bb in BIT_DEPTHS:
@@ -865,12 +865,28 @@ def analyze_riley_case(case_name: str) -> None:
 
 
 def main() -> None:
-    shutil.rmtree(RESULTS_DIR_FUNC, ignore_errors=True)
+    global ACTIVE_FRAMES
+
+    frames_str = os.environ.get("EXP1_ACTIVE_FRAMES")
+    cases_str = os.environ.get("EXP1_CASES")
+    is_subset_analysis = bool(frames_str)
+    if frames_str:
+        ACTIVE_FRAMES = [
+            int(val.strip()) for val in frames_str.split(",") if val.strip()
+        ]
+
+    if not is_subset_analysis:
+        shutil.rmtree(RESULTS_DIR_FUNC, ignore_errors=True)
+        shutil.rmtree(RESULTS_DIR_TEX, ignore_errors=True)
     RESULTS_DIR_FUNC.mkdir(parents=True, exist_ok=True)
-    shutil.rmtree(RESULTS_DIR_TEX, ignore_errors=True)
     RESULTS_DIR_TEX.mkdir(parents=True, exist_ok=True)
 
-    for case_name in DEFORMATION_CASES:
+    cases = (
+        [case.strip() for case in cases_str.split(",") if case.strip()]
+        if cases_str
+        else DEFORMATION_CASES
+    )
+    for case_name in cases:
         analyze_riley_case(case_name)
 
     print("\nRiley analysis completed successfully.")

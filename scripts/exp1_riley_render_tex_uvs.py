@@ -9,6 +9,7 @@
 
 import sys
 import shutil
+import os
 from pathlib import Path
 import numpy as np
 from PIL import Image
@@ -27,6 +28,30 @@ from exp1params import (
 )
 
 
+def get_ssaa_levels() -> list[int]:
+    """Return configured SSAA levels, optionally restricted by the env."""
+    levels_str = os.environ.get("EXP1_SSAA_LEVELS")
+    if not levels_str:
+        return SSAA_LEVELS
+    return [int(val.strip()) for val in levels_str.split(",") if val.strip()]
+
+
+def get_bit_depths() -> list[int]:
+    """Return configured output bit depths, optionally restricted by env."""
+    bits_str = os.environ.get("EXP1_BIT_DEPTHS")
+    if not bits_str:
+        return BIT_DEPTHS
+    return [int(val.strip()) for val in bits_str.split(",") if val.strip()]
+
+
+def get_texture_oversamples() -> list[int]:
+    """Return configured texture oversamples, optionally restricted by env."""
+    oversamp_str = os.environ.get("EXP1_TEX_OVERSAMPLES")
+    if not oversamp_str:
+        return TEX_OVERSAMPLES
+    return [int(val.strip()) for val in oversamp_str.split(",") if val.strip()]
+
+
 def get_riley_mesh_type(nodes_per_elem: int) -> riley.MeshType:
     """Determine Riley MeshType from connectivity width."""
     if nodes_per_elem == 3:
@@ -42,6 +67,36 @@ def get_riley_mesh_type(nodes_per_elem: int) -> riley.MeshType:
     raise ValueError(
         f"Unsupported element type with {nodes_per_elem} nodes."
     )
+
+
+def compute_texture_world_uvs(
+    coords: np.ndarray,
+    roi_size: float,
+    camera_pixels: int,
+    pad: int,
+    oversamp: int,
+) -> np.ndarray:
+    """Map world coordinates to centres of the generated texture texels.
+
+    The eggbox texture covers the fixed padded camera ROI, rather than the
+    mesh bounding box.  Its rows are flipped before loading into Riley, so
+    increasing world y maps to decreasing texture-row coordinate.
+    """
+    tex_w = oversamp * (camera_pixels + 2 * pad)
+    tex_h = oversamp * (camera_pixels + 2 * pad)
+    pixel_size = roi_size / camera_pixels
+    texel_size = pixel_size / oversamp
+    x_start = -0.5 * roi_size - pad * pixel_size
+    y_end = 0.5 * roi_size + pad * pixel_size
+
+    uvs = np.empty((coords.shape[0], 2), dtype=np.float64)
+    uvs[:, 0] = (
+        (coords[:, 0] - x_start) / texel_size - 0.5
+    ) / (tex_w - 1.0)
+    uvs[:, 1] = (
+        (y_end - coords[:, 1]) / texel_size - 0.5
+    ) / (tex_h - 1.0)
+    return np.ascontiguousarray(uvs)
 
 
 def main() -> None:
@@ -66,19 +121,25 @@ def main() -> None:
         print(f"\nProcessing case: {case_name}")
 
         out_base = Path(f"./out/exp1_riley_render_tex/{case_name}")
-        shutil.rmtree(out_base, ignore_errors=True)
+        is_subset_render = any(
+            os.environ.get(name)
+            for name in (
+                "EXP1_SSAA_LEVELS",
+                "EXP1_BIT_DEPTHS",
+                "EXP1_TEX_OVERSAMPLES",
+            )
+        )
+        if not is_subset_render:
+            shutil.rmtree(out_base, ignore_errors=True)
         out_base.mkdir(parents=True, exist_ok=True)
 
-        # Load coordinates, connectivity, displacements, and UVs
+        # Load coordinates, connectivity, and displacements.
         coords = np.loadtxt(case_path / "coords.csv", delimiter=",")
         connect_raw = np.loadtxt(
             case_path / "connectivity.csv", delimiter=",", dtype=np.uintp
         )
         disp_x = np.loadtxt(case_path / "field_disp_x.csv", delimiter=",")
         disp_y = np.loadtxt(case_path / "field_disp_y.csv", delimiter=",")
-        uvs = np.loadtxt(
-            case_path / "uvs_exp1_sin_grid.csv", delimiter=","
-        )
 
         if connect_raw.ndim == 1:
             connect_raw = connect_raw.reshape(1, -1)
@@ -125,9 +186,9 @@ def main() -> None:
 
         roi_pos = tuple(riley.roi_cent_from_coords(roi_coords))
 
-        for ss in SSAA_LEVELS:
-            for bb in BIT_DEPTHS:
-                for oversamp in TEX_OVERSAMPLES:
+        for ss in get_ssaa_levels():
+            for bb in get_bit_depths():
+                for oversamp in get_texture_oversamples():
                     print(
                         f"  Running Riley texture render: "
                         f"SSAA={ss}, bits={bb}, oversamp={oversamp}"
@@ -154,12 +215,29 @@ def main() -> None:
                             img_grey = img_in.convert("L")
                             img_np = np.asarray(img_grey)
 
-                    # Normalize texture to [0.0, 1.0]
+                    # Riley's texture interface receives native texel code
+                    # values, not normalised intensities.  It quantises the
+                    # supplied array to u8/u16 before applying its fixed
+                    # output scaling, so passing [0, 1] collapsed this grid
+                    # to essentially binary values.
                     max_val_bb = float(2**bb - 1)
                     texture_raw = np.ascontiguousarray(
                         img_np, dtype=np.float64
                     )
-                    texture = texture_raw / max_val_bb
+                    if bb == 16:
+                        texture = texture_raw
+                        texture_scale_max = max_val_bb
+                    else:
+                        # Riley stores non-16-bit greyscale textures as u8.
+                        texture = texture_raw * (255.0 / max_val_bb)
+                        texture_scale_max = 255.0
+                    uvs = compute_texture_world_uvs(
+                        coords,
+                        roi_size,
+                        camera_pixels,
+                        TEX_PX_PAD,
+                        oversamp,
+                    )
 
                     case_out = (
                         out_base / f"ss{ss}_b{bb}_oversamp{oversamp}"
@@ -174,12 +252,16 @@ def main() -> None:
                         shader_type=riley.ShaderType.tex,
                         uvs=uvs,
                         texture=texture,
-                        sample=riley.TextureSample.linear,
+                        # The source texture contains pixel-box averages.
+                        # Nearest sampling preserves those values at frame 0;
+                        # interpolation would introduce a separate
+                        # reconstruction filter during this consistency test.
+                        sample=riley.TextureSample.nearest,
                         sample_mode=riley.TextureSampleMode.direct,
                         bits=bb,
                         scaling_type=riley.ScaleStrategy.fixed,
                         scaling_min=0.0,
-                        scaling_max=1.0,
+                        scaling_max=texture_scale_max,
                     )
 
                     camera = riley.Camera(
