@@ -185,7 +185,7 @@ def analyze_riley_case(case_name: str) -> None:
         }
 
         # Load Riley Texture Shader data
-        tex_dir_base = Path("./out") / f"riley_{case_name}_tex"
+        tex_dir_base = Path("./out") / RILEY_TEX_DIR / f"{case_name}"
         for ss in SSAA_LEVELS:
             samples = ss * ss
             for bb in BIT_DEPTHS:
