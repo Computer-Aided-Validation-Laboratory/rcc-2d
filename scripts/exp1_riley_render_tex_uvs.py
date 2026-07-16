@@ -28,6 +28,15 @@ from exp1params import (
 )
 
 
+TEX_INTERPOLATORS: dict[str, riley.TextureSample] = {
+    "nearest": riley.TextureSample.nearest,
+    "linear": riley.TextureSample.linear,
+    "cubic_catmull_rom": riley.TextureSample.cubic_catmull_rom,
+    "cubic_mitchell_netravali": riley.TextureSample.cubic_mitchell_netravali,
+    "lanczos3": riley.TextureSample.lanczos3,
+}
+
+
 def get_ssaa_levels() -> list[int]:
     """Return configured SSAA levels, optionally restricted by the env."""
     levels_str = os.environ.get("EXP1_SSAA_LEVELS")
@@ -50,6 +59,23 @@ def get_texture_oversamples() -> list[int]:
     if not oversamp_str:
         return TEX_OVERSAMPLES
     return [int(val.strip()) for val in oversamp_str.split(",") if val.strip()]
+
+
+def get_texture_interpolators() -> list[str]:
+    """Return named Riley texture filters, optionally restricted by env."""
+    interps_str = os.environ.get("EXP1_TEX_INTERPOLATORS")
+    interps = (
+        list(TEX_INTERPOLATORS)
+        if not interps_str
+        else [val.strip() for val in interps_str.split(",") if val.strip()]
+    )
+    invalid = [interp for interp in interps if interp not in TEX_INTERPOLATORS]
+    if invalid:
+        raise ValueError(
+            f"Unsupported texture interpolator(s): {', '.join(invalid)}. "
+            f"Choose from: {', '.join(TEX_INTERPOLATORS)}"
+        )
+    return interps
 
 
 def get_riley_mesh_type(nodes_per_elem: int) -> riley.MeshType:
@@ -120,18 +146,21 @@ def main() -> None:
         case_name = case_path.name
         print(f"\nProcessing case: {case_name}")
 
-        out_base = Path(f"./out/exp1_riley_render_tex/{case_name}")
+        output_root = Path("./out/exp1_riley_render_tex")
         is_subset_render = any(
             os.environ.get(name)
             for name in (
                 "EXP1_SSAA_LEVELS",
                 "EXP1_BIT_DEPTHS",
                 "EXP1_TEX_OVERSAMPLES",
+                "EXP1_TEX_INTERPOLATORS",
             )
         )
         if not is_subset_render:
-            shutil.rmtree(out_base, ignore_errors=True)
-        out_base.mkdir(parents=True, exist_ok=True)
+            shutil.rmtree(output_root / case_name, ignore_errors=True)
+            for old_out in output_root.glob(f"{case_name}_*"):
+                shutil.rmtree(old_out, ignore_errors=True)
+        output_root.mkdir(parents=True, exist_ok=True)
 
         # Load coordinates, connectivity, and displacements.
         coords = np.loadtxt(case_path / "coords.csv", delimiter=",")
@@ -186,119 +215,77 @@ def main() -> None:
 
         roi_pos = tuple(riley.roi_cent_from_coords(roi_coords))
 
-        for ss in get_ssaa_levels():
-            for bb in get_bit_depths():
-                for oversamp in get_texture_oversamples():
-                    print(
-                        f"  Running Riley texture render: "
-                        f"SSAA={ss}, bits={bb}, oversamp={oversamp}"
-                    )
-
-                    # Load texture
-                    tex_filename = (
-                        f"tex_px{p_val}_int_analytic_param_0_b{bb}"
-                        f"_pad{TEX_PX_PAD}_oversamp{oversamp}.tiff"
-                    )
-                    tex_path = tex_dir / tex_filename
-
-                    if not tex_path.exists():
+        for tex_interp in get_texture_interpolators():
+            tex_sample = TEX_INTERPOLATORS[tex_interp]
+            for ss in get_ssaa_levels():
+                for bb in get_bit_depths():
+                    for oversamp in get_texture_oversamples():
                         print(
-                            f"Warning: {tex_path.name} "
-                            f"does not exist. Skipping."
+                            "  Running Riley texture render: "
+                            f"interp={tex_interp}, SSAA={ss}, bits={bb}, "
+                            f"oversamp={oversamp}"
                         )
-                        continue
+                        tex_filename = (
+                            f"tex_px{p_val}_int_analytic_param_0_b{bb}"
+                            f"_pad{TEX_PX_PAD}_oversamp{oversamp}.tiff"
+                        )
+                        tex_path = tex_dir / tex_filename
+                        if not tex_path.exists():
+                            print(f"Warning: {tex_path.name} does not exist. Skipping.")
+                            continue
+                        with Image.open(tex_path) as img_in:
+                            if img_in.mode in ("I;16", "I;16B", "I;16L", "I"):
+                                img_np = np.asarray(img_in)
+                            else:
+                                img_np = np.asarray(img_in.convert("L"))
 
-                    with Image.open(tex_path) as img_in:
-                        if img_in.mode in ("I;16", "I;16B", "I;16L", "I"):
-                            img_np = np.asarray(img_in)
+                        max_val_bb = float(2**bb - 1)
+                        texture_raw = np.ascontiguousarray(img_np, dtype=np.float64)
+                        if bb == 16:
+                            texture = texture_raw
+                            texture_scale_max = max_val_bb
                         else:
-                            img_grey = img_in.convert("L")
-                            img_np = np.asarray(img_grey)
-
-                    # Riley's texture interface receives native texel code
-                    # values, not normalised intensities.  It quantises the
-                    # supplied array to u8/u16 before applying its fixed
-                    # output scaling, so passing [0, 1] collapsed this grid
-                    # to essentially binary values.
-                    max_val_bb = float(2**bb - 1)
-                    texture_raw = np.ascontiguousarray(
-                        img_np, dtype=np.float64
-                    )
-                    if bb == 16:
-                        texture = texture_raw
-                        texture_scale_max = max_val_bb
-                    else:
-                        # Riley stores non-16-bit greyscale textures as u8.
-                        texture = texture_raw * (255.0 / max_val_bb)
-                        texture_scale_max = 255.0
-                    uvs = compute_texture_world_uvs(
-                        coords,
-                        roi_size,
-                        camera_pixels,
-                        TEX_PX_PAD,
-                        oversamp,
-                    )
-
-                    case_out = (
-                        out_base / f"ss{ss}_b{bb}_oversamp{oversamp}"
-                    )
-                    case_out.mkdir(parents=True, exist_ok=True)
-
-                    mesh = riley.Mesh(
-                        mesh_type=mtype,
-                        coords=coords,
-                        connect=connect,
-                        disp=disp,
-                        shader_type=riley.ShaderType.tex,
-                        uvs=uvs,
-                        texture=texture,
-                        # The source texture contains pixel-box averages.
-                        # Nearest sampling preserves those values at frame 0;
-                        # interpolation would introduce a separate
-                        # reconstruction filter during this consistency test.
-                        sample=riley.TextureSample.nearest,
-                        sample_mode=riley.TextureSampleMode.direct,
-                        bits=bb,
-                        scaling_type=riley.ScaleStrategy.fixed,
-                        scaling_min=0.0,
-                        scaling_max=texture_scale_max,
-                    )
-
-                    camera = riley.Camera(
-                        pixels_num=pixels_num,
-                        pixels_size=pixels_size,
-                        pos_world=camera_pos,
-                        rot_world=(0.0, 0.0, 0.0),
-                        roi_cent_world=roi_pos,
-                        focal_length=focal_length,
-                        sub_sample=ss,
-                        coord_sys=riley.CameraCoordSys.opengl,
-                    )
-
-                    config = riley.create_raster_config(
-                        num_frames=num_frames,
-                        total_threads=4,
-                        save_strategy=riley.SaveStrategy.both,
-                    )
-                    config.tile_size_min = 1
-                    config.save_format = riley.ImageFormat.tiff
-                    config.save_bits = 16 if bb in (12, 16) else 8
-                    config.save_scaling = riley.ScaleStrategy.none
-
-                    images = riley.raster(
-                        [mesh],
-                        [camera],
-                        config,
-                        out_dir=str(case_out),
-                    )
-
-                    if images is not None:
-                        for ff in range(num_frames):
-                            frame_img = images[0, ff, 0]
-                            np.save(
-                                case_out / f"image_c00_f{ff:02d}.npy",
-                                frame_img,
-                            )
+                            texture = texture_raw * (255.0 / max_val_bb)
+                            texture_scale_max = 255.0
+                        uvs = compute_texture_world_uvs(
+                            coords, roi_size, camera_pixels, TEX_PX_PAD, oversamp
+                        )
+                        case_out = output_root / (
+                            f"{case_name}_{tex_interp}_ss{ss}_b{bb}"
+                            f"_oversamp{oversamp}"
+                        )
+                        case_out.mkdir(parents=True, exist_ok=True)
+                        mesh = riley.Mesh(
+                            mesh_type=mtype, coords=coords, connect=connect, disp=disp,
+                            shader_type=riley.ShaderType.tex, uvs=uvs, texture=texture,
+                            sample=tex_sample,
+                            sample_mode=riley.TextureSampleMode.direct,
+                            bits=bb, scaling_type=riley.ScaleStrategy.fixed,
+                            scaling_min=0.0, scaling_max=texture_scale_max,
+                        )
+                        camera = riley.Camera(
+                            pixels_num=pixels_num, pixels_size=pixels_size,
+                            pos_world=camera_pos, rot_world=(0.0, 0.0, 0.0),
+                            roi_cent_world=roi_pos, focal_length=focal_length,
+                            sub_sample=ss, coord_sys=riley.CameraCoordSys.opengl,
+                        )
+                        config = riley.create_raster_config(
+                            num_frames=num_frames, total_threads=4,
+                            save_strategy=riley.SaveStrategy.both,
+                        )
+                        config.tile_size_min = 1
+                        config.save_format = riley.ImageFormat.tiff
+                        config.save_bits = 16 if bb in (12, 16) else 8
+                        config.save_scaling = riley.ScaleStrategy.none
+                        images = riley.raster(
+                            [mesh], [camera], config, out_dir=str(case_out)
+                        )
+                        if images is not None:
+                            for ff in range(num_frames):
+                                np.save(
+                                    case_out / f"image_c00_f{ff:02d}.npy",
+                                    images[0, ff, 0],
+                                )
 
     print("All renders completed.")
 

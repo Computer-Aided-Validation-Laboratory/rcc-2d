@@ -36,27 +36,27 @@ from exp1params import (
 )
 
 OUTPUT_DIR = Path("./out/exp1_gridint2d_render_uvs")
-INTEGRATION_METHODS = [
-    ("rect", 1),
-    ("rect", 2),
-    ("rect", 4),
-    ("rect", 8),
-    ("rect", 16),
-    # ("rect", 32),
-    # ("rect", 64),
-    # ("rect", 128),
-    # ("rect", 256),
-    # ("rect", 512),
-    # ("rect", 1024), TODO: check we have the RAM for this
-    ("gauss", 2),
-    ("gauss", 4),
-    ("gauss", 8),
-    ("gauss", 16),
-    # ("gauss", 32),
-    # ("gauss", 64),
-    # ("gauss", 128),
-    ("analytic", 0),
-]
+# INTEGRATION_METHODS = [
+#     ("rect", 1),
+#     ("rect", 2),
+#     ("rect", 4),
+#     ("rect", 8),
+#     ("rect", 16),
+#     # ("rect", 32),
+#     # ("rect", 64),
+#     # ("rect", 128),
+#     # ("rect", 256),
+#     # ("rect", 512),
+#     # ("rect", 1024), TODO: check we have the RAM for this
+#     ("gauss", 2),
+#     ("gauss", 4),
+#     ("gauss", 8),
+#     ("gauss", 16),
+#     # ("gauss", 32),
+#     # ("gauss", 64),
+#     # ("gauss", 128),
+#     ("analytic", 0),
+# ]
 
 _worker_mesh = None
 MAX_PTS_PER_CHUNK = int(

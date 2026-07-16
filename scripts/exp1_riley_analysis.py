@@ -24,20 +24,30 @@ from exp1params import (
     DEFORMATION_CASES,
     ACTIVE_FRAMES,
     OUTPUT_DIR,
+    SSAA_LEVELS,
     TEX_OVERSAMPLES,
 )
 
-SSAA_LEVELS = [1, 2, 4, 8]
+TEX_INTERPOLATORS = (
+    "nearest",
+    "linear",
+    "cubic_catmull_rom",
+    "cubic_mitchell_netravali",
+    "lanczos3",
+)
 RESULTS_DIR_FUNC = Path("./out/exp1_riley_analysis_func_world")
 RESULTS_DIR_TEX = Path("./out/exp1_riley_analysis_tex")
+ANALYSIS_MODE = "both"
 
 
-def analyze_riley_case(case_name: str) -> None:
+def analyze_riley_case(case_name: str, tex_interp: str) -> None:
     print(80 * "=")
-    print(f"Analyzing Riley vs Custom: {case_name}")
+    print(f"Analyzing Riley vs Custom: {case_name} ({tex_interp})")
     print(80 * "=")
 
     case_dir = OUTPUT_DIR / case_name
+    results_dir_tex = RESULTS_DIR_TEX / tex_interp
+    results_dir_tex.mkdir(parents=True, exist_ok=True)
     ssaa_ticks = [1, 4, 16, 64, 256, 1024, 4096, 16384, 65536, 262144]
 
     for ff in ACTIVE_FRAMES:
@@ -185,7 +195,6 @@ def analyze_riley_case(case_name: str) -> None:
         }
 
         # Load Riley Texture Shader data
-        tex_dir_base = RILEY_TEX_DIR / case_name
         for ss in SSAA_LEVELS:
             samples = ss * ss
             for bb in BIT_DEPTHS:
@@ -193,8 +202,9 @@ def analyze_riley_case(case_name: str) -> None:
                     continue
                 max_val = float(2**bb - 1)
                 for oversamp in TEX_OVERSAMPLES:
-                    case_out = (
-                        tex_dir_base / f"ss{ss}_b{bb}_oversamp{oversamp}"
+                    case_out = RILEY_TEX_DIR / (
+                        f"{case_name}_{tex_interp}_ss{ss}_b{bb}"
+                        f"_oversamp{oversamp}"
                     )
                     npy_path = case_out / f"image_c00_f{ff:02d}.npy"
                     tiff_path = case_out / f"cam0_frame{ff}_field0.tiff"
@@ -640,7 +650,7 @@ def analyze_riley_case(case_name: str) -> None:
         )
         plt.tight_layout()
         plt.savefig(
-            RESULTS_DIR_TEX
+            results_dir_tex
             / f"convergence_{case_name}_tex_float_rmse_frame{ff:02d}.png",
             dpi=150,
         )
@@ -716,7 +726,7 @@ def analyze_riley_case(case_name: str) -> None:
         )
         plt.tight_layout()
         plt.savefig(
-            RESULTS_DIR_TEX
+            results_dir_tex
             / f"convergence_{case_name}_tex_float_max_frame{ff:02d}.png",
             dpi=150,
         )
@@ -778,7 +788,7 @@ def analyze_riley_case(case_name: str) -> None:
         )
         plt.tight_layout()
         plt.savefig(
-            RESULTS_DIR_TEX
+            results_dir_tex
             / f"convergence_{case_name}_tex_bits_frame{ff:02d}.png",
             dpi=150,
         )
@@ -857,7 +867,7 @@ def analyze_riley_case(case_name: str) -> None:
         )
         plt.tight_layout()
         plt.savefig(
-            RESULTS_DIR_TEX
+            results_dir_tex
             / f"convergence_{case_name}_tex_max_eb_frame{ff:02d}.png",
             dpi=150,
         )
@@ -869,7 +879,8 @@ def main() -> None:
 
     frames_str = os.environ.get("EXP1_ACTIVE_FRAMES")
     cases_str = os.environ.get("EXP1_CASES")
-    is_subset_analysis = bool(frames_str)
+    interps_str = os.environ.get("EXP1_TEX_INTERPOLATORS")
+    is_subset_analysis = bool(frames_str or interps_str)
     if frames_str:
         ACTIVE_FRAMES = [
             int(val.strip()) for val in frames_str.split(",") if val.strip()
@@ -886,8 +897,28 @@ def main() -> None:
         if cases_str
         else DEFORMATION_CASES
     )
-    for case_name in cases:
-        analyze_riley_case(case_name)
+    interps = (
+        TEX_INTERPOLATORS
+        if not interps_str
+        else tuple(
+            interp.strip()
+            for interp in interps_str.split(",")
+            if interp.strip()
+        )
+    )
+    invalid = set(interps).difference(TEX_INTERPOLATORS)
+    if invalid:
+        raise ValueError(
+            f"Unsupported texture interpolator(s): {', '.join(sorted(invalid))}"
+        )
+    for tex_interp in interps:
+        for case_name in cases:
+            analyze_riley_case(case_name, tex_interp)
+
+    if ANALYSIS_MODE == "func":
+        shutil.rmtree(RESULTS_DIR_TEX, ignore_errors=True)
+    elif ANALYSIS_MODE == "tex":
+        shutil.rmtree(RESULTS_DIR_FUNC, ignore_errors=True)
 
     print("\nRiley analysis completed successfully.")
 
