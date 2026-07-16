@@ -1,0 +1,392 @@
+\documentclass[11pt,a4paper]{article}
+
+\usepackage[margin=25mm]{geometry}
+\usepackage{amsmath,amssymb,bm}
+\usepackage{booktabs}
+\usepackage{microtype}
+\usepackage[hidelinks]{hyperref}
+\usepackage{xcolor}
+\usepackage{enumitem}
+
+\definecolor{accent}{RGB}{52,73,94}
+\hypersetup{colorlinks=true,linkcolor=accent,urlcolor=accent,citecolor=accent}
+
+\newcommand{\R}{\mathbb{R}}
+\newcommand{\ind}{\mathbf{1}}
+\newcommand{\clamp}{\operatorname{clamp}}
+\newcommand{\erf}{\operatorname{erf}}
+\newcommand{\Area}{\operatorname{Area}}
+
+\title{Analytically Integrated Additive Saturating Speckle Models\\
+\large Disk and Gaussian-Blob Fields over Rectangular Pixels}
+\author{}
+\date{}
+
+\begin{document}
+\maketitle
+
+\begin{abstract}
+This note defines two synthetic speckle-pattern models designed for analytically
+integrated image generation: an additive disk model and an additive Gaussian-blob
+model. Individual blob contributions are integrated over each rectangular pixel,
+then summed. Intensity scaling, saturation, and bit-depth quantisation are applied
+only after this integration. The construction is therefore not a Boolean union of
+disk supports; it is an additive field with a pixel-level saturation nonlinearity.
+Its purpose is to provide controlled, deterministic image gradients for digital
+image correlation (DIC) while avoiding numerical pixel quadrature.
+\end{abstract}
+
+\section{Pixel-box image formation}
+
+Let a rectangular pixel be
+\begin{equation}
+P=[x_0,x_1]\times[y_0,y_1],
+\qquad
+|P|=(x_1-x_0)(y_1-y_0).
+\end{equation}
+A square pixel of pitch $h$ is the special case $x_1-x_0=y_1-y_0=h$.
+For a continuous raw texture field $s(\bm{x})$, the exact pixel-box average is
+\begin{equation}
+\bar{s}_P
+=
+\frac{1}{|P|}\int_P s(\bm{x})\,\mathrm{d}\bm{x}.
+\label{eq:pixel-average}
+\end{equation}
+
+The models below use an additive field
+\begin{equation}
+s(\bm{x})=\sum_{i=1}^{N} s_i(\bm{x}).
+\end{equation}
+By linearity,
+\begin{equation}
+\bar{s}_P
+=
+\frac{1}{|P|}\sum_{i=1}^{N}\int_P s_i(\bm{x})\,\mathrm{d}\bm{x}.
+\label{eq:additive-pixel-average}
+\end{equation}
+Thus each blob may be integrated independently, including when blob supports
+overlap.
+
+\subsection{Saturation, intensity mapping, and quantisation}
+
+Each blob has peak raw coverage one.  After all analytically integrated blob
+averages have been added, the pixel coverage is saturated:
+\begin{equation}
+S_P=\clamp\!\left(\bar{s}_P,0,1\right),
+\qquad
+\clamp(z,0,1)=\min\!\left(1,\max(0,z)\right).
+\label{eq:clamp}
+\end{equation}
+The recorded normalised intensity uses the existing mean and contrast
+parameters $I_0$ and $\gamma$:
+\begin{equation}
+I_P=I_0+\gamma\left(1-2S_P\right).
+\label{eq:affine-map}
+\end{equation}
+For a $B$-bit camera, the quantised integer grey level is
+\begin{equation}
+g_P
+=
+\operatorname{round}\!\left[(2^B-1)I_P\right].
+\label{eq:quantisation}
+\end{equation}
+Equations~\eqref{eq:clamp}--\eqref{eq:quantisation} are deliberately applied
+\emph{after} analytic pixel integration. In general,
+\begin{equation}
+\int_P \clamp\!\left(s(\bm{x}),0,1\right)\,\mathrm{d}\bm{x}
+\neq
+\clamp\!\left(\int_P s(\bm{x})\,\mathrm{d}\bm{x},0,|P|\right).
+\end{equation}
+The proposed model uses the right-hand ordering as a defined image-generation
+rule; it is not intended to reproduce the exact geometric union of opaque paint
+disks.
+
+\section{Additive saturating disk model}
+
+\subsection{Raw disk field}
+
+Disk $i$ has centre $\bm{c}_i=(c_{x,i},c_{y,i})$, radius $R_i$, and signed
+amplitude $A_i$. Its contribution is
+\begin{equation}
+s_i^{\mathrm{disk}}(x,y)
+=
+A_i\,
+\ind\!\left[(x-c_{x,i})^2+(y-c_{y,i})^2\le R_i^2\right].
+\label{eq:disk-field}
+\end{equation}
+Positive and negative amplitudes permit bright-on-dark or dark-on-bright
+constructions. The complete field is
+\begin{equation}
+s^{\mathrm{disk}}(x,y)
+=
+\sum_{i=1}^{N}s_i^{\mathrm{disk}}(x,y).
+\end{equation}
+Overlap is additive: two coincident unit-amplitude disks produce a raw value of
+two before the final intensity mapping and saturation.
+
+\subsection{Exact rectangular-pixel integral}
+
+For disk $i$,
+\begin{equation}
+\int_P s_i^{\mathrm{disk}}(x,y)\,\mathrm{d}x\,\mathrm{d}y
+=
+A_i\,\Area(P\cap D_i),
+\label{eq:disk-area-basic}
+\end{equation}
+where $D_i$ is the disk support. Therefore
+\begin{equation}
+\boxed{
+\bar{s}^{\mathrm{disk}}_P
+=
+\frac{1}{|P|}
+\sum_{i=1}^{N}A_i\,\Area(P\cap D_i)
+}
+\label{eq:disk-pixel-average}
+\end{equation}
+is exact, apart from floating-point evaluation of elementary functions.
+
+To evaluate the intersection area, translate the pixel into coordinates centred
+on disk $i$:
+\begin{equation}
+a=x_0-c_{x,i},\quad b=x_1-c_{x,i},\quad
+c=y_0-c_{y,i},\quad d=y_1-c_{y,i}.
+\end{equation}
+Define
+\begin{equation}
+h(u)=\sqrt{R_i^2-u^2},\qquad |u|\le R_i.
+\end{equation}
+The exact area is the one-dimensional expression
+\begin{equation}
+\Area(P\cap D_i)
+=
+\int_{\max(a,-R_i)}^{\min(b,R_i)}
+\left[
+\min\!\left(d,h(u)\right)
+-
+\max\!\left(c,-h(u)\right)
+\right]_+\,\mathrm{d}u,
+\label{eq:disk-slice-integral}
+\end{equation}
+where $[z]_+=\max(z,0)$. Although written as an integral,
+Equation~\eqref{eq:disk-slice-integral} is piecewise analytic. The required
+circle antiderivative is
+\begin{equation}
+H(u;R)
+=
+\frac{1}{2}
+\left[
+ u\sqrt{R^2-u^2}
+ +R^2\arcsin\!\left(\frac{u}{R}\right)
+\right],
+\qquad
+\frac{\mathrm{d}H}{\mathrm{d}u}=\sqrt{R^2-u^2}.
+\label{eq:circle-antiderivative}
+\end{equation}
+
+A robust exact implementation proceeds as follows:
+\begin{enumerate}[leftmargin=*,itemsep=2pt]
+\item Clip the horizontal interval to $[a,b]\cap[-R_i,R_i]$.
+\item Form breakpoints from the clipped endpoints and every valid intersection
+      of a horizontal pixel edge with the circle:
+      \begin{equation}
+      u=\pm\sqrt{R_i^2-c^2}\quad (|c|<R_i),
+      \qquad
+      u=\pm\sqrt{R_i^2-d^2}\quad (|d|<R_i).
+      \end{equation}
+\item Sort and deduplicate the breakpoints.
+\item On each open subinterval, evaluate one midpoint to determine which branches
+      of $\min(d,h)$, $\max(c,-h)$, and $[\cdot]_+$ are active.
+\item Integrate that fixed branch exactly. Every branch is a linear combination
+      of a constant and $\pm h(u)$, so its definite integral uses only endpoint
+      differences and $H(u;R_i)$ from Equation~\eqref{eq:circle-antiderivative}.
+\end{enumerate}
+
+Useful early-out cases are
+\begin{align}
+P\cap D_i=\varnothing
+&\quad\Rightarrow\quad \Area(P\cap D_i)=0,\\
+P\subseteq D_i
+&\quad\Rightarrow\quad \Area(P\cap D_i)=|P|,\\
+D_i\subseteq P
+&\quad\Rightarrow\quad \Area(P\cap D_i)=\pi R_i^2.
+\end{align}
+
+\subsection{Why this is not a Boolean union}
+
+A Boolean disk pattern would use
+\begin{equation}
+s_{\mathrm{bool}}(\bm{x})
+=
+A\,\ind\!\left[\bm{x}\in\bigcup_iD_i\right],
+\end{equation}
+whose pixel integral requires the union area
+$\Area(P\cap\bigcup_iD_i)$. The additive model instead uses
+\begin{equation}
+\sum_i A_i\Area(P\cap D_i),
+\end{equation}
+so overlaps are intentionally counted more than once before saturation. This
+choice eliminates multi-disk union geometry while retaining exact integration of
+every individual disk.
+
+\section{Additive saturating Gaussian-blob model}
+
+\subsection{Isotropic Gaussian field}
+
+An isotropic Gaussian blob is
+\begin{equation}
+s_i^{\mathrm{G}}(x,y)
+=
+A_i\exp\!\left[
+-\frac{(x-c_{x,i})^2+(y-c_{y,i})^2}{2\sigma_i^2}
+\right],
+\label{eq:gaussian-field}
+\end{equation}
+where $A_i$ is the peak amplitude and $\sigma_i$ is the standard deviation.
+The full field is additive:
+\begin{equation}
+s^{\mathrm{G}}(x,y)=\sum_{i=1}^{N}s_i^{\mathrm{G}}(x,y).
+\end{equation}
+Because the exponent is separable in $x$ and $y$, the rectangular-pixel integral
+factorises exactly.
+
+Define
+\begin{align}
+E_{x,i}
+&=
+\erf\!\left(\frac{x_1-c_{x,i}}{\sqrt{2}\sigma_i}\right)
+-
+\erf\!\left(\frac{x_0-c_{x,i}}{\sqrt{2}\sigma_i}\right),\\
+E_{y,i}
+&=
+\erf\!\left(\frac{y_1-c_{y,i}}{\sqrt{2}\sigma_i}\right)
+-
+\erf\!\left(\frac{y_0-c_{y,i}}{\sqrt{2}\sigma_i}\right).
+\end{align}
+Then
+\begin{equation}
+\int_P s_i^{\mathrm{G}}(x,y)\,\mathrm{d}x\,\mathrm{d}y
+=
+A_i\frac{\pi\sigma_i^2}{2}E_{x,i}E_{y,i},
+\label{eq:gaussian-pixel-integral}
+\end{equation}
+and hence
+\begin{equation}
+\boxed{
+\bar{s}^{\mathrm{G}}_P
+=
+\frac{1}{|P|}
+\sum_{i=1}^{N}
+A_i\frac{\pi\sigma_i^2}{2}E_{x,i}E_{y,i}
+}
+\label{eq:gaussian-pixel-average}
+\end{equation}
+without supersampling or numerical quadrature.
+
+The whole-plane integral of one blob is
+\begin{equation}
+\int_{\R^2}s_i^{\mathrm{G}}(x,y)\,\mathrm{d}x\,\mathrm{d}y
+=2\pi A_i\sigma_i^2.
+\end{equation}
+If instead blob $i$ is normalised to prescribed integrated weight $w_i$, use
+\begin{equation}
+s_i^{\mathrm{G}}(x,y)
+=
+\frac{w_i}{2\pi\sigma_i^2}
+\exp\!\left[-\frac{\|\bm{x}-\bm{c}_i\|^2}{2\sigma_i^2}\right].
+\end{equation}
+
+\subsection{Axis-aligned anisotropic Gaussian blobs}
+
+For widths $\sigma_{x,i}$ and $\sigma_{y,i}$,
+\begin{equation}
+s_i^{\mathrm{AG}}(x,y)
+=
+A_i\exp\!\left[
+-\frac{(x-c_{x,i})^2}{2\sigma_{x,i}^2}
+-\frac{(y-c_{y,i})^2}{2\sigma_{y,i}^2}
+\right].
+\end{equation}
+The exact pixel integral is
+\begin{equation}
+\int_P s_i^{\mathrm{AG}}\,\mathrm{d}x\,\mathrm{d}y
+=
+A_i\frac{\pi\sigma_{x,i}\sigma_{y,i}}{2}
+E_{x,i}^{(\sigma_x)}E_{y,i}^{(\sigma_y)},
+\end{equation}
+where each error-function difference uses the corresponding directional width.
+The whole-plane integral is $2\pi A_i\sigma_{x,i}\sigma_{y,i}$.
+
+A rotated or correlated Gaussian remains analytically integrable over the whole
+plane, but its axis-aligned rectangular-pixel integral is expressed through a
+bivariate normal cumulative distribution function rather than a product of two
+ordinary error functions.
+
+\section{Optional compact support for Gaussian blobs}
+
+The untruncated Gaussian has infinite support, although its contribution becomes
+exponentially small. A circular cutoff at $R_i=k\sigma_i$ defines
+\begin{equation}
+s_{i,k}^{\mathrm{G}}(\bm{x})
+=
+s_i^{\mathrm{G}}(\bm{x})
+\ind\!\left[\|\bm{x}-\bm{c}_i\|\le k\sigma_i\right].
+\end{equation}
+Its whole-plane integral is
+\begin{equation}
+2\pi A_i\sigma_i^2\left(1-e^{-k^2/2}\right).
+\end{equation}
+However, a circular cutoff destroys Cartesian separability for pixels intersecting
+the cutoff boundary. Pixels wholly inside the support retain
+Equation~\eqref{eq:gaussian-pixel-integral}; pixels wholly outside contribute zero;
+boundary pixels require a piecewise one-dimensional integral or numerical
+quadrature. A square cutoff
+$|x-c_{x,i}|\le k\sigma_i$, $|y-c_{y,i}|\le k\sigma_i$ preserves separability by
+clipping the pixel limits before evaluating the error-function expression.
+
+\section{Comparison of the two models}
+
+\begin{table}[ht]
+\centering
+\small
+\begin{tabular}{@{}lll@{}}
+\toprule
+Property & Additive disks & Additive Gaussians \\
+\midrule
+Primitive field & Piecewise constant & Smooth \\
+Individual pixel integral & Circle--rectangle area & Product of error functions \\
+Overlap handling & Additive before saturation & Additive before saturation \\
+Compact support & Exact & Optional approximation/cutoff \\
+Boundary regularity & Discontinuous & Infinitely differentiable \\
+Numerical quadrature needed & No & No, without circular cutoff \\
+Main cost & Piecewise geometry & Special-function evaluation \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+Both constructions provide deterministic pixel values and permit direct control of
+blob centres, sizes, amplitudes, density, mean intensity, contrast, saturation, and
+bit depth. The Gaussian model offers the simplest closed-form rectangular integral
+and smooth image gradients. The disk model provides compact, sharp-edged features
+while remaining analytically integrable through exact disk--rectangle intersection
+areas.
+
+\section{Recommended image-generation sequence}
+
+For either model, a clear computational definition is
+\begin{enumerate}[leftmargin=*,itemsep=2pt]
+\item Generate blob parameters $(\bm{c}_i,R_i,A_i)$ or
+      $(\bm{c}_i,\sigma_i,A_i)$.
+\item Identify blobs whose support or effective support can influence pixel $P$.
+\item Evaluate every individual blob--pixel integral analytically.
+\item Sum the contributions and divide by pixel area.
+\item Apply affine mean/contrast mapping.
+\item Saturate to the camera range.
+\item Quantise to the requested bit depth.
+\end{enumerate}
+
+This ordering isolates the analytically integrated texture model from the later
+nonlinear camera operations. It is therefore well suited to renderer-convergence
+and DIC uncertainty studies in which pixel-integration error must be separated from
+DIC systematic error.
+
+\end{document}

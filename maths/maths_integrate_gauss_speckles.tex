@@ -1,0 +1,175 @@
+\documentclass[11pt,a4paper]{article}
+
+\usepackage[utf8]{inputenc}
+\usepackage{amsmath,amssymb,mathtools}
+\usepackage{geometry}
+\usepackage{microtype}
+
+\geometry{margin=1in}
+
+\title{Analytical Pixel Integration of Gaussian Speckle Blobs}
+\author{Renderer Convergence Conjecture}
+\date{\today}
+
+\begin{document}
+
+\maketitle
+
+\section{Purpose}
+
+This note derives the pixel integral for the untruncated Gaussian blobs used
+in Experiment 2.  It distinguishes the rigid and general affine cases, and
+records the consequences of the current radial cutoff and additive clamp.
+
+\section{Reference Speckle Field}
+
+Let $\mathbf{r}=(x,y)^T$ be reference coordinates, and let blob $j$ have
+centre $\mathbf{c}_j$ and common standard deviation $\sigma$.  Its
+untruncated coverage is
+\begin{equation}
+ g_j(\mathbf{r}) =
+ \exp\left(-\frac{\lVert\mathbf{r}-\mathbf{c}_j\rVert^2}
+ {2\sigma^2}\right).
+\end{equation}
+Ignoring overlap saturation for the moment, the total coverage and intensity
+are
+\begin{align}
+ G(\mathbf{r}) &= \sum_j g_j(\mathbf{r}), \\
+ I(\mathbf{r}) &= I_0 + \gamma\left[1-2G(\mathbf{r})\right].
+\end{align}
+Thus a unit coverage is black, $I_0-\gamma$, and zero coverage is white,
+$I_0+\gamma$.  The implemented renderer instead uses
+$G \leftarrow \min(G,1)$; this is discussed in Section~\ref{sec:limits}.
+
+\section{Pixel Mapping}
+
+Let $\mathbf{q}=(q_x,q_y)^T\in[-h,h]^2$ be coordinates relative to the
+centre of a target pixel, where $2h$ is the target-pixel width.  On a rigid
+or affine patch, the inverse map from target to reference coordinates is
+\begin{equation}
+ \mathbf{r}(\mathbf{q}) = \mathbf{r}_0 + \mathbf{A}\mathbf{q}.
+ \label{eq:affine-map}
+\end{equation}
+Here $\mathbf{A}$ is the local inverse deformation gradient and
+$\mathbf{r}_0$ is the reference coordinate corresponding to the target
+pixel centre.  The pixel average of blob $j$ is
+\begin{equation}
+ \bar{g}_j = \frac{1}{4h^2}
+ \int_{-h}^{h}\int_{-h}^{h}
+ g_j\left(\mathbf{r}_0+\mathbf{A}\mathbf{q}\right)
+ \,dq_y\,dq_x.
+ \label{eq:pixel-average}
+\end{equation}
+
+Define $\mathbf{d}_j=\mathbf{r}_0-\mathbf{c}_j$.  If $\mathbf{A}$ is
+nonsingular, define
+\begin{equation}
+ \boldsymbol{\mu}_j=-\mathbf{A}^{-1}\mathbf{d}_j,
+ \qquad
+ \mathbf{B}=\mathbf{A}^T\mathbf{A},
+ \qquad
+ \boldsymbol{\Sigma}=\sigma^2\mathbf{B}^{-1}.
+\end{equation}
+The exponent in Equation~\eqref{eq:pixel-average} becomes
+\begin{equation}
+ g_j\left(\mathbf{r}(\mathbf{q})\right)=
+ \exp\left[-\frac{1}{2}
+ (\mathbf{q}-\boldsymbol{\mu}_j)^T
+ \mathbf{B}(\mathbf{q}-\boldsymbol{\mu}_j)/\sigma^2\right].
+ \label{eq:target-gaussian}
+\end{equation}
+
+\section{General Affine Result}
+
+Let $\Phi_2(\mathbf{z};\boldsymbol{\mu},\boldsymbol{\Sigma})$ denote the
+bivariate normal CDF through upper limits $\mathbf{z}$.  For the rectangle
+$R=[-h,h]^2$, let $P_R$ be the usual inclusion--exclusion of its four CDF
+corners.  Then
+\begin{equation}
+ \int_R g_j\left(\mathbf{r}(\mathbf{q})\right)\,d\mathbf{q}
+ = \frac{2\pi\sigma^2}{\left|\det\mathbf{A}\right|}P_R.
+ \label{eq:affine-cdf}
+\end{equation}
+Equation~\eqref{eq:affine-cdf} is exact for any nonsingular affine map.
+For a general shear, it requires a correlated bivariate normal CDF, rather
+than only the scalar error function.
+
+\section{Error-Function Form}
+
+If $\mathbf{B}$ is diagonal, write
+\begin{equation}
+ \mathbf{B}=\operatorname{diag}(b_x,b_y).
+\end{equation}
+The target-coordinate Gaussian is then separable.  Define
+\begin{align}
+ E_x &= \operatorname{erf}\left(
+ \frac{\sqrt{b_x}(h-\mu_{j,x})}{\sqrt{2}\sigma}
+ \right)-\operatorname{erf}\left(
+ \frac{\sqrt{b_x}(-h-\mu_{j,x})}{\sqrt{2}\sigma}
+ \right), \\
+ E_y &= \operatorname{erf}\left(
+ \frac{\sqrt{b_y}(h-\mu_{j,y})}{\sqrt{2}\sigma}
+ \right)-\operatorname{erf}\left(
+ \frac{\sqrt{b_y}(-h-\mu_{j,y})}{\sqrt{2}\sigma}
+ \right).
+\end{align}
+The exact blob integral is
+\begin{equation}
+ \int_R g_j\left(\mathbf{r}(\mathbf{q})\right)\,d\mathbf{q}
+ = \frac{\pi\sigma^2}{2\sqrt{b_xb_y}} E_xE_y.
+ \label{eq:erf-result}
+\end{equation}
+
+For a rigid map, $\mathbf{A}$ is a rotation and therefore
+$\mathbf{B}=\mathbf{I}$, so Equation~\eqref{eq:erf-result} applies
+directly.  Translation-only rigid motion is the special case
+$\mathbf{A}=\mathbf{I}$.  Axis-aligned affine scaling also remains
+separable.  A general affine map with shear or non-orthogonal mapped axes
+does not: use Equation~\eqref{eq:affine-cdf} instead.
+
+\section{Intensity Integral}
+
+If the blobs do not saturate when added, linearity gives
+\begin{equation}
+ \bar{I}=I_0+\gamma\left[1-2\sum_j\bar{g}_j\right].
+\end{equation}
+Only nearby blobs need be considered in a numerical implementation.  The
+untruncated expression has nonzero tails, but they decay exponentially and
+may be culled by a conservative tolerance without changing the formula.
+
+\section{Cutoff and Clamp Limitations}
+\label{sec:limits}
+
+The present pattern truncates each blob radially at $k\sigma$:
+\begin{equation}
+ g_j^{(k)}(\mathbf{r})=g_j(\mathbf{r})
+ \mathbf{1}\!\left(\lVert\mathbf{r}-\mathbf{c}_j\rVert\leq k\sigma\right).
+\end{equation}
+Under Equation~\eqref{eq:affine-map}, this adds an elliptical domain to the
+pixel rectangle.  The integral is consequently over the intersection of a
+rectangle and an ellipse, and is not represented by the simple products of
+error functions above.  The fraction of a complete untruncated Gaussian's
+integral discarded outside the radius is
+\begin{equation}
+ \exp\left(-k^2/2\right).
+\end{equation}
+For $k=4$, this is approximately $3.35\times10^{-4}$.  Removing the hard
+cutoff is therefore the cleanest route to an analytic reference.
+
+Likewise, the implemented $\min(\sum_j g_j,1)$ is nonlinear.  Where blobs
+overlap enough to saturate, the pixel must be partitioned by the saturation
+contour, so the linear sum of Equation~\eqref{eq:affine-cdf} is no longer
+exact.  The analytic path is exact when saturation is absent; otherwise a
+numerical correction or a different non-saturating composition rule is
+required.
+
+\section{Implementation Consequence}
+
+For a first analytic Gaussian renderer, use untruncated blobs and the linear
+sum.  Use Equation~\eqref{eq:erf-result} for rigid motion and diagonal
+affine maps.  For a fully general affine deformation, evaluate the four
+terms of Equation~\eqref{eq:affine-cdf} with a robust bivariate-normal CDF.
+Keep the current quadrature renderer as the reference for cutoff or clamp
+behaviour until their domain intersections are handled explicitly.
+
+\end{document}

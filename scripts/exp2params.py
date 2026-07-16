@@ -1,0 +1,75 @@
+# --------------------------------------------------------------------------
+# Renderer Convergence Conjecture: Data & Analysis
+#
+# Copyright (c) 2026 scepticalrabbit (Lloyd Fletcher)
+# Licensed under the MIT License (see LICENSE file for details)
+#
+# Authors: scepticalrabbit (Lloyd Fletcher)
+# --------------------------------------------------------------------------
+
+from pathlib import Path
+from typing import List, Tuple
+
+# Output directory for Exp 2
+OUTPUT_DIR: Path = Path("./out/exp2_speckint2d_render_uvs")
+TEXTURE_OUTPUT_DIR: Path = Path("./out/exp2_analytic_speckle_textures")
+
+TARG_PX_X: int = 256
+TARG_PX_Y: int = 256
+TEX_PX_PAD: int = 4
+TEX_OVERSAMPLES: List[int] = [1, 2, 4, 8, 16, 32, 64]
+BIT_DEPTHS: List[int] = [8, 12, 16]
+NUM_PROCESSES: int = 8
+
+# Integration methods and parameters
+INTEGRATION_METHODS: List[Tuple[str, int]] = [
+    ("rect", 1),
+    ("rect", 2),
+    ("rect", 4),
+    ("rect", 8),
+    # ("rect", 16),
+    # ("rect", 32),
+    # ("rect", 64),
+    # ("rect", 128),
+    # ("rect", 256),
+    # ("rect", 512),
+    # ("rect", 1024), TODO: check we have the RAM for this
+    # ("mc", 16),
+    # ("mc", 64),
+    # ("mc", 256),
+    # ("mc", 1024),
+    ("gauss", 2),
+    ("gauss", 4),
+    ("gauss", 8),
+    # ("gauss", 16),
+    # ("gauss", 32),
+    # ("gauss", 64),
+    # ("gauss", 128),
+    # ("analytic", 0),
+]
+
+# Speckle pattern parameters
+PX_PER_SPECK: float = 5.0
+I0: float = 0.5
+GAMMA: float = 0.4
+# Fraction of each unperturbed lattice cell covered by black disk area.
+BLACK_AREA_FRACTIONS: List[float] = [0.6]
+SPECKLE_TYPES: List[str] = ["disk", "gausstrunc"]
+ANALYTIC_SPECKLE_TYPES: List[str] = ["diskaddsat", "gausscont"]
+PERTURBATION_DISTRIBUTIONS: List[str] = ["uniform"] # "gaussian"
+PERTURBATION_FRACTIONS: List[float] = [0.25]
+RANDOM_SEED: int = 3
+GAUSSIAN_CUTOFF_SIGMAS: float = 4.0
+
+# List of deformation cases to process (e.g. rigid, affine)
+DEFORMATION_CASES: List[str] = [
+    "plate260_cam256_quad9_rigid",
+    "plate260_cam256_quad9_affine",
+]
+
+# List of frames to generate and analyze (e.g. [0, 5])
+ACTIVE_FRAMES: List[int] = [0, 1]
+
+# Per-texel SSAA levels for the analytic speckle texture generator.
+TEX_SSAA_LEVELS: List[int] = [1, 2, 4, 8, 16]
+RILEY_SSAA_LEVLES: List[int] = [1, 2, 4]
