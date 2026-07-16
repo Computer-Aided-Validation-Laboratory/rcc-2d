@@ -20,6 +20,7 @@ from exp1params import (
     TEX_PX_PAD,
     TEX_OVERSAMPLES,
     BIT_DEPTHS,
+    CLEAR_DIR,
     P_PIXELS,
     I0,
     GAMMA,
@@ -99,7 +100,7 @@ def main() -> None:
 
     print("\nGenerating reference textures...")
     tex_dir_ref = TEXTURE_OUTPUT_DIR
-    if tex_dir_ref.exists():
+    if CLEAR_DIR and tex_dir_ref.exists():
         for p in tex_dir_ref.glob("*_int_rect_*"):
             p.unlink()
 

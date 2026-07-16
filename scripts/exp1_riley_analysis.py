@@ -21,6 +21,7 @@ from exp1params import (
     TARG_PX_Y,
     TEX_PX_PAD,
     BIT_DEPTHS,
+    CLEAR_DIR,
     DEFORMATION_CASES,
     ACTIVE_FRAMES,
     OUTPUT_DIR,
@@ -886,7 +887,7 @@ def main() -> None:
             int(val.strip()) for val in frames_str.split(",") if val.strip()
         ]
 
-    if not is_subset_analysis:
+    if CLEAR_DIR and not is_subset_analysis:
         shutil.rmtree(RESULTS_DIR_FUNC, ignore_errors=True)
         shutil.rmtree(RESULTS_DIR_TEX, ignore_errors=True)
     RESULTS_DIR_FUNC.mkdir(parents=True, exist_ok=True)
@@ -915,9 +916,9 @@ def main() -> None:
         for case_name in cases:
             analyze_riley_case(case_name, tex_interp)
 
-    if ANALYSIS_MODE == "func":
+    if CLEAR_DIR and ANALYSIS_MODE == "func":
         shutil.rmtree(RESULTS_DIR_TEX, ignore_errors=True)
-    elif ANALYSIS_MODE == "tex":
+    elif CLEAR_DIR and ANALYSIS_MODE == "tex":
         shutil.rmtree(RESULTS_DIR_FUNC, ignore_errors=True)
 
     print("\nRiley analysis completed successfully.")

@@ -15,6 +15,7 @@ from PIL import Image
 
 from exp1params import (
     BIT_DEPTHS,
+    CLEAR_DIR,
     INTEGRATION_METHODS,
     OUTPUT_DIR,
     DEFORMATION_CASES,
@@ -681,7 +682,8 @@ def main() -> None:
     print(80 * "=")
 
     import shutil
-    shutil.rmtree(RESULTS_DIR, ignore_errors=True)
+    if CLEAR_DIR:
+        shutil.rmtree(RESULTS_DIR, ignore_errors=True)
     RESULTS_DIR.mkdir(parents=True, exist_ok=True)
 
     cases = [OUTPUT_DIR / name for name in DEFORMATION_CASES]

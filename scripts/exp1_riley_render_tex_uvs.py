@@ -21,6 +21,7 @@ from exp1params import (
     TARG_PX_Y,
     TEX_PX_PAD,
     BIT_DEPTHS,
+    CLEAR_DIR,
     TEX_OVERSAMPLES,
     TEXTURE_OUTPUT_DIR,
     DEFORMATION_CASES,
@@ -157,7 +158,7 @@ def main() -> None:
                 "EXP1_TEX_INTERPOLATORS",
             )
         )
-        if not is_subset_render:
+        if CLEAR_DIR and not is_subset_render:
             shutil.rmtree(output_root / case_name, ignore_errors=True)
             for old_out in output_root.glob(f"{case_name}_*"):
                 shutil.rmtree(old_out, ignore_errors=True)

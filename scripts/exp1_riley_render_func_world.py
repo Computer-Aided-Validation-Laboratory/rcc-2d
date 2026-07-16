@@ -23,6 +23,7 @@ from exp1params import (
     I0,
     GAMMA,
     BIT_DEPTHS,
+    CLEAR_DIR,
     DEFORMATION_CASES,
     RILEY_RASTER_THREADS,
     SSAA_LEVELS,
@@ -81,7 +82,8 @@ def main() -> None:
         print(f"\nProcessing case: {case_name}")
 
         out_base = OUTPUT_ROOT / case_name
-        shutil.rmtree(out_base, ignore_errors=True)
+        if CLEAR_DIR:
+            shutil.rmtree(out_base, ignore_errors=True)
         out_base.mkdir(parents=True, exist_ok=True)
 
         # Load coordinates, connectivity, displacements, and UVs
