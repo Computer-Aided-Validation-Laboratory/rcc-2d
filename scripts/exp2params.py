@@ -54,7 +54,9 @@ I0: float = 0.5
 GAMMA: float = 0.4
 # Fraction of each unperturbed lattice cell covered by black disk area.
 BLACK_AREA_FRACTIONS: List[float] = [0.6]
-SPECKLE_TYPES: List[str] = ["disk", "gausstrunc"]
+# Re-enable ``disk`` and ``gausstrunc`` here for numerical-only comparisons.
+# They are excluded while the additive-saturation analytic reference is active.
+SPECKLE_TYPES: List[str] = []
 ANALYTIC_SPECKLE_TYPES: List[str] = ["diskaddsat", "gausscont"]
 PERTURBATION_DISTRIBUTIONS: List[str] = ["uniform"] # "gaussian"
 PERTURBATION_FRACTIONS: List[float] = [0.25]
