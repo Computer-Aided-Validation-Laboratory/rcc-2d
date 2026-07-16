@@ -34,8 +34,8 @@ INTEGRATION_METHODS: List[Tuple[str, int]] = [
     ("rect", 2),
     ("rect", 4),
     ("rect", 8),
-    # ("rect", 16),
-    # ("rect", 32),
+    ("rect", 16),
+    ("rect", 32),
     # ("rect", 64),
     # ("rect", 128),
     # ("rect", 256),
@@ -48,8 +48,8 @@ INTEGRATION_METHODS: List[Tuple[str, int]] = [
     ("gauss", 2),
     ("gauss", 4),
     ("gauss", 8),
-    # ("gauss", 16),
-    # ("gauss", 32),
+    ("gauss", 16),
+    ("gauss", 32),
     # ("gauss", 64),
     # ("gauss", 128),
     ("analytic", 0),
@@ -69,9 +69,12 @@ PERTURBATION_DISTRIBUTIONS: List[str] = ["uniform"] # "gaussian"
 PERTURBATION_FRACTIONS: List[float] = [0.25]
 RANDOM_SEED: int = 3
 GAUSSIAN_CUTOFF_SIGMAS: float = 4.0
-# For `gausscont`, the equivalent disk radius is the contour at this fraction
-# of peak coverage.  A value of 0.1 gives sigma = radius / sqrt(2 ln(10)).
-GAUSSIAN_EQUIVALENT_DISK_EDGE_FRACTION: float = 0.1
+# For `gausscont`, this is the remaining fraction of peak coverage at the
+# nominal equivalent-disk radius R (not a multiplier of sigma): 0.01 means
+# 1% remains at R (R = 3.03 sigma), 0.1 means 10% remains (R = 2.15 sigma),
+# and 0.5 means 50% remains (R = 1.18 sigma). Thus
+# sigma = R / sqrt(-2 ln(edge_fraction)); larger values make wider blobs.
+GAUSSIAN_EQUIVALENT_DISK_EDGE_FRACTION: float = 0.4
 # `gausscont` remains mathematically untruncated; centres beyond this many
 # standard deviations are omitted as a bounded, configurable tail tolerance.
 GAUSSIAN_CONTINUOUS_TAIL_SIGMAS: float = 8.0
