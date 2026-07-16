@@ -15,6 +15,11 @@ import numpy as np
 from PIL import Image
 import riley
 
+# Experiment 1 deliberately generates very large, oversampled numeric
+# textures.  They are local trusted data, so Pillow's decompression-bomb
+# safeguard is inapplicable here.
+Image.MAX_IMAGE_PIXELS = None
+
 from exp1common import parse_case_params
 from exp1params import (
     TARG_PX_X,
