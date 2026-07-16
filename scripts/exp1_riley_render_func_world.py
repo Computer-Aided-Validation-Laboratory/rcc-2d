@@ -24,6 +24,7 @@ from exp1params import (
     GAMMA,
     BIT_DEPTHS,
     DEFORMATION_CASES,
+    RILEY_RASTER_THREADS,
     SSAA_LEVELS,
 )
 
@@ -187,9 +188,15 @@ def main() -> None:
 
                 config = riley.create_raster_config(
                     num_frames=num_frames,
-                    total_threads=int(os.environ.get("EXP1_RILEY_THREADS", "4")),
+                    total_threads=RILEY_RASTER_THREADS,
                     save_strategy=riley.SaveStrategy.both,
                 )
+                # The Python wrapper creates one render group. Keep geometry
+                # serial and give that group's workers to the raster loop.
+                config.frame_batch_size_per_group = 1
+                config.max_geom_jobs_in_flight_per_group = 1
+                config.max_geom_workers_per_job = 1
+                config.max_raster_workers_per_job = RILEY_RASTER_THREADS
                 config.tile_size_min = 1
                 config.save_format = riley.ImageFormat.tiff
                 config.save_bits = 16 if bb in (12, 16) else 8

@@ -7,6 +7,9 @@
 
 """Generate exact texel averages for additive-saturation speckle fields."""
 
+import multiprocessing
+import os
+
 import numpy as np
 
 from exp2params import (
@@ -15,6 +18,7 @@ from exp2params import (
     GAUSSIAN_CUTOFF_SIGMAS,
     GAMMA,
     I0,
+    NUM_PROCESSES,
     PERTURBATION_DISTRIBUTIONS,
     PERTURBATION_FRACTIONS,
     PX_PER_SPECK,
@@ -25,7 +29,16 @@ from exp2params import (
     TEX_PX_PAD,
     TEXTURE_OUTPUT_DIR,
 )
-from exp2speckint2d import make_speckle_pattern, save_image
+from exp2speckint2d import (
+    MAX_PIXELS_PER_CHUNK,
+    make_speckle_pattern,
+    save_image,
+)
+
+NUM_PROCESSES_RUN = max(1, min(
+    NUM_PROCESSES,
+    int(os.environ.get("EXP2_NUM_PROCESSES", str(NUM_PROCESSES))),
+))
 
 
 def tag(
@@ -72,7 +85,7 @@ def generate_texture(
         GAMMA,
     )
     image = np.empty((tex_h, tex_w), dtype=np.float64)
-    rows_per_batch = max(1, 1_000_000 // tex_w)
+    rows_per_batch = max(1, MAX_PIXELS_PER_CHUNK // tex_w)
     x = bounds[0] + np.arange(tex_w) * texel_size
 
     for start_row in range(0, tex_h, rows_per_batch):
@@ -106,6 +119,7 @@ def generate_texture(
 def main() -> None:
     print("Experiment 2: analytic additive-saturation texture generator")
     TEXTURE_OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
+    jobs = []
     for pattern_type in ANALYTIC_SPECKLE_TYPES:
         if pattern_type not in {"diskaddsat", "gausscont"}:
             raise ValueError(f"Unsupported analytic type: {pattern_type}")
@@ -119,18 +133,23 @@ def main() -> None:
                             distribution,
                             fraction,
                         )
-                        print(
-                            f"  {pattern_name}, "
-                            f"oversamp={oversample}"
+                        print(f"  {pattern_name}, oversamp={oversample}")
+                        jobs.append(
+                            (
+                                pattern_type,
+                                black_fraction,
+                                distribution,
+                                fraction,
+                                oversample,
+                            )
                         )
-                        generate_texture(
-                            pattern_type,
-                            black_fraction,
-                            distribution,
-                            fraction,
-                            oversample,
-                        )
+    with multiprocessing.Pool(NUM_PROCESSES_RUN) as pool:
+        pool.starmap(generate_texture, jobs)
 
 
 if __name__ == "__main__":
+    try:
+        multiprocessing.set_start_method("spawn")
+    except RuntimeError:
+        pass
     main()

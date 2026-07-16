@@ -16,10 +16,17 @@ TEXTURE_OUTPUT_DIR: Path = Path("./out/exp1_analytic_textures")
 
 TARG_PX_X: int = 256
 TARG_PX_Y: int = 256
+BACKGROUND: float = 0.5
 TEX_PX_PAD: int = 4
 TEX_OVERSAMPLES: List[int] = [1, 2, 4, 8, 16, 32, 64]
 BIT_DEPTHS: List[int] = [8, 12, 16]
 NUM_PROCESSES: int = 8
+# Riley uses one scratch tile per active raster worker.  For f64 builds,
+# scalingpolicy uses about 154 B/sub-pixel, so per-worker scratch is
+# 154 * ((tile_px + 2 * halo_px) * SSAA)^2 bytes.  With tile_size_min=1
+# and no halo: SSAA 256/512/1024 uses about 9.6/38.5/154 MiB per worker.
+# `RASTER_CHUNKS_PER_WORKER=4` schedules four work chunks, not four buffers.
+RILEY_RASTER_THREADS: int = 8
 
 # Integration methods and parameters
 INTEGRATION_METHODS: List[Tuple[str, int]] = [
@@ -66,4 +73,3 @@ ACTIVE_FRAMES: List[int] = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10]
 # SSAA levels to render with Riley
 SSAA_LEVELS = [1, 2, 4, 8, 16, 32, 64, 128, 256]
 # SSAA_LEVELS = [1, 2, 4, 8, 16, 32, 64, 128]
-

@@ -21,6 +21,7 @@ from exp1common import (
     parse_case_params,
 )
 from exp1params import (
+    BACKGROUND,
     TARG_PX_X,
     TARG_PX_Y,
     TEX_PX_PAD,
@@ -157,6 +158,7 @@ def process_pixel_chunk(args) -> tuple[int, int, np.ndarray]:
     # Get local affine inverse map from deformed pixel coordinates to
     # reference world coordinates.
     h = 0.5 * pixel_size
+    pixel_valid = np.ones(num_pixels, dtype=bool)
     global _worker_mesh
     if _worker_mesh is not None:
         dx_c = np.array([0.0, pixel_size, 0.0, pixel_size])
@@ -174,6 +176,7 @@ def process_pixel_chunk(args) -> tuple[int, int, np.ndarray]:
         sub_x_ref = sampled.point_data["x_ref"]
         sub_y_ref = sampled.point_data["y_ref"]
         valid = sampled.point_data["vtkValidPointMask"].astype(bool)
+        pixel_valid = valid.reshape(num_pixels, 4).all(axis=1)
         sub_x_ref[~valid] = 0.0
         sub_y_ref[~valid] = 0.0
 
@@ -301,6 +304,7 @@ def process_pixel_chunk(args) -> tuple[int, int, np.ndarray]:
 
         chunk_raw = np.sum(sub_intensity * weights[None, :], axis=1)
 
+    chunk_raw[~pixel_valid] = BACKGROUND
     return start_idx, end_idx, chunk_raw
 
 

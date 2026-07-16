@@ -10,7 +10,7 @@
 from pathlib import Path
 import multiprocessing
 
-import exp1_pxint2d_numerical_render_world as renderer
+import exp1_gridint2d_numerical_render_world as renderer
 
 renderer.OUTPUT_DIR = Path("./out/exp1_gridint2d_render_world")
 renderer.INTEGRATION_METHODS = [

@@ -16,10 +16,17 @@ TEXTURE_OUTPUT_DIR: Path = Path("./out/exp2_analytic_speckle_textures")
 
 TARG_PX_X: int = 256
 TARG_PX_Y: int = 256
+BACKGROUND: float = 0.5
 TEX_PX_PAD: int = 4
 TEX_OVERSAMPLES: List[int] = [1, 2, 4, 8, 16, 32, 64]
 BIT_DEPTHS: List[int] = [8, 12, 16]
 NUM_PROCESSES: int = 8
+# Riley uses one scratch tile per active raster worker.  For f64 builds,
+# scalingpolicy uses about 154 B/sub-pixel, so per-worker scratch is
+# 154 * ((tile_px + 2 * halo_px) * SSAA)^2 bytes.  With tile_size_min=1
+# and no halo: SSAA 256/512/1024 uses about 9.6/38.5/154 MiB per worker.
+# `RASTER_CHUNKS_PER_WORKER=4` schedules four work chunks, not four buffers.
+RILEY_RASTER_THREADS: int = 8
 
 # Integration methods and parameters
 INTEGRATION_METHODS: List[Tuple[str, int]] = [
@@ -45,7 +52,7 @@ INTEGRATION_METHODS: List[Tuple[str, int]] = [
     # ("gauss", 32),
     # ("gauss", 64),
     # ("gauss", 128),
-    # ("analytic", 0),
+    ("analytic", 0),
 ]
 
 # Speckle pattern parameters
@@ -62,6 +69,12 @@ PERTURBATION_DISTRIBUTIONS: List[str] = ["uniform"] # "gaussian"
 PERTURBATION_FRACTIONS: List[float] = [0.25]
 RANDOM_SEED: int = 3
 GAUSSIAN_CUTOFF_SIGMAS: float = 4.0
+# For `gausscont`, the equivalent disk radius is the contour at this fraction
+# of peak coverage.  A value of 0.1 gives sigma = radius / sqrt(2 ln(10)).
+GAUSSIAN_EQUIVALENT_DISK_EDGE_FRACTION: float = 0.1
+# `gausscont` remains mathematically untruncated; centres beyond this many
+# standard deviations are omitted as a bounded, configurable tail tolerance.
+GAUSSIAN_CONTINUOUS_TAIL_SIGMAS: float = 8.0
 
 # List of deformation cases to process (e.g. rigid, affine)
 DEFORMATION_CASES: List[str] = [
