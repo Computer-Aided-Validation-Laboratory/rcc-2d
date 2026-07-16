@@ -257,9 +257,8 @@ def main() -> None:
                         uvs = compute_texture_world_uvs(
                             coords, roi_size, camera_pixels, TEX_PX_PAD, oversamp
                         )
-                        case_out = output_root / (
-                            f"{case_name}_{tex_interp}_ss{ss}_b{bb}"
-                            f"_oversamp{oversamp}"
+                        case_out = output_root / f"{case_name}_{tex_interp}" / (
+                            f"ss{ss}_b{bb}_oversamp{oversamp}"
                         )
                         case_out.mkdir(parents=True, exist_ok=True)
                         mesh = riley.Mesh(

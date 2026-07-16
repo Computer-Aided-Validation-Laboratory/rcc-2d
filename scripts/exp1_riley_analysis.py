@@ -203,9 +203,8 @@ def analyze_riley_case(case_name: str, tex_interp: str) -> None:
                     continue
                 max_val = float(2**bb - 1)
                 for oversamp in TEX_OVERSAMPLES:
-                    case_out = RILEY_TEX_DIR / (
-                        f"{case_name}_{tex_interp}_ss{ss}_b{bb}"
-                        f"_oversamp{oversamp}"
+                    case_out = RILEY_TEX_DIR / f"{case_name}_{tex_interp}" / (
+                        f"ss{ss}_b{bb}_oversamp{oversamp}"
                     )
                     npy_path = case_out / f"image_c00_f{ff:02d}.npy"
                     tiff_path = case_out / f"cam0_frame{ff}_field0.tiff"
