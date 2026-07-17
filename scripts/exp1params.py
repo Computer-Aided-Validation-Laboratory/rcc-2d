@@ -14,6 +14,8 @@ from typing import List, Tuple
 OUTPUT_DIR: Path = Path("./out/exp1_temp_out")
 TEXTURE_OUTPUT_DIR: Path = Path("./out/exp1_analytic_textures")
 CLEAR_DIR: bool = False
+# Re-render existing outputs instead of skipping completed render frames.
+FORCE_RENDER_OVER: bool = False
 
 TARG_PX_X: int = 256
 TARG_PX_Y: int = 256

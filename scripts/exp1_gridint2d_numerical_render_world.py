@@ -34,6 +34,7 @@ from exp1params import (
     NUM_PROCESSES,
     DEFORMATION_CASES,
     ACTIVE_FRAMES,
+    FORCE_RENDER_OVER,
 )
 
 OUTPUT_DIR = Path("./out/exp1_gridint2d_render_world")
@@ -351,6 +352,23 @@ def generate_grid_images(case_dir: Path, method: str, param: int) -> None:
         if not (is_rect_base or is_needed_frame):
             continue
 
+        p_val: int = max(TARG_PX_X, TARG_PX_Y)
+        expected_outputs = [
+            (
+                case_out_dir
+                / f"targ_px{p_val}_int_{method}_param_{param}_b{bb}_frame{ff:02d}.tiff",
+                case_out_dir
+                / f"targ_px{p_val}_int_{method}_param_{param}_b{bb}_frame{ff:02d}.npy",
+            )
+            for bb in BIT_DEPTHS
+        ]
+        if not FORCE_RENDER_OVER and all(
+            tiff_path.exists() and npy_path.exists()
+            for tiff_path, npy_path in expected_outputs
+        ):
+            print(f"    frame {ff:02d}: outputs exist; skipping.")
+            continue
+
         if method == "rect" or method == "gauss":
             S = param * param
         elif method == "analytic":
@@ -400,7 +418,6 @@ def generate_grid_images(case_dir: Path, method: str, param: int) -> None:
             pixel_bb: np.ndarray = np.round(pixel_raw_flipped * max_val_bb)
             pixel_bb = np.clip(pixel_bb, 0.0, max_val_bb)
 
-            p_val: int = max(TARG_PX_X, TARG_PX_Y)
             prefix: str = (
                 f"targ_px{p_val}_int_{method}_param_{param}"
                 f"_b{bb}_frame{ff:02d}"

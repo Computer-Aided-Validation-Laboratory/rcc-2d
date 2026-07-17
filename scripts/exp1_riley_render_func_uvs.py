@@ -28,6 +28,7 @@ from exp1params import (
     GAMMA,
     BIT_DEPTHS,
     CLEAR_DIR,
+    FORCE_RENDER_OVER,
     DEFORMATION_CASES,
     RILEY_RASTER_THREADS,
     SSAA_LEVELS,
@@ -64,6 +65,15 @@ def get_riley_mesh_type(nodes_per_elem: int) -> riley.MeshType:
         return riley.MeshType.quad9
     raise ValueError(
         f"Unsupported element type with {nodes_per_elem} nodes."
+    )
+
+
+def render_exists(case_out: Path, num_frames: int) -> bool:
+    """Return whether Riley wrote both saved representations for every frame."""
+    return all(
+        (case_out / f"cam0_frame{ff}_field0.tiff").exists()
+        and (case_out / f"image_c00_f{ff:02d}.npy").exists()
+        for ff in range(num_frames)
     )
 
 
@@ -168,6 +178,9 @@ def main() -> None:
                 )
                 case_out = out_base / f"ss{ss}_b{bb}"
                 case_out.mkdir(parents=True, exist_ok=True)
+                if not FORCE_RENDER_OVER and render_exists(case_out, num_frames):
+                    print("    outputs exist; skipping.")
+                    continue
 
                 mesh = riley.Mesh(
                     mesh_type=mtype,

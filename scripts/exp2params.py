@@ -1,4 +1,4 @@
-# --------------------------------------------------------------------------
+#--------------------------------------------------------------------------
 # Renderer Convergence Conjecture: Data & Analysis
 #
 # Copyright (c) 2026 scepticalrabbit (Lloyd Fletcher)
@@ -13,20 +13,22 @@ from typing import List, Tuple
 # Output directory for Exp 2
 OUTPUT_DIR: Path = Path("./out/exp2_speckint2d_render_uvs")
 TEXTURE_OUTPUT_DIR: Path = Path("./out/exp2_analytic_speckle_textures")
+# Re-render existing outputs instead of skipping completed render frames.
+FORCE_RENDER_OVER: bool = False
 
 TARG_PX_X: int = 256
 TARG_PX_Y: int = 256
 BACKGROUND: float = 0.5
 TEX_PX_PAD: int = 4
-TEX_OVERSAMPLES: List[int] = [1, 2, 4, 8, 16, 32, 64]
+TEX_OVERSAMPLES: List[int] = [1, 2, 4, 8, 16, 32]
 BIT_DEPTHS: List[int] = [8, 12, 16]
-NUM_PROCESSES: int = 12
+NUM_PROCESSES: int = 8
 # Riley uses one scratch tile per active raster worker.  For f64 builds,
 # scalingpolicy uses about 154 B/sub-pixel, so per-worker scratch is
 # 154 * ((tile_px + 2 * halo_px) * SSAA)^2 bytes.  With tile_size_min=1
 # and no halo: SSAA 256/512/1024 uses about 9.6/38.5/154 MiB per worker.
 # `RASTER_CHUNKS_PER_WORKER=4` schedules four work chunks, not four buffers.
-RILEY_RASTER_THREADS: int = 12
+RILEY_RASTER_THREADS: int = 8
 
 # Integration methods and parameters
 INTEGRATION_METHODS: List[Tuple[str, int]] = [
@@ -36,10 +38,10 @@ INTEGRATION_METHODS: List[Tuple[str, int]] = [
     ("rect", 8),
     ("rect", 16),
     ("rect", 32),
-    # ("rect", 64),
-    # ("rect", 128),
-    # ("rect", 256),
-    # ("rect", 512),
+    ("rect", 64),
+    ("rect", 128),
+    ("rect", 256),
+    ("rect", 512),
     # ("rect", 1024), TODO: check we have the RAM for this
     # ("mc", 16),
     # ("mc", 64),
@@ -50,10 +52,10 @@ INTEGRATION_METHODS: List[Tuple[str, int]] = [
     ("gauss", 8),
     ("gauss", 16),
     ("gauss", 32),
-    # ("gauss", 64),
-    # ("gauss", 128),
-    # ("gauss", 256),
-    # ("gauss", 512),
+    ("gauss", 64),
+    ("gauss", 128),
+    ("gauss", 256),
+    ("gauss", 512),
     ("analytic", 0),
 ]
 

@@ -22,6 +22,7 @@ from exp2params import (
     BACKGROUND,
     BIT_DEPTHS,
     GAMMA,
+    FORCE_RENDER_OVER,
     GAUSSIAN_CONTINUOUS_TAIL_SIGMAS,
     GAUSSIAN_EQUIVALENT_DISK_EDGE_FRACTION,
     I0,
@@ -806,6 +807,16 @@ def render_case(
     for frame in range(disp_x.shape[1]):
         if frame not in active_frames:
             continue
+        prefix = (
+            f"targ_px{TARG_PX_X}_int_{method}_param_{param}_frame{frame:02d}"
+        )
+        complete = (output_dir / f"{prefix}.npy").exists() and all(
+            (output_dir / f"{prefix}_b{bits}.tiff").exists()
+            for bits in BIT_DEPTHS
+        )
+        if not FORCE_RENDER_OVER and complete:
+            print(f"    frame {frame:02d}: outputs exist; skipping.")
+            continue
         if frame == 0:
             initargs = (None, None, None, None, pattern)
         else:
@@ -853,7 +864,4 @@ def render_case(
             print(f"    frame {frame:02d}: no analytic disk output written.")
             continue
         image = flat.reshape(TARG_PX_Y, TARG_PX_X)
-        prefix = (
-            f"targ_px{TARG_PX_X}_int_{method}_param_{param}_frame{frame:02d}"
-        )
         save_image(image, output_dir, prefix)

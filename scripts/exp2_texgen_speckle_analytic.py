@@ -41,6 +41,69 @@ NUM_PROCESSES_RUN = max(1, min(
     int(os.environ.get("EXP2_NUM_PROCESSES", str(NUM_PROCESSES))),
 ))
 
+_worker_pattern = None
+_worker_pattern_type: str | None = None
+_worker_x: np.ndarray | None = None
+_worker_start_y: float | None = None
+_worker_texel_size: float | None = None
+
+
+def _init_texture_worker(
+    pattern_type: str,
+    speckle_size: float,
+    black_fraction: float,
+    distribution: str,
+    fraction: float,
+    bounds: tuple[float, float, float, float],
+    tex_w: int,
+    texel_size: float,
+) -> None:
+    """Create one immutable pattern per pixel-batch worker."""
+    global _worker_pattern, _worker_pattern_type, _worker_x
+    global _worker_start_y, _worker_texel_size
+    _worker_pattern = make_speckle_pattern(
+        pattern_type,
+        speckle_size,
+        black_fraction,
+        distribution,
+        fraction,
+        RANDOM_SEED,
+        GAUSSIAN_CUTOFF_SIGMAS,
+        bounds,
+        I0,
+        GAMMA,
+    )
+    _worker_pattern_type = pattern_type
+    _worker_x = bounds[0] + np.arange(tex_w) * texel_size
+    _worker_start_y = bounds[2]
+    _worker_texel_size = texel_size
+
+
+def _process_texture_rows(
+    task: tuple[int, int],
+) -> tuple[int, int, np.ndarray, np.ndarray]:
+    """Evaluate exact coverage and intensity for one texture row batch."""
+    if (
+        _worker_pattern is None
+        or _worker_x is None
+        or _worker_start_y is None
+        or _worker_texel_size is None
+        or _worker_pattern_type is None
+    ):
+        raise RuntimeError("Analytic texture worker was not initialised.")
+    start_row, end_row = task
+    y = _worker_start_y + np.arange(start_row, end_row) * _worker_texel_size
+    xx, yy = np.meshgrid(_worker_x, y)
+    if _worker_pattern_type == "diskaddsat":
+        coverage = _worker_pattern.evaluate_diskaddsat_box_average(
+            xx, yy, _worker_texel_size, _worker_texel_size
+        )
+    else:
+        coverage = _worker_pattern.evaluate_gausscont_box_average(
+            xx, yy, _worker_texel_size, _worker_texel_size
+        )
+    return start_row, end_row, coverage, _worker_pattern.intensity_from_coverage(coverage)
+
 
 def tag(
     pattern_type: str,
@@ -73,43 +136,37 @@ def generate_texture(
         -0.5 * roi_size - TEX_PX_PAD * pixel_size,
         0.5 * roi_size + TEX_PX_PAD * pixel_size,
     )
-    pattern = make_speckle_pattern(
+    image = np.empty((tex_h, tex_w), dtype=np.float64)
+    raw_coverage = np.empty((tex_h, tex_w), dtype=np.float64)
+    rows_per_batch = max(1, MAX_PIXELS_PER_CHUNK // tex_w)
+    tasks = [
+        (start_row, min(start_row + rows_per_batch, tex_h))
+        for start_row in range(0, tex_h, rows_per_batch)
+    ]
+    print(
+        f"    {len(tasks)} pixel batches, {NUM_PROCESSES_RUN} workers, "
+        f"up to {rows_per_batch} rows/batch"
+    )
+    initargs = (
         pattern_type,
         PX_PER_SPECK * pixel_size,
         black_fraction,
         distribution,
         fraction,
-        RANDOM_SEED,
-        GAUSSIAN_CUTOFF_SIGMAS,
         bounds,
-        I0,
-        GAMMA,
+        tex_w,
+        texel_size,
     )
-    image = np.empty((tex_h, tex_w), dtype=np.float64)
-    raw_coverage = np.empty((tex_h, tex_w), dtype=np.float64)
-    rows_per_batch = max(1, MAX_PIXELS_PER_CHUNK // tex_w)
-    x = bounds[0] + np.arange(tex_w) * texel_size
-
-    for start_row in range(0, tex_h, rows_per_batch):
-        end_row = min(start_row + rows_per_batch, tex_h)
-        y = bounds[2] + np.arange(start_row, end_row) * texel_size
-        xx, yy = np.meshgrid(x, y)
-        if pattern_type == "diskaddsat":
-            coverage = pattern.evaluate_diskaddsat_box_average(
-                xx,
-                yy,
-                texel_size,
-                texel_size,
-            )
-        else:
-            coverage = pattern.evaluate_gausscont_box_average(
-                xx,
-                yy,
-                texel_size,
-                texel_size,
-            )
-        raw_coverage[start_row:end_row] = coverage
-        image[start_row:end_row] = pattern.intensity_from_coverage(coverage)
+    with multiprocessing.Pool(
+        NUM_PROCESSES_RUN,
+        initializer=_init_texture_worker,
+        initargs=initargs,
+    ) as pool:
+        for start_row, end_row, coverage, intensity in pool.imap_unordered(
+            _process_texture_rows, tasks
+        ):
+            raw_coverage[start_row:end_row] = coverage
+            image[start_row:end_row] = intensity
 
     prefix = (
         f"tex_px{TARG_PX_X}_"
@@ -123,7 +180,6 @@ def generate_texture(
 def main() -> None:
     print("Experiment 2: analytic additive-saturation texture generator")
     TEXTURE_OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
-    jobs = []
     for pattern_type in ANALYTIC_SPECKLE_TYPES:
         if pattern_type not in {"diskaddsat", "gausscont"}:
             raise ValueError(f"Unsupported analytic type: {pattern_type}")
@@ -138,17 +194,13 @@ def main() -> None:
                             fraction,
                         )
                         print(f"  {pattern_name}, oversamp={oversample}")
-                        jobs.append(
-                            (
-                                pattern_type,
-                                black_fraction,
-                                distribution,
-                                fraction,
-                                oversample,
-                            )
+                        generate_texture(
+                            pattern_type,
+                            black_fraction,
+                            distribution,
+                            fraction,
+                            oversample,
                         )
-    with multiprocessing.Pool(NUM_PROCESSES_RUN) as pool:
-        pool.starmap(generate_texture, jobs)
 
 
 if __name__ == "__main__":

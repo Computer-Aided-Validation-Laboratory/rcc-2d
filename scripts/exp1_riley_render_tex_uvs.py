@@ -27,6 +27,7 @@ from exp1params import (
     TEX_PX_PAD,
     BIT_DEPTHS,
     CLEAR_DIR,
+    FORCE_RENDER_OVER,
     TEX_OVERSAMPLES,
     TEXTURE_OUTPUT_DIR,
     DEFORMATION_CASES,
@@ -132,6 +133,15 @@ def compute_texture_world_uvs(
     return np.ascontiguousarray(uvs)
 
 
+def render_exists(case_out: Path, num_frames: int) -> bool:
+    """Return whether Riley wrote both saved representations for every frame."""
+    return all(
+        (case_out / f"cam0_frame{ff}_field0.tiff").exists()
+        and (case_out / f"image_c00_f{ff:02d}.npy").exists()
+        for ff in range(num_frames)
+    )
+
+
 def main() -> None:
     print(80 * "=")
     print("Riley Texture Shader Render (Experiment 1)")
@@ -232,6 +242,14 @@ def main() -> None:
                             f"interp={tex_interp}, SSAA={ss}, bits={bb}, "
                             f"oversamp={oversamp}"
                         )
+                        case_out = output_root / f"{case_name}_{tex_interp}" / (
+                            f"ss{ss}_b{bb}_oversamp{oversamp}"
+                        )
+                        if not FORCE_RENDER_OVER and render_exists(
+                            case_out, num_frames
+                        ):
+                            print("    outputs exist; skipping.")
+                            continue
                         tex_filename = (
                             f"tex_px{p_val}_int_analytic_param_0_b{bb}"
                             f"_pad{TEX_PX_PAD}_oversamp{oversamp}.tiff"
@@ -256,9 +274,6 @@ def main() -> None:
                             texture_scale_max = 255.0
                         uvs = compute_texture_world_uvs(
                             coords, roi_size, camera_pixels, TEX_PX_PAD, oversamp
-                        )
-                        case_out = output_root / f"{case_name}_{tex_interp}" / (
-                            f"ss{ss}_b{bb}_oversamp{oversamp}"
                         )
                         case_out.mkdir(parents=True, exist_ok=True)
                         mesh = riley.Mesh(
