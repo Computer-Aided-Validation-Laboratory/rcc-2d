@@ -33,7 +33,6 @@ from exp2speckint2d import (
     MAX_PIXELS_PER_CHUNK,
     make_speckle_pattern,
     save_image,
-    save_raw_coverage,
 )
 
 NUM_PROCESSES_RUN = max(1, min(
@@ -173,8 +172,9 @@ def generate_texture(
         f"{tag(pattern_type, black_fraction, distribution, fraction)}"
         f"_pad{TEX_PX_PAD}_oversamp{oversample}_analytic"
     )
-    save_image(image, TEXTURE_OUTPUT_DIR, prefix)
-    save_raw_coverage(raw_coverage, TEXTURE_OUTPUT_DIR, prefix)
+    # Save pixel-integrated coverage as the primary f64 texture.  It is not
+    # clamped: overlapping disks/Gaussians can and should exceed one.
+    save_image(image, TEXTURE_OUTPUT_DIR, prefix, float_texture=raw_coverage)
 
 
 def main() -> None:

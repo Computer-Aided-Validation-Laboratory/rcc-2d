@@ -77,7 +77,7 @@ def generate_texture(
         I0,
         GAMMA,
     )
-    image = np.zeros((tex_h, tex_w), dtype=np.float64)
+    coverage_image = np.zeros((tex_h, tex_w), dtype=np.float64)
     rows_per_batch = max(1, 1_000_000 // tex_w)
     x_indices = np.arange(tex_w, dtype=np.float64)
     y_indices = np.arange(tex_h, dtype=np.float64)
@@ -93,14 +93,15 @@ def generate_texture(
                     + (y_indices[start_row:end_row] + y_offset) * texel_size
                 )
                 xx, yy = np.meshgrid(x, y)
-                image[start_row:end_row] += pattern.evaluate(xx, yy)
-    image /= float(ssaa * ssaa)
+                coverage_image[start_row:end_row] += pattern.evaluate_coverage(xx, yy)
+    coverage_image /= float(ssaa * ssaa)
+    image = pattern.intensity_from_coverage(coverage_image)
     prefix = (
         f"tex_px{TARG_PX_X}_"
         f"{tag(pattern_type, black_fraction, distribution, fraction)}"
         f"_pad{TEX_PX_PAD}_oversamp{oversample}_ssaa{ssaa}"
     )
-    save_image(image, TEXTURE_OUTPUT_DIR, prefix)
+    save_image(image, TEXTURE_OUTPUT_DIR, prefix, float_texture=coverage_image)
 
 
 def main() -> None:

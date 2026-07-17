@@ -724,14 +724,28 @@ def process_pixel_chunk(
     return start_idx, end_idx, pixel_average, 0, 0, 0
 
 
-def save_image(image: np.ndarray, output_dir: Path, prefix: str) -> None:
-    """Save an f64 texture and each requested digitised TIFF quantization."""
+def save_image(
+    image: np.ndarray,
+    output_dir: Path,
+    prefix: str,
+    float_texture: np.ndarray | None = None,
+) -> None:
+    """Save raw f64 texture data and digitised TIFF intensity outputs.
+
+    ``image`` is the display/render intensity to quantise for TIFF.  When
+    supplied, ``float_texture`` is saved as the primary f64 ``.npy`` file
+    without clipping or scaling; additive speckle generators pass their
+    pixel-integrated coverage here so overlapping blobs remain visible.
+    """
     output_dir.mkdir(parents=True, exist_ok=True)
-    # Match TIFF row order: both files describe the same texture image, with
-    # values in the f64 file retained in the renderer's normalised [0, 1]
-    # intensity domain.
+    if float_texture is None:
+        float_texture = image
+    if float_texture.shape != image.shape:
+        raise ValueError("float_texture and image must have identical shapes.")
+
     flipped = np.ascontiguousarray(np.flipud(image), dtype=np.float64)
-    np.save(output_dir / f"{prefix}.npy", flipped)
+    raw_flipped = np.ascontiguousarray(np.flipud(float_texture), dtype=np.float64)
+    np.save(output_dir / f"{prefix}.npy", raw_flipped)
     for bits in BIT_DEPTHS:
         max_value = float(2**bits - 1)
         quantized = np.clip(np.round(flipped * max_value), 0.0, max_value)

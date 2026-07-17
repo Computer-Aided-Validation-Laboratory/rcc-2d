@@ -29,6 +29,12 @@ from exp1params import (
     TEX_OVERSAMPLES,
 )
 
+# Defaults make this base entry point usable directly.  The world, UV, and
+# texture-only wrappers below override these paths for their specific studies.
+OUTPUT_DIR = Path("./out/exp1_gridint2d_render_world")
+RILEY_FUNC_DIR = Path("./out/exp1_riley_render_func_world")
+RILEY_TEX_DIR = Path("./out/exp1_riley_render_tex")
+
 TEX_INTERPOLATORS = (
     "nearest",
     "linear",
@@ -576,32 +582,26 @@ def analyze_riley_case(case_name: str, tex_interp: str) -> None:
                 markersize=8,
             )
 
-        tex_colors = {
-            1: "#ff7f0e",
-            2: "#bcbd22",
-            4: "#9467bd",
-            8: "#17becf",
-            16: "#e377c2",
-            32: "#8c564b",
-        }
-        tex_markers = {
-            1: "^",
-            2: "v",
-            4: "<",
-            8: ">",
-            16: "p",
-            32: "h",
+        tex_colors = plt.rcParams["axes.prop_cycle"].by_key()["color"]
+        tex_markers = ("^", "v", "<", ">", "p", "h", "D", "X", "*")
+        tex_styles = {
+            oversamp: (
+                tex_colors[index % len(tex_colors)],
+                tex_markers[index % len(tex_markers)],
+            )
+            for index, oversamp in enumerate(TEX_OVERSAMPLES)
         }
 
         for oversamp in TEX_OVERSAMPLES:
             rt_info = riley_tex[bb_float][oversamp]
             if rt_info["samples"]:
                 idx = np.argsort(rt_info["samples"])
+                color, marker = tex_styles[oversamp]
                 plt.loglog(
                     np.array(rt_info["samples"])[idx],
                     np.array(rt_info["e_f64"])[idx],
-                    marker=tex_markers[oversamp],
-                    color=tex_colors[oversamp],
+                    marker=marker,
+                    color=color,
                     label=f"Riley Tex (Oversamp={oversamp})",
                     linewidth=1.5,
                     markersize=7,
@@ -674,11 +674,12 @@ def analyze_riley_case(case_name: str, tex_interp: str) -> None:
             rt_info = riley_tex[bb_float][oversamp]
             if rt_info["samples"]:
                 idx = np.argsort(rt_info["samples"])
+                color, marker = tex_styles[oversamp]
                 plt.loglog(
                     np.array(rt_info["samples"])[idx],
                     np.array(rt_info["e_inf"])[idx],
-                    marker=tex_markers[oversamp],
-                    color=tex_colors[oversamp],
+                    marker=marker,
+                    color=color,
                     label=f"Riley Tex (Oversamp={oversamp})",
                     linewidth=1.5,
                     markersize=7,
