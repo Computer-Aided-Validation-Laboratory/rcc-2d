@@ -737,6 +737,25 @@ def save_image(image: np.ndarray, output_dir: Path, prefix: str) -> None:
         np.save(output_dir / f"{prefix}_b{bits}.npy", flipped * max_value)
 
 
+def save_raw_coverage(
+    coverage: np.ndarray,
+    output_dir: Path,
+    prefix: str,
+) -> None:
+    """Save unclamped additive coverage as float data and direct 8-bit counts."""
+    output_dir.mkdir(parents=True, exist_ok=True)
+    flipped = np.flipud(coverage)
+    np.save(output_dir / f"{prefix}_raw.npy", flipped)
+    raw_8bit = np.rint(flipped)
+    if np.any(raw_8bit < 0.0) or np.any(raw_8bit > 255.0):
+        raise ValueError(
+            "Raw coverage cannot be represented as an 8-bit overlap count."
+        )
+    Image.fromarray(raw_8bit.astype(np.uint8)).save(
+        output_dir / f"{prefix}_raw_b8.tiff"
+    )
+
+
 def render_case(
     case_dir: Path,
     output_dir: Path,

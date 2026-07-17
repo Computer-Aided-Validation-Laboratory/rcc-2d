@@ -33,6 +33,7 @@ from exp2speckint2d import (
     MAX_PIXELS_PER_CHUNK,
     make_speckle_pattern,
     save_image,
+    save_raw_coverage,
 )
 
 NUM_PROCESSES_RUN = max(1, min(
@@ -85,6 +86,7 @@ def generate_texture(
         GAMMA,
     )
     image = np.empty((tex_h, tex_w), dtype=np.float64)
+    raw_coverage = np.empty((tex_h, tex_w), dtype=np.float64)
     rows_per_batch = max(1, MAX_PIXELS_PER_CHUNK // tex_w)
     x = bounds[0] + np.arange(tex_w) * texel_size
 
@@ -106,6 +108,7 @@ def generate_texture(
                 texel_size,
                 texel_size,
             )
+        raw_coverage[start_row:end_row] = coverage
         image[start_row:end_row] = pattern.intensity_from_coverage(coverage)
 
     prefix = (
@@ -114,6 +117,7 @@ def generate_texture(
         f"_pad{TEX_PX_PAD}_oversamp{oversample}_analytic"
     )
     save_image(image, TEXTURE_OUTPUT_DIR, prefix)
+    save_raw_coverage(raw_coverage, TEXTURE_OUTPUT_DIR, prefix)
 
 
 def main() -> None:
