@@ -679,6 +679,10 @@ def process_pixel_chunk(
     xx = px[:, None] + dx[None, :]
     yy = py[:, None] + dy[None, :]
 
+    coverage_first = _worker_pattern.pattern_type in {
+        "diskaddsat",
+        "gausscont",
+    }
     if _worker_mesh is not None:
         import pyvista as pv
 
@@ -689,7 +693,7 @@ def process_pixel_chunk(
         valid = sampled.point_data["vtkValidPointMask"].astype(bool)
         x_ref = sampled.point_data["x_ref"].reshape(xx.shape)
         y_ref = sampled.point_data["y_ref"].reshape(yy.shape)
-        if _worker_pattern.pattern_type == "gausscont":
+        if coverage_first:
             values = np.zeros(xx.size, dtype=np.float64)
             values[valid] = _worker_pattern.evaluate_coverage(
                 x_ref.ravel()[valid],
@@ -707,13 +711,13 @@ def process_pixel_chunk(
             )
         values = values.reshape(xx.shape)
     else:
-        if _worker_pattern.pattern_type == "gausscont":
+        if coverage_first:
             values = _worker_pattern.evaluate_coverage(xx, yy)
         else:
             values = _worker_pattern.evaluate(xx, yy)
 
     pixel_average = np.sum(values * weights[None, :], axis=1)
-    if _worker_pattern.pattern_type == "gausscont":
+    if coverage_first:
         pixel_average = _worker_pattern.intensity_from_coverage(pixel_average)
 
     return start_idx, end_idx, pixel_average, 0, 0, 0

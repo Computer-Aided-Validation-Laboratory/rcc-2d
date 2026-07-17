@@ -9,7 +9,7 @@
 
 from pathlib import Path
 
-import exp1_pxint2d_analysis as analysis
+import exp1_gridint2d_analysis as analysis
 
 analysis.OUTPUT_DIR = Path("./out/exp1_gridint2d_render_world")
 analysis.RESULTS_DIR = Path("./out/exp1_gridint2d_analysis_world")
