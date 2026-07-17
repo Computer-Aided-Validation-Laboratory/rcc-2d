@@ -1,0 +1,297 @@
+\documentclass[11pt,a4paper]{article}
+\usepackage[margin=25mm]{geometry}
+\usepackage{amsmath,amssymb,mathtools}
+\usepackage{booktabs}
+\usepackage{hyperref}
+
+\newcommand{\dd}{\mathop{}\!\mathrm{d}}
+\newcommand{\bxi}{\boldsymbol{\xi}}
+\newcommand{\bx}{\mathbf{x}}
+
+\title{Tensor-Product \(N\times N\) Gauss--Legendre Pixel Integration}
+\author{Renderer Convergence Conjecture --- Experiment 1}
+\date{\today}
+
+\begin{document}
+\maketitle
+
+\section{Purpose and convention}
+
+This note specifies the \(N\times N\) Gauss--Legendre rule used by the
+Experiment~1 custom image integrator and suitable for a Riley pixel-box
+integration mode.  It approximates the \emph{area average} of a scalar
+texture/intensity field \(I(x,y)\) over one axis-aligned pixel
+\[
+    P=[x_0,x_0+\Delta x]\times[y_0,y_0+\Delta y].
+\]
+The desired camera value is
+\begin{equation}
+    \bar I_P =
+    \frac{1}{\Delta x\Delta y}
+    \int_{y_0}^{y_0+\Delta y}\int_{x_0}^{x_0+\Delta x}
+        I(x,y)\,\dd x\,\dd y.
+    \label{eq:pixel-average}
+\end{equation}
+For a square camera pixel, set \(\Delta x=\Delta y=h\).  The rule has
+\(N^2\) evaluations per output pixel.  Here \(N\) means the number of nodes
+\emph{per direction}, not the total number of samples.
+
+\section{One-dimensional Gauss--Legendre rule}
+
+Let \((\xi_i,w_i)\), \(i=1,\ldots,N\), be the standard Gauss--Legendre nodes
+and weights on \([-1,1]\):
+\begin{equation}
+    \int_{-1}^{1} f(\xi)\,\dd\xi
+    \approx \sum_{i=1}^N w_i f(\xi_i).
+    \label{eq:reference-rule}
+\end{equation}
+It is exact for polynomials through degree \(2N-1\).  The nodes are the roots
+of the Legendre polynomial \(P_N\), and the weights may be computed as
+\begin{equation}
+    w_i =
+    \frac{2}{(1-\xi_i^2)[P_N'(\xi_i)]^2}.
+    \label{eq:reference-weights}
+\end{equation}
+In practice, use a trusted Gauss--Legendre routine (for example
+\texttt{numpy.polynomial.legendre.leggauss(N)}) or a precomputed table.
+
+\section{Map the rule to one pixel}
+
+Map each reference node independently to the physical pixel:
+\begin{align}
+    x_i &= x_0+\frac{\Delta x}{2}(1+\xi_i),\\
+    y_j &= y_0+\frac{\Delta y}{2}(1+\xi_j).
+    \label{eq:node-map}
+\end{align}
+The Jacobian for the two-dimensional map is
+\(\Delta x\Delta y/4\).  Therefore the \emph{integral} is approximated by
+\begin{equation}
+    \int_P I(x,y)\,\dd x\,\dd y
+    \approx
+    \frac{\Delta x\Delta y}{4}
+    \sum_{j=1}^{N}\sum_{i=1}^{N}
+        w_iw_j I(x_i,y_j).
+    \label{eq:pixel-integral-rule}
+\end{equation}
+Dividing by the pixel area gives the form to use for a camera pixel average:
+\begin{equation}
+    \boxed{
+    \bar I_P^{(N)}
+    =
+    \sum_{j=1}^{N}\sum_{i=1}^{N}
+        \widehat w_i\widehat w_j I(x_i,y_j),
+    \qquad
+    \widehat w_i=\frac{w_i}{2}.
+    }
+    \label{eq:pixel-average-rule}
+\end{equation}
+The normalised weights sum to one:
+\[
+    \sum_{i=1}^{N}\widehat w_i=1,
+    \qquad
+    \sum_{j,i}\widehat w_i\widehat w_j=1.
+\]
+Consequently a constant texture remains exactly constant, a useful
+implementation check.
+
+\section{Implementation recipe}
+
+\begin{enumerate}
+    \item Generate \(\xi_i,w_i\) once for the selected order \(N\).
+    \item Form offsets from the pixel lower-left corner:
+    \[
+        d_i=\frac{h}{2}(1+\xi_i),\qquad
+        \widehat w_i=\frac{w_i}{2}.
+    \]
+    \item Form the tensor product.  For every pair \((i,j)\), use sample
+    offset \((d_i,d_j)\) and weight
+    \[
+        W_{ji}=\widehat w_j\widehat w_i
+              =\frac{w_jw_i}{4}.
+    \]
+    \item For each output pixel, evaluate the texture at its \(N^2\) sample
+    positions and accumulate \(\sum_{j,i}W_{ji}I_{ji}\).
+\end{enumerate}
+
+Equivalent pseudocode is:
+\begin{verbatim}
+xi, w = gauss_legendre(N)       # nodes/weights on [-1, 1]
+offset = 0.5 * (xi + 1) * h
+weight = 0.5 * w
+
+value = 0
+for j in range(N):
+    for i in range(N):
+        sample_xy = pixel_lower_left + (offset[i], offset[j])
+        value += weight[i] * weight[j] * shade(sample_xy)
+\end{verbatim}
+
+\noindent The Experiment~1 Python implementation uses exactly this
+construction: \texttt{offsets = 0.5*(points+1)*pixel\_size},
+\texttt{wts\_norm = weights*0.5}, and the outer product
+\texttt{wts\_norm[:, None] * wts\_norm[None, :]}.  It therefore produces a
+pixel \emph{average}; no further division by \(h^2\) is required.
+
+\section{Riley integration semantics}
+
+For an alternative Riley pixel-box integrator, the quadrature must be applied
+to the same continuous camera-pixel footprint as the current SSAA rule.
+For each Gauss point:
+\begin{enumerate}
+    \item construct the corresponding camera ray/sample position;
+    \item perform the normal Riley geometry/inverse-map and visibility work
+          at that point;
+    \item evaluate the selected shader there; and
+    \item add the result with tensor-product weight \(W_{ji}\).
+\end{enumerate}
+The final resolved pixel is the weighted sum, not the arithmetic mean.  An
+arithmetic mean is correct only for equal-weight SSAA samples.  If a sample is
+outside the image/mesh, it must follow the existing renderer's background and
+coverage convention; its quadrature weight must not be silently renormalised
+unless that convention explicitly defines a conditional average over covered
+area.
+
+\section{Low-order checks}
+
+\begin{center}
+\begin{tabular}{ccl}
+\toprule
+\(N\) & nodes \(\xi_i\) & weights \(w_i\) \\
+\midrule
+1 & \(0\) & \(2\) \\
+2 & \(\pm1/\sqrt{3}\) & \(1,1\) \\
+3 & \(0,\ \pm\sqrt{3/5}\) & \(8/9,\ 5/9,\ 5/9\) \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+Thus \(1\times1\) Gauss is the pixel-centre sample.  A \(2\times2\) rule uses
+points at \(h(1\pm1/\sqrt3)/2\) from the lower-left corner and assigns every
+point weight \(1/4\).  Higher orders have unequal weights and are therefore
+not interchangeable with regular-grid SSAA.
+
+\section{Accuracy and cost}
+
+The tensor-product rule is polynomial-exact up to degree \(2N-1\) in each
+coordinate.  For the Experiment~1 eggbox, the integrand is trigonometric, so
+the rule is not finite-order exact but converges rapidly as \(N\) grows.  The
+cost is \(N^2\) shader/geometry evaluations per output pixel.  Compare it
+against the analytic eggbox box average to choose the lowest adequate order.
+The existing convergence parameter for Gauss integration is consequently
+\(S=N^2\), matching the total point count reported for SSAA.
+
+\section{Computing nodes and weights for arbitrary \(N\)}
+
+For a production renderer, precompute the one-dimensional rule once per
+requested order \(N\), cache it, and form the two-dimensional tensor product
+from it.  Do \emph{not} derive the two-dimensional nodes independently.
+Two standard arbitrary-order constructions are suitable.
+
+\subsection{Golub--Welsch construction}
+
+The most direct robust approach is the Golub--Welsch algorithm.  Form the
+symmetric \(N\times N\) Jacobi matrix
+\begin{equation}
+    J =
+    \begin{bmatrix}
+    0 & \beta_1 &  &  \\
+    \beta_1 & 0 & \ddots & \\
+     & \ddots & \ddots & \beta_{N-1}\\
+     &  & \beta_{N-1} & 0
+    \end{bmatrix},
+    \qquad
+    \beta_k=\frac{k}{\sqrt{4k^2-1}},
+    \quad k=1,\ldots,N-1.
+    \label{eq:golub-welsch-jacobi}
+\end{equation}
+If \(\lambda_i\) is the \(i\)th eigenvalue and
+\(\mathbf{v}_i\) its unit eigenvector, then
+\begin{equation}
+    \boxed{
+        \xi_i=\lambda_i,
+        \qquad
+        w_i=2\,[\mathbf{v}_i]_1^2.
+    }
+    \label{eq:golub-welsch-rule}
+\end{equation}
+The matrix is real symmetric, so use a symmetric tridiagonal eigensolver.
+This produces ordered nodes and positive weights with excellent numerical
+stability.
+
+\subsection{Newton refinement of Legendre roots}
+
+If an eigensolver is unavailable, solve for the roots of \(P_N\) directly.
+Evaluate the Legendre polynomials using
+\begin{align}
+    P_0(x)&=1, &
+    P_1(x)&=x,\\
+    P_{m+1}(x)&=
+    \frac{(2m+1)xP_m(x)-mP_{m-1}(x)}{m+1},
+    \qquad m=1,\ldots,N-1.
+    \label{eq:legendre-recurrence}
+\end{align}
+At a trial point \(x\), compute the derivative without differentiating the
+recurrence:
+\begin{equation}
+    P_N'(x)
+    =
+    \frac{N\left(P_{N-1}(x)-xP_N(x)\right)}{1-x^2}.
+    \label{eq:legendre-derivative}
+\end{equation}
+For the \(k\)th positive root, a useful initial guess is
+\begin{equation}
+    x_k^{(0)}
+    =
+    \cos\left(
+        \frac{\pi(k-\tfrac14)}{N+\tfrac12}
+    \right),
+    \qquad
+    k=1,\ldots,\left\lceil\frac{N}{2}\right\rceil.
+    \label{eq:root-initial-guess}
+\end{equation}
+Apply Newton iteration until the update is below a floating-point tolerance:
+\begin{equation}
+    x_k^{(r+1)}
+    =
+    x_k^{(r)}
+    -
+    \frac{P_N(x_k^{(r)})}{P_N'(x_k^{(r)})}.
+    \label{eq:newton-legendre}
+\end{equation}
+After convergence, assign
+\begin{equation}
+    \boxed{
+        \xi_k=x_k,
+        \qquad
+        w_k=
+        \frac{2}
+        {(1-x_k^2)[P_N'(x_k)]^2}.
+    }
+    \label{eq:arbitrary-order-weight}
+\end{equation}
+Use symmetry to fill the paired negative root and identical weight:
+\[
+    \xi_{N+1-k}=-\xi_k,
+    \qquad
+    w_{N+1-k}=w_k.
+\]
+For odd \(N\), include the central node \(\xi=0\) only once.
+
+\subsection{Required validation checks}
+
+For any generated rule, verify numerically that
+\[
+    -1<\xi_i<1,\qquad
+    w_i>0,\qquad
+    \sum_{i=1}^{N}w_i=2.
+\]
+For the pixel-average rule, the corresponding two-dimensional weights must
+sum to one:
+\[
+    \sum_{j=1}^{N}\sum_{i=1}^{N}
+    \frac{w_iw_j}{4}=1.
+\]
+These checks catch incorrect Jacobian factors, root ordering errors, and
+accidental use of integral weights where average weights are required.
+
+\end{document}
