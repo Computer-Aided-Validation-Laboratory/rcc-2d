@@ -28,14 +28,24 @@ JOB_RE = re.compile(
 
 
 def _image_pair(directory: Path, method: str, param: int, bit_depth: int, frame: int):
-    prefix = f"targ_px256_int_{method}_param_{param}_frame{frame:02d}_b{bit_depth}"
+    prefix = f"targ_px256_int_{method}_param_{param}_frame{frame:02d}"
     npy_path = directory / f"{prefix}.npy"
-    tiff_path = directory / f"{prefix}.tiff"
-    if not npy_path.exists() or not tiff_path.exists():
+    tiff_path = directory / f"{prefix}_b{bit_depth}.tiff"
+    if npy_path.exists() and tiff_path.exists():
+        with Image.open(tiff_path) as image:
+            digitised = np.asarray(image, dtype=np.float64)
+        return np.load(npy_path), digitised
+
+    # Support output produced before the f64 texture convention, whose NumPy
+    # files held digitised code values separately for every bit depth.
+    legacy_prefix = f"{prefix}_b{bit_depth}"
+    legacy_npy_path = directory / f"{legacy_prefix}.npy"
+    legacy_tiff_path = directory / f"{legacy_prefix}.tiff"
+    if not legacy_npy_path.exists() or not legacy_tiff_path.exists():
         return None
-    with Image.open(tiff_path) as image:
+    with Image.open(legacy_tiff_path) as image:
         digitised = np.asarray(image, dtype=np.float64)
-    return np.load(npy_path) / float(2**bit_depth - 1), digitised
+    return np.load(legacy_npy_path) / float(2**bit_depth - 1), digitised
 
 
 def _discover_jobs() -> dict[str, dict[tuple[str, int], Path]]:

@@ -724,9 +724,13 @@ def process_pixel_chunk(
 
 
 def save_image(image: np.ndarray, output_dir: Path, prefix: str) -> None:
-    """Save float-scaled NumPy data and each requested TIFF quantization."""
+    """Save an f64 texture and each requested digitised TIFF quantization."""
     output_dir.mkdir(parents=True, exist_ok=True)
-    flipped = np.flipud(image)
+    # Match TIFF row order: both files describe the same texture image, with
+    # values in the f64 file retained in the renderer's normalised [0, 1]
+    # intensity domain.
+    flipped = np.ascontiguousarray(np.flipud(image), dtype=np.float64)
+    np.save(output_dir / f"{prefix}.npy", flipped)
     for bits in BIT_DEPTHS:
         max_value = float(2**bits - 1)
         quantized = np.clip(np.round(flipped * max_value), 0.0, max_value)
@@ -734,7 +738,6 @@ def save_image(image: np.ndarray, output_dir: Path, prefix: str) -> None:
             np.uint8 if bits == 8 else np.uint16
         )
         Image.fromarray(image_data).save(output_dir / f"{prefix}_b{bits}.tiff")
-        np.save(output_dir / f"{prefix}_b{bits}.npy", flipped * max_value)
 
 
 def save_raw_coverage(

@@ -50,11 +50,9 @@ Image.MAX_IMAGE_PIXELS = None
 
 
 def _generate_quantized_rows(
-    task: tuple[
-        int, int, int, float, float, float, float, float, float, float, int
-    ],
+    task: tuple[int, int, int, float, float, float, float, float],
 ) -> tuple[int, int, np.ndarray]:
-    """Evaluate and quantize one horizontal texture band in a worker."""
+    """Evaluate one horizontal f64 texture band in a worker."""
     (
         row_start,
         row_stop,
@@ -63,10 +61,7 @@ def _generate_quantized_rows(
         start_y,
         pixel_size_tex,
         p_phys,
-        max_val_bb,
         i0,
-        gamma,
-        bb,
     ) = task
     pixel_raw = evaluate_eggbox_analytic_average(
         start_x=start_x,
@@ -76,11 +71,9 @@ def _generate_quantized_rows(
         num_px_y=row_stop - row_start,
         p_phys=p_phys,
         i0=i0,
-        gamma=gamma,
+        gamma=GAMMA,
     )
-    pixel_bb = np.clip(np.rint(pixel_raw * max_val_bb), 0.0, max_val_bb)
-    dtype = np.uint8 if bb == 8 else np.uint16
-    return row_start, row_stop, pixel_bb.astype(dtype)
+    return row_start, row_stop, pixel_raw
 
 
 def generate_texture(
@@ -121,17 +114,23 @@ def generate_texture(
         f"_pad{TEX_PX_PAD}_oversamp{oversamp}"
     )
     output_path = tex_out_dir / f"{prefix}.tiff"
+    float_prefix = (
+        f"tex_px{p_val}_int_{method}_param_{param}"
+        f"_pad{TEX_PX_PAD}_oversamp{oversamp}"
+    )
+    float_path = tex_out_dir / f"{float_prefix}.npy"
 
     dtype = np.dtype(np.uint8 if bb == 8 else np.uint16)
     texture_bytes = tex_w * tex_h * dtype.itemsize
+    float_bytes = tex_w * tex_h * np.dtype(np.float64).itemsize
     free_bytes = shutil.disk_usage(tex_out_dir).free
-    # The raw staging file and the TIFF coexist while saving.  Do not abort on
-    # this estimate, since filesystem compression and an existing replacement
-    # file can make it conservative, but make the requirement explicit.
-    if free_bytes < 2 * texture_bytes:
+    # The f64 NumPy texture, raw TIFF staging buffer, and TIFF coexist while
+    # saving.  Do not abort on this conservative estimate, but make it clear.
+    required_bytes = float_bytes + 2 * texture_bytes
+    if free_bytes < required_bytes:
         print(
             "  WARNING: free disk space may be insufficient for staging and "
-            f"saving {output_path.name}: need about {2 * texture_bytes / 2**30:.2f} GiB, "
+            f"saving {output_path.name}: need about {required_bytes / 2**30:.2f} GiB, "
             f"have {free_bytes / 2**30:.2f} GiB."
         )
 
@@ -145,37 +144,61 @@ def generate_texture(
             start_y,
             pixel_size_tex,
             p_phys,
-            float(2**bb - 1),
             I0,
-            GAMMA,
-            bb,
         )
         for row_start in range(0, tex_h, rows_per_batch)
     ]
     staging_path = tex_out_dir / f".{prefix}.raw"
-    pixel_bb = np.memmap(
-        staging_path, mode="w+", dtype=dtype, shape=(tex_h, tex_w)
-    )
-    print(
-        f"    {len(tasks)} row batches, {NUM_PROCESSES_RUN} workers, "
-        f"up to {rows_per_batch} rows/batch"
-    )
-    try:
-        with Pool(processes=NUM_PROCESSES_RUN) as pool:
-            for row_start, row_stop, pixel_rows in pool.imap_unordered(
-                _generate_quantized_rows, tasks
-            ):
-                # The generated coordinate system grows upward, while image
-                # rows grow downward.  Flip each completed band into place.
-                pixel_bb[tex_h - row_stop : tex_h - row_start] = pixel_rows[::-1]
-        pixel_bb.flush()
+    if float_path.exists():
+        pixel_float = np.load(float_path, mmap_mode="r")
+        if pixel_float.shape != (tex_h, tex_w) or pixel_float.dtype != np.float64:
+            raise ValueError(
+                f"Existing texture {float_path} is not a {tex_h}x{tex_w} f64 array."
+            )
+        print(f"    Reusing f64 texture: {float_path.name}")
+    else:
+        pixel_float = np.lib.format.open_memmap(
+            float_path, mode="w+", dtype=np.float64, shape=(tex_h, tex_w)
+        )
+        print(
+            f"    {len(tasks)} row batches, {NUM_PROCESSES_RUN} workers, "
+            f"up to {rows_per_batch} rows/batch"
+        )
+        try:
+            with Pool(processes=NUM_PROCESSES_RUN) as pool:
+                for row_start, row_stop, pixel_rows in pool.imap_unordered(
+                    _generate_quantized_rows, tasks
+                ):
+                    # The generated coordinate system grows upward, while image
+                    # rows grow downward.  Flip each completed band into place.
+                    pixel_float[tex_h - row_stop : tex_h - row_start] = pixel_rows[::-1]
+            pixel_float.flush()
+        except Exception:
+            del pixel_float
+            float_path.unlink(missing_ok=True)
+            raise
+        finally:
+            if "pixel_float" in locals():
+                del pixel_float
+        pixel_float = np.load(float_path, mmap_mode="r")
 
-        img: Image.Image = Image.fromarray(pixel_bb)
-        img.save(output_path, format="TIFF", big_tiff=texture_bytes > 2**32)
+    pixel_bb = np.memmap(staging_path, mode="w+", dtype=dtype, shape=(tex_h, tex_w))
+    try:
+        max_val_bb = float(2**bb - 1)
+        for row_start in range(0, tex_h, rows_per_batch):
+            row_stop = min(row_start + rows_per_batch, tex_h)
+            pixel_bb[row_start:row_stop] = np.clip(
+                np.rint(pixel_float[row_start:row_stop] * max_val_bb),
+                0.0,
+                max_val_bb,
+            ).astype(dtype)
+        pixel_bb.flush()
+        Image.fromarray(pixel_bb).save(
+            output_path, format="TIFF", big_tiff=texture_bytes > 2**32
+        )
     finally:
-        # Release the mapping before removing its backing file, including when
-        # a worker or TIFF save raises an error.
         del pixel_bb
+        del pixel_float
         if staging_path.exists():
             staging_path.unlink()
 
