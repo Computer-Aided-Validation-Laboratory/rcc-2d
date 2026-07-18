@@ -14,6 +14,7 @@ from pathlib import Path
 import numpy as np
 from PIL import Image
 import riley
+from script_timing import ScriptTimer, timed_call
 
 # Experiment 1 deliberately generates very large, oversampled numeric
 # textures.  They are local trusted data, so Pillow's decompression-bomb
@@ -141,6 +142,7 @@ def main() -> None:
     print(80 * "=")
     print("Riley Texture Shader Render (Experiment 1)")
     print(80 * "=")
+    timer = ScriptTimer(__file__)
 
     if len(sys.argv) > 1:
         cases = [Path(sys.argv[1])]
@@ -299,7 +301,7 @@ def main() -> None:
                         config.save_format = riley.ImageFormat.tiff
                         config.save_bits = 16 if bb in (12, 16) else 8
                         config.save_scaling = riley.ScaleStrategy.none
-                        images = riley.raster(
+                        images = timed_call(timer, str(case_out), riley.raster,
                             [mesh], [camera], config, out_dir=str(case_out)
                         )
                         if images is not None:

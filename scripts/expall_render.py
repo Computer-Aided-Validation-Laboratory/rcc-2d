@@ -13,6 +13,8 @@ import subprocess
 import sys
 from pathlib import Path
 
+from script_timing import ScriptTimer, timed_call
+
 
 SCRIPTS_DIR = Path(__file__).resolve().parent
 
@@ -41,13 +43,14 @@ EXP2_RENDER_SCRIPTS = (
 
 def run_suite(name: str, scripts: tuple[str, ...]) -> None:
     """Run one experiment's render scripts serially with this interpreter."""
+    timer = ScriptTimer(__file__)
     print(f"\n{'=' * 80}\n{name}\n{'=' * 80}")
     for script in scripts:
         print(f"\n--- {script} ---", flush=True)
-        subprocess.run(
+        timed_call(
+            timer, script, subprocess.run,
             [sys.executable, str(SCRIPTS_DIR / script)],
-            check=True,
-            cwd=SCRIPTS_DIR.parent,
+            check=True, cwd=SCRIPTS_DIR.parent,
         )
 
 

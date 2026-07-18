@@ -10,10 +10,12 @@
 from pathlib import Path
 
 import exp1_gridint2d_analysis as analytic_analysis
+from script_timing import ScriptTimer
 
 analytic_analysis.OUTPUT_DIR = Path("./out/exp1_gridint2d_render_uvs")
 analytic_analysis.RESULTS_DIR = Path("./out/exp1_gridint2d_analysis_uvs")
 
 
 if __name__ == "__main__":
-    analytic_analysis.main()
+    with ScriptTimer(__file__).case("all_configured_cases"):
+        analytic_analysis.main()

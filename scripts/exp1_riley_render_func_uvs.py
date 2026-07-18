@@ -13,6 +13,7 @@ import os
 from pathlib import Path
 import numpy as np
 import riley
+from script_timing import ScriptTimer, timed_call
 
 from exp1common import (
     compute_riley_bbox_uvs,
@@ -81,6 +82,7 @@ def main() -> None:
     print(80 * "=")
     print("Riley Function Shader Render (Experiment 1, UVs)")
     print(80 * "=")
+    timer = ScriptTimer(__file__)
 
     if len(sys.argv) > 1:
         cases = [Path(sys.argv[1])]
@@ -225,7 +227,7 @@ def main() -> None:
                 config.save_bits = 16 if bb in (12, 16) else 8
                 config.save_scaling = riley.ScaleStrategy.none
 
-                images = riley.raster(
+                images = timed_call(timer, str(case_out), riley.raster,
                     [mesh],
                     [camera],
                     config,

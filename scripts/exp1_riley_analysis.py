@@ -29,6 +29,7 @@ from exp1params import (
     TEX_INTERPOLATORS,
     TEX_OVERSAMPLES,
 )
+from script_timing import ScriptTimer, timed_call
 
 # Defaults make this base entry point usable directly.  The world, UV, and
 # texture-only wrappers below override these paths for their specific studies.
@@ -871,6 +872,7 @@ def analyze_riley_case(case_name: str, tex_interp: str) -> None:
 
 def main() -> None:
     global ACTIVE_FRAMES
+    timer = ScriptTimer(__file__)
 
     frames_str = os.environ.get("EXP1_ACTIVE_FRAMES")
     cases_str = os.environ.get("EXP1_CASES")
@@ -908,7 +910,7 @@ def main() -> None:
         )
     for tex_interp in interps:
         for case_name in cases:
-            analyze_riley_case(case_name, tex_interp)
+            timed_call(timer, f"{case_name}_{tex_interp}", analyze_riley_case, case_name, tex_interp)
 
     if CLEAR_DIR and ANALYSIS_MODE == "func":
         shutil.rmtree(RESULTS_DIR_TEX, ignore_errors=True)

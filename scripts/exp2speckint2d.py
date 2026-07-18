@@ -17,6 +17,7 @@ from typing import Any
 
 import numpy as np
 from PIL import Image
+from script_timing import ScriptTimer, timed_call
 
 from exp2params import (
     BACKGROUND,
@@ -789,8 +790,10 @@ def render_case(
     method: str,
     param: int,
     active_frames: set[int],
+    timer: ScriptTimer | None = None,
 ) -> None:
     from exp1common import parse_case_params
+    timer = timer or ScriptTimer(__file__)
 
     coords = np.loadtxt(case_dir / "coords.csv", delimiter=",")
     connect = np.loadtxt(
@@ -851,7 +854,11 @@ def render_case(
             initializer=init_worker,
             initargs=initargs,
         ) as pool:
-            results = pool.map(process_pixel_chunk, tasks)
+            results = timed_call(
+                timer,
+                f"{case_dir.name}_int_{method}_param_{param}_frame{frame:02d}",
+                pool.map, process_pixel_chunk, tasks,
+            )
         flat = np.empty(TARG_PX_X * TARG_PX_Y, dtype=np.float64)
         invalid_pixels = 0
         ill_conditioned_pixels = 0

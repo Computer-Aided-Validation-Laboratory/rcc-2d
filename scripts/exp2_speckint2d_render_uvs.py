@@ -31,6 +31,7 @@ from exp2params import (
     TEX_PX_PAD,
 )
 from exp2speckint2d import make_speckle_pattern, render_case
+from script_timing import ScriptTimer
 
 
 def get_active_frames() -> set[int]:
@@ -68,6 +69,7 @@ def pattern_tag(
 
 def main() -> None:
     print("Experiment 2: gridint2d analytic speckle render (UVs)")
+    timer = ScriptTimer(__file__)
     if len(sys.argv) > 1:
         cases = [Path(sys.argv[1])]
     else:
@@ -121,6 +123,7 @@ def main() -> None:
                                 method,
                                 param,
                                 get_active_frames(),
+                                timer,
                             )
 
 

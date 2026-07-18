@@ -15,6 +15,7 @@ from PIL import Image
 
 from exp1params import ACTIVE_FRAMES, BIT_DEPTHS, CLEAR_DIR, DEFORMATION_CASES, INTEGRATION_METHODS, OUTPUT_DIR
 from expplots import plot_bespoke_convergence, samples_for_method
+from script_timing import ScriptTimer, timed_call
 
 RESULTS_DIR = Path("./out/exp1_gridint2d_analysis")
 
@@ -166,6 +167,7 @@ def _write_rows(path: Path, rows: list[dict[str, object]]) -> None:
 
 
 def main() -> None:
+    timer = ScriptTimer(__file__)
     if CLEAR_DIR:
         shutil.rmtree(RESULTS_DIR, ignore_errors=True)
     RESULTS_DIR.mkdir(parents=True, exist_ok=True)
@@ -180,8 +182,8 @@ def main() -> None:
         if not case_dir.exists():
             print(f"Warning: {case_dir} does not exist. Skipping.")
             continue
-        all_rows.extend(analyse_case(case_dir))
-        rectconv_rows.extend(analyse_rectangular_self_convergence(case_dir, rectconv_dir))
+        all_rows.extend(timed_call(timer, case_name, analyse_case, case_dir))
+        rectconv_rows.extend(timed_call(timer, f"{case_name}_rectconv", analyse_rectangular_self_convergence, case_dir, rectconv_dir))
     _write_rows(RESULTS_DIR / "summary.csv", all_rows)
     _write_rows(rectconv_dir / "summary.csv", rectconv_rows)
     print("Experiment 1 grid analysis completed.")

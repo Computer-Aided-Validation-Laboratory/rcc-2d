@@ -14,6 +14,7 @@ from multiprocessing import Pool
 import numpy as np
 import pyvista as pv
 from PIL import Image
+from script_timing import ScriptTimer, timed_call
 
 from exp1common import (
     build_pv_mesh,
@@ -326,6 +327,7 @@ def process_pixel_chunk(args) -> tuple[int, int, np.ndarray]:
 
 def generate_grid_images(case_dir: Path, method: str, param: int) -> None:
     """Load mesh, interpolate displacements, and generate target images."""
+    timer = ScriptTimer(__file__)
     case_name: str = case_dir.name
     print(f"\nProcessing: {case_name} ({method}={param})")
 
@@ -424,7 +426,10 @@ def generate_grid_images(case_dir: Path, method: str, param: int) -> None:
             initializer=init_worker,
             initargs=init_args,
         ) as pool:
-            results = pool.map(process_pixel_chunk, tasks)
+            results = timed_call(
+                timer, f"{case_dir.name}_int_{method}_param_{param}_frame{ff:02d}",
+                pool.map, process_pixel_chunk, tasks,
+            )
 
         pixel_raw_flat = np.zeros(total_pixels, dtype=np.float64)
         for start_idx, end_idx, chunk_raw in results:

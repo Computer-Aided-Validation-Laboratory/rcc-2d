@@ -36,6 +36,7 @@ from exp2speckint2d import (
     make_speckle_pattern,
     save_image,
 )
+from script_timing import ScriptTimer, timed_call
 
 NUM_PROCESSES_RUN = max(1, min(
     NUM_PROCESSES,
@@ -185,6 +186,7 @@ def generate_texture(
 def main() -> None:
     print("Experiment 2: analytic additive-saturation texture generator")
     TEXTURE_OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
+    timer = ScriptTimer(__file__)
     for pattern_type in ANALYTIC_SPECKLE_TYPES:
         if pattern_type not in {"diskaddsat", "gausscont"}:
             raise ValueError(f"Unsupported analytic type: {pattern_type}")
@@ -199,12 +201,10 @@ def main() -> None:
                             fraction,
                         )
                         print(f"  {pattern_name}, oversamp={oversample}")
-                        generate_texture(
-                            pattern_type,
-                            black_fraction,
-                            distribution,
-                            fraction,
-                            oversample,
+                        timed_call(
+                            timer, f"{pattern_name}_oversamp{oversample}",
+                            generate_texture, pattern_type, black_fraction,
+                            distribution, fraction, oversample,
                         )
 
 

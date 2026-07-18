@@ -29,6 +29,7 @@ from exp2params import (
     RANDOM_SEED,
     TEX_INTERPOLATORS,
 )
+from script_timing import ScriptTimer, timed_call
 
 
 RILEY_OUTPUT_DIR = Path("./out/exp2_riley_render_texf")
@@ -348,6 +349,7 @@ def analyse_pattern(
 
 
 def main() -> None:
+    timer = ScriptTimer(__file__)
     RESULTS_DIR.mkdir(parents=True, exist_ok=True)
     frames = _selected_frames()
     allowed_interpolators = _selected_interpolators()
@@ -369,15 +371,10 @@ def main() -> None:
                         tag = pattern_tag(
                             pattern_type, black_fraction, distribution, fraction
                         )
-                        all_rows.extend(
-                            analyse_pattern(
-                                case_name,
-                                pattern_type,
-                                tag,
-                                frames,
-                                allowed_interpolators,
-                            )
-                        )
+                        all_rows.extend(timed_call(
+                            timer, f"{case_name}_{tag}", analyse_pattern,
+                            case_name, pattern_type, tag, frames, allowed_interpolators,
+                        ))
     _write_rows(RESULTS_DIR / "summary.csv", all_rows)
     print(f"\nSaved overall summary: {RESULTS_DIR / 'summary.csv'}")
     print("Experiment 2 Riley floating-texture analysis completed.")

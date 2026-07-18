@@ -31,6 +31,7 @@ from exp2params import (
     TEXTURE_OUTPUT_DIR,
 )
 from exp2speckint2d import image_outputs_complete, make_speckle_pattern, save_image
+from script_timing import ScriptTimer, timed_call
 
 
 def tag(
@@ -115,6 +116,7 @@ def generate_texture(
 def main() -> None:
     print("Experiment 2: analytic speckle texture generator")
     TEXTURE_OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
+    timer = ScriptTimer(__file__)
 
     for pattern_type in SPECKLE_TYPES:
         for ratio in BLACK_WHITE_RATIOS:
@@ -134,13 +136,10 @@ def main() -> None:
                                 f"oversamp={oversample}, ssaa={ssaa}"
                             )
 
-                            generate_texture(
-                                pattern_type,
-                                ratio,
-                                distribution,
-                                fraction,
-                                oversample,
-                                ssaa,
+                            timed_call(
+                                timer, f"{pattern_name}_oversamp{oversample}_ssaa{ssaa}",
+                                generate_texture, pattern_type, ratio,
+                                distribution, fraction, oversample, ssaa,
                             )
 
 

@@ -11,6 +11,7 @@ from pathlib import Path
 import multiprocessing
 
 import exp1_gridint2d_numerical_render_world as renderer
+from script_timing import ScriptTimer
 
 renderer.OUTPUT_DIR = Path("./out/exp1_gridint2d_render_world")
 renderer.INTEGRATION_METHODS = [
@@ -24,4 +25,5 @@ if __name__ == "__main__":
     except RuntimeError:
         pass
 
-    renderer.main()
+    with ScriptTimer(__file__).case("all_configured_cases"):
+        renderer.main()

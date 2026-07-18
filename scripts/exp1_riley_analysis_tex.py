@@ -14,6 +14,7 @@ reference and writes one subdirectory per named texture interpolator.
 from pathlib import Path
 
 import exp1_riley_analysis as riley_analysis
+from script_timing import ScriptTimer
 
 riley_analysis.OUTPUT_DIR = Path("./out/exp1_gridint2d_render_uvs")
 riley_analysis.RILEY_FUNC_DIR = Path("./out/exp1_riley_render_func_uvs")
@@ -24,4 +25,5 @@ riley_analysis.ANALYSIS_MODE = "tex"
 
 
 if __name__ == "__main__":
-    riley_analysis.main()
+    with ScriptTimer(__file__).case("all_configured_cases"):
+        riley_analysis.main()

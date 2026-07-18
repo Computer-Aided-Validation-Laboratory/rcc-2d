@@ -19,6 +19,7 @@ from PIL import Image
 
 from exp2params import ACTIVE_FRAMES, BIT_DEPTHS, DEFORMATION_CASES, OUTPUT_DIR
 from expplots import plot_bespoke_convergence, samples_for_method
+from script_timing import ScriptTimer, timed_call
 
 
 RESULTS_DIR = Path("./out/exp2_speckint2d_analysis")
@@ -243,6 +244,7 @@ def analyse_rectangular_self_convergence(
 
 
 def main() -> None:
+    timer = ScriptTimer(__file__)
     RESULTS_DIR.mkdir(parents=True, exist_ok=True)
     rectconv_dir = Path(f"{RESULTS_DIR}_rectconv")
     rectconv_dir.mkdir(parents=True, exist_ok=True)
@@ -250,8 +252,8 @@ def main() -> None:
     rectconv_rows: list[dict[str, object]] = []
     for group_name, jobs in sorted(_discover_jobs().items()):
         print(f"Analysing {group_name}")
-        all_rows.extend(analyse_group(group_name, jobs))
-        rectconv_rows.extend(analyse_rectangular_self_convergence(group_name, jobs))
+        all_rows.extend(timed_call(timer, group_name, analyse_group, group_name, jobs))
+        rectconv_rows.extend(timed_call(timer, f"{group_name}_rectconv", analyse_rectangular_self_convergence, group_name, jobs))
     _write_rows(RESULTS_DIR / "summary.csv", all_rows)
     _write_rows(rectconv_dir / "summary.csv", rectconv_rows)
     print("Experiment 2 grid analysis completed.")

@@ -14,6 +14,7 @@ from pathlib import Path
 
 import numpy as np
 import riley
+from script_timing import ScriptTimer, timed_call
 
 from exp1common import parse_case_params
 from exp1params import (
@@ -139,6 +140,7 @@ def main() -> None:
     print(80 * "=")
     print("Riley Floating Texture Shader Render (Experiment 1)")
     print(80 * "=")
+    timer = ScriptTimer(__file__)
 
     if len(sys.argv) > 1:
         cases = [Path(sys.argv[1])]
@@ -276,7 +278,7 @@ def main() -> None:
                         config.save_format = riley.ImageFormat.tiff
                         config.save_bits = 16 if bits in (12, 16) else 8
                         config.save_scaling = riley.ScaleStrategy.none
-                        images = riley.raster(
+                        images = timed_call(timer, str(case_out), riley.raster,
                             [mesh], [camera], config, out_dir=str(case_out)
                         )
                         if images is not None:

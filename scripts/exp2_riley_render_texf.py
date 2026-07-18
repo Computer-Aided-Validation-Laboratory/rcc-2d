@@ -18,6 +18,7 @@ from pathlib import Path
 
 import numpy as np
 import riley
+from script_timing import ScriptTimer, timed_call
 
 from exp1common import parse_case_params
 from exp2params import (
@@ -151,6 +152,7 @@ def render_exists(case_out: Path, frames: range) -> bool:
 
 def main() -> None:
     print("Experiment 2: Riley raw floating coverage texture render")
+    timer = ScriptTimer(__file__)
     if len(sys.argv) > 1:
         cases = [Path(sys.argv[1])]
     else:
@@ -277,7 +279,10 @@ def main() -> None:
                                     config.max_geom_workers_per_job = 1
                                     config.max_raster_workers_per_job = RILEY_RASTER_THREADS
                                     config.tile_size_min = 1
-                                    images = riley.raster([mesh], [camera], config)
+                                    images = timed_call(
+                                        timer, str(case_out), riley.raster,
+                                        [mesh], [camera], config,
+                                    )
                                     if images is None:
                                         raise RuntimeError("Riley returned no in-memory image data.")
                                     case_out.mkdir(parents=True, exist_ok=True)

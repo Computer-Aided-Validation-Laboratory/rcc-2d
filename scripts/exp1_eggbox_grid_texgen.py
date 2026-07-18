@@ -30,6 +30,7 @@ from exp1params import (
     GAMMA,
     TEXTURE_OUTPUT_DIR,
 )
+from script_timing import ScriptTimer, timed_call
 
 # Process bounded horizontal bands, so a high-oversampling texture never needs
 # a full floating point image in RAM.  These can be overridden for a particular
@@ -215,6 +216,7 @@ def generate_texture(
 
 def main() -> None:
     print(80 * "=")
+    timer = ScriptTimer(__file__)
     print("Experiment 1: Sinusoidal Grid Texture Generator")
     print(80 * "=")
 
@@ -230,7 +232,7 @@ def main() -> None:
                 f"  Texture: analytic=0, bb={bb}, "
                 f"oversamp={oversamp}"
             )
-            generate_texture("analytic", 0, bb, oversamp)
+            timed_call(timer, f"analytic_b{bb}_oversamp{oversamp}", generate_texture, "analytic", 0, bb, oversamp)
 
     print("\nAll reference textures generated successfully!")
 
