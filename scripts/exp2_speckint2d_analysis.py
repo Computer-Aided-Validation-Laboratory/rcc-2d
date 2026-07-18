@@ -69,24 +69,39 @@ def _discover_jobs() -> dict[str, dict[tuple[str, int], Path]]:
     return groups
 
 
-def _reference_job(jobs: dict[tuple[str, int], Path], frame: int):
-    """Prefer an analytic image; otherwise select the highest available Gauss rule."""
+def _reference_job(
+    group_name: str,
+    jobs: dict[tuple[str, int], Path],
+    frame: int,
+):
+    """Prefer analytic; disks fall back to rect, other patterns to Gauss."""
     analytic = jobs.get(("analytic", 0))
     if analytic is not None and any(
         _image_pair(analytic, "analytic", 0, bit_depth, frame) is not None
         for bit_depth in BIT_DEPTHS
     ):
         return ("analytic", 0), analytic, "Analytic Reference"
-    gaussian_jobs = sorted(
-        ((param, directory) for (method, param), directory in jobs.items() if method == "gauss"),
+    fallback_method = "rect" if "_diskaddsat_" in group_name else "gauss"
+    fallback_jobs = sorted(
+        (
+            (param, directory)
+            for (method, param), directory in jobs.items()
+            if method == fallback_method
+        ),
         reverse=True,
     )
-    for param, directory in gaussian_jobs:
+    for param, directory in fallback_jobs:
         if any(
-            _image_pair(directory, "gauss", param, bit_depth, frame) is not None
+            _image_pair(directory, fallback_method, param, bit_depth, frame)
+            is not None
             for bit_depth in BIT_DEPTHS
         ):
-            return ("gauss", param), directory, f"Gauss Quadrature Reference ({param}x{param})"
+            label = "Rectangular SSAA" if fallback_method == "rect" else "Gauss Quadrature"
+            return (
+                (fallback_method, param),
+                directory,
+                f"{label} Reference ({param}x{param})",
+            )
     return None
 
 
@@ -104,7 +119,7 @@ def analyse_group(group_name: str, jobs: dict[tuple[str, int], Path]) -> list[di
     methods = sorted({method for method, _ in jobs if method != "analytic"})
     rows: list[dict[str, object]] = []
     for frame in ACTIVE_FRAMES:
-        selected = _reference_job(jobs, frame)
+        selected = _reference_job(group_name, jobs, frame)
         if selected is None:
             print(f"Warning: {group_name}, frame {frame:02d}: no analytic or Gaussian reference.")
             continue

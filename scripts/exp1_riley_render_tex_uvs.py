@@ -29,20 +29,13 @@ from exp1params import (
     CLEAR_DIR,
     FORCE_RENDER_OVER,
     TEX_OVERSAMPLES,
+    TEX_INTERPOLATORS,
     TEXTURE_OUTPUT_DIR,
     DEFORMATION_CASES,
     RILEY_RASTER_THREADS,
     SSAA_LEVELS,
 )
 
-
-TEX_INTERPOLATORS: dict[str, riley.TextureSample] = {
-    "nearest": riley.TextureSample.nearest,
-    "linear": riley.TextureSample.linear,
-    "cubic_catmull_rom": riley.TextureSample.cubic_catmull_rom,
-    "cubic_mitchell_netravali": riley.TextureSample.cubic_mitchell_netravali,
-    "lanczos3": riley.TextureSample.lanczos3,
-}
 
 OUTPUT_ROOT = Path("./out/exp1_riley_render_tex")
 

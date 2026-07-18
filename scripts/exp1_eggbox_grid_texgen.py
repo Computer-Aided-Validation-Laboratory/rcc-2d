@@ -23,6 +23,7 @@ from exp1params import (
     TEX_OVERSAMPLES,
     BIT_DEPTHS,
     CLEAR_DIR,
+    FORCE_RENDER_OVER,
     NUM_PROCESSES,
     P_PIXELS,
     I0,
@@ -119,6 +120,14 @@ def generate_texture(
         f"_pad{TEX_PX_PAD}_oversamp{oversamp}"
     )
     float_path = tex_out_dir / f"{float_prefix}.npy"
+
+    if (
+        not FORCE_RENDER_OVER
+        and output_path.exists()
+        and float_path.exists()
+    ):
+        print(f"    outputs exist; skipping: {output_path.name}")
+        return
 
     dtype = np.dtype(np.uint8 if bb == 8 else np.uint16)
     texture_bytes = tex_w * tex_h * dtype.itemsize

@@ -15,6 +15,7 @@ import numpy as np
 from exp2params import (
     ANALYTIC_SPECKLE_TYPES,
     BLACK_AREA_FRACTIONS,
+    FORCE_RENDER_OVER,
     GAUSSIAN_CUTOFF_SIGMAS,
     GAMMA,
     I0,
@@ -31,6 +32,7 @@ from exp2params import (
 )
 from exp2speckint2d import (
     MAX_PIXELS_PER_CHUNK,
+    image_outputs_complete,
     make_speckle_pattern,
     save_image,
 )
@@ -124,6 +126,14 @@ def generate_texture(
     oversample: int,
 ) -> None:
     """Generate exact axis-aligned texel averages for one analytic model."""
+    prefix = (
+        f"tex_px{TARG_PX_X}_"
+        f"{tag(pattern_type, black_fraction, distribution, fraction)}"
+        f"_pad{TEX_PX_PAD}_oversamp{oversample}_analytic"
+    )
+    if not FORCE_RENDER_OVER and image_outputs_complete(TEXTURE_OUTPUT_DIR, prefix):
+        print("    outputs exist; skipping.")
+        return
     roi_size = float(max(TARG_PX_X, TARG_PX_Y))
     pixel_size = roi_size / max(TARG_PX_X, TARG_PX_Y)
     texel_size = pixel_size / oversample
@@ -167,11 +177,6 @@ def generate_texture(
             raw_coverage[start_row:end_row] = coverage
             image[start_row:end_row] = intensity
 
-    prefix = (
-        f"tex_px{TARG_PX_X}_"
-        f"{tag(pattern_type, black_fraction, distribution, fraction)}"
-        f"_pad{TEX_PX_PAD}_oversamp{oversample}_analytic"
-    )
     # Save pixel-integrated coverage as the primary f64 texture.  It is not
     # clamped: overlapping disks/Gaussians can and should exceed one.
     save_image(image, TEXTURE_OUTPUT_DIR, prefix, float_texture=raw_coverage)

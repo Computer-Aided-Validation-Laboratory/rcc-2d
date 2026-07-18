@@ -755,6 +755,14 @@ def save_image(
         Image.fromarray(image_data).save(output_dir / f"{prefix}_b{bits}.tiff")
 
 
+def image_outputs_complete(output_dir: Path, prefix: str) -> bool:
+    """Return whether the f64 image and every digitised image are present."""
+    return (output_dir / f"{prefix}.npy").exists() and all(
+        (output_dir / f"{prefix}_b{bits}.tiff").exists()
+        for bits in BIT_DEPTHS
+    )
+
+
 def save_raw_coverage(
     coverage: np.ndarray,
     output_dir: Path,
@@ -824,11 +832,7 @@ def render_case(
         prefix = (
             f"targ_px{TARG_PX_X}_int_{method}_param_{param}_frame{frame:02d}"
         )
-        complete = (output_dir / f"{prefix}.npy").exists() and all(
-            (output_dir / f"{prefix}_b{bits}.tiff").exists()
-            for bits in BIT_DEPTHS
-        )
-        if not FORCE_RENDER_OVER and complete:
+        if not FORCE_RENDER_OVER and image_outputs_complete(output_dir, prefix):
             print(f"    frame {frame:02d}: outputs exist; skipping.")
             continue
         if frame == 0:

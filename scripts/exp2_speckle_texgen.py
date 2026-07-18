@@ -14,6 +14,7 @@ import numpy as np
 from exp2params import (
     BIT_DEPTHS,
     BLACK_WHITE_RATIOS,
+    FORCE_RENDER_OVER,
     GAUSSIAN_CUTOFF_SIGMAS,
     I0,
     GAMMA,
@@ -29,7 +30,7 @@ from exp2params import (
     TEX_PX_PAD,
     TEXTURE_OUTPUT_DIR,
 )
-from exp2speckint2d import make_speckle_pattern, save_image
+from exp2speckint2d import image_outputs_complete, make_speckle_pattern, save_image
 
 
 def tag(
@@ -53,6 +54,13 @@ def generate_texture(
     ssaa: int,
 ) -> None:
     """Render a texture with ``ssaa`` squared midpoint samples per texel."""
+    prefix = (
+        f"tex_px{TARG_PX_X}_{tag(pattern_type, ratio, distribution, fraction)}"
+        f"_pad{TEX_PX_PAD}_oversamp{oversample}_ssaa{ssaa}"
+    )
+    if not FORCE_RENDER_OVER and image_outputs_complete(TEXTURE_OUTPUT_DIR, prefix):
+        print("    outputs exist; skipping.")
+        return
 
     roi_size = float(max(TARG_PX_X, TARG_PX_Y))
     pixel_size = roi_size / max(TARG_PX_X, TARG_PX_Y)
@@ -101,11 +109,6 @@ def generate_texture(
 
     coverage_image /= float(ssaa * ssaa)
     image = pattern.intensity_from_coverage(coverage_image)
-    prefix = (
-        f"tex_px{TARG_PX_X}_{tag(pattern_type, ratio, distribution, fraction)}"
-        f"_pad{TEX_PX_PAD}_oversamp{oversample}_ssaa{ssaa}"
-    )
-
     save_image(image, TEXTURE_OUTPUT_DIR, prefix, float_texture=coverage_image)
 
 

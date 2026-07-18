@@ -26,18 +26,11 @@ from exp1params import (
     TARG_PX_X,
     TARG_PX_Y,
     TEX_OVERSAMPLES,
+    TEX_INTERPOLATORS,
     TEX_PX_PAD,
     TEXTURE_OUTPUT_DIR,
 )
 
-
-TEX_INTERPOLATORS: dict[str, riley.TextureSample] = {
-    "nearest": riley.TextureSample.nearest,
-    "linear": riley.TextureSample.linear,
-    "cubic_catmull_rom": riley.TextureSample.cubic_catmull_rom,
-    "cubic_mitchell_netravali": riley.TextureSample.cubic_mitchell_netravali,
-    "lanczos3": riley.TextureSample.lanczos3,
-}
 
 OUTPUT_ROOT = Path("./out/exp1_riley_render_texfloat")
 

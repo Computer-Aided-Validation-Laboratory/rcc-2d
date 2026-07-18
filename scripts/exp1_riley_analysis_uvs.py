@@ -15,7 +15,7 @@ riley_analysis.OUTPUT_DIR = Path("./out/exp1_gridint2d_render_uvs")
 riley_analysis.RILEY_FUNC_DIR = Path("./out/exp1_riley_render_func_uvs")
 riley_analysis.RILEY_TEX_DIR = Path("./out/exp1_riley_render_tex")
 riley_analysis.RESULTS_DIR_FUNC = Path("./out/exp1_riley_analysis_uvs")
-riley_analysis.RESULTS_DIR_TEX = Path("./out/exp1_riley_analysis_uvs_tex_temp")
+riley_analysis.RESULTS_DIR_TEX = Path("./out/exp1_riley_analysis_uvs_tex")
 riley_analysis.ANALYSIS_MODE = "func"
 
 

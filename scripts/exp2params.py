@@ -10,6 +10,8 @@
 from pathlib import Path
 from typing import List, Tuple
 
+import riley
+
 # Output directory for Exp 2
 OUTPUT_DIR: Path = Path("./out/exp2_speckint2d_render_uvs")
 TEXTURE_OUTPUT_DIR: Path = Path("./out/exp2_analytic_speckle_textures")
@@ -29,6 +31,13 @@ NUM_PROCESSES: int = 8
 # and no halo: SSAA 256/512/1024 uses about 9.6/38.5/154 MiB per worker.
 # `RASTER_CHUNKS_PER_WORKER=4` schedules four work chunks, not four buffers.
 RILEY_RASTER_THREADS: int = 8
+TEX_INTERPOLATORS: dict[str, riley.TextureSample] = {
+    "nearest": riley.TextureSample.nearest,
+    "linear": riley.TextureSample.linear,
+    "cubic_catmull_rom": riley.TextureSample.cubic_catmull_rom,
+    # "cubic_mitchell_netravali": riley.TextureSample.cubic_mitchell_netravali,
+    # "lanczos3": riley.TextureSample.lanczos3,
+}
 
 # Integration methods and parameters
 INTEGRATION_METHODS: List[Tuple[str, int]] = [
@@ -93,5 +102,5 @@ DEFORMATION_CASES: List[str] = [
 ACTIVE_FRAMES: List[int] = [0,1,2,3,4,5,6,7,8,9,10]
 
 # Per-texel SSAA levels for the analytic speckle texture generator.
-TEX_SSAA_LEVELS: List[int] = [1, 2, 4, 8, 16]
-RILEY_SSAA_LEVLES: List[int] = [1, 2, 4, 8, 16, 32]
+TEX_SSAA_LEVELS: List[int] = [1, 2, 4, 8, 16] # Used for digitised input texture creation
+RILEY_SSAA_LEVLES: List[int] = [1, 2, 4, 8, 16, 32] # Actually used for riley renders

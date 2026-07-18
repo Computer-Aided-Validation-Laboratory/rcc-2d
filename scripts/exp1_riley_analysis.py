@@ -26,6 +26,7 @@ from exp1params import (
     ACTIVE_FRAMES,
     OUTPUT_DIR,
     SSAA_LEVELS,
+    TEX_INTERPOLATORS,
     TEX_OVERSAMPLES,
 )
 
@@ -35,13 +36,6 @@ OUTPUT_DIR = Path("./out/exp1_gridint2d_render_world")
 RILEY_FUNC_DIR = Path("./out/exp1_riley_render_func_world")
 RILEY_TEX_DIR = Path("./out/exp1_riley_render_tex")
 
-TEX_INTERPOLATORS = (
-    "nearest",
-    "linear",
-    "cubic_catmull_rom",
-    "cubic_mitchell_netravali",
-    "lanczos3",
-)
 RESULTS_DIR_FUNC = Path("./out/exp1_riley_analysis_func_world")
 RESULTS_DIR_TEX = Path("./out/exp1_riley_analysis_tex")
 ANALYSIS_MODE = "both"
