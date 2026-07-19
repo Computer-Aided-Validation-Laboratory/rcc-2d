@@ -18,8 +18,7 @@ from exp2params import (
     GAUSSIAN_CUTOFF_SIGMAS,
     I0,
     GAMMA,
-    PERTURBATION_DISTRIBUTIONS,
-    PERTURBATION_FRACTIONS,
+    additive_jitter_for,
     PX_PER_SPECK,
     RANDOM_SEED,
     SPECKLE_TYPES,
@@ -115,8 +114,7 @@ def main() -> None:
     timer = ScriptTimer(__file__)
     for pattern_type in SPECKLE_TYPES:
         for black_fraction in BLACK_AREA_FRACTIONS:
-            for distribution in PERTURBATION_DISTRIBUTIONS:
-                for fraction in PERTURBATION_FRACTIONS:
+            for distribution, fraction in (additive_jitter_for(pattern_type),):
                     for oversample in TEX_OVERSAMPLES:
                         for ssaa in TEX_SSAA_LEVELS:
                             pattern_name = tag(

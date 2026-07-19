@@ -29,8 +29,7 @@ from exp2params import (
     FORCE_RENDER_OVER,
     GAMMA,
     I0,
-    PERTURBATION_DISTRIBUTIONS,
-    PERTURBATION_FRACTIONS,
+    additive_jitter_for,
     RANDOM_SEED,
     RILEY_RASTER_THREADS,
     RILEY_SSAA_LEVLES,
@@ -40,10 +39,10 @@ from exp2params import (
     TEXTURE_OUTPUT_DIR,
     TARG_PX_X,
     TARG_PX_Y,
+    exp2_output_dir,
 )
 
-
-OUTPUT_ROOT = Path("./out/exp2_riley_render_texf")
+OUTPUT_ROOT = exp2_output_dir("exp2_riley_render_texf")
 
 
 def get_ssaa_levels() -> list[int]:
@@ -206,8 +205,7 @@ def main() -> None:
 
         for pattern_type in ANALYTIC_SPECKLE_TYPES:
             for black_fraction in BLACK_AREA_FRACTIONS:
-                for distribution in PERTURBATION_DISTRIBUTIONS:
-                    for fraction in PERTURBATION_FRACTIONS:
+                for distribution, fraction in (additive_jitter_for(pattern_type),):
                         tag = pattern_tag(
                             pattern_type, black_fraction, distribution, fraction
                         )

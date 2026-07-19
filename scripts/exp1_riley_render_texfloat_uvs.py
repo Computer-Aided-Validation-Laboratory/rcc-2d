@@ -30,10 +30,11 @@ from exp1params import (
     TEX_INTERPOLATORS,
     TEX_PX_PAD,
     TEXTURE_OUTPUT_DIR,
+    exp1_output_dir,
 )
 
 
-OUTPUT_ROOT = Path("./out/exp1_riley_render_texfloat")
+OUTPUT_ROOT = exp1_output_dir("exp1_riley_render_texfloat")
 
 
 def get_ssaa_levels() -> list[int]:

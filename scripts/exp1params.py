@@ -12,18 +12,24 @@ from typing import List, Tuple
 
 import riley
 
-# Output directory for Exp 1
-OUTPUT_DIR: Path = Path("./out/exp1_gridint2d_render_world")
-TEXTURE_OUTPUT_DIR: Path = Path("./out/exp1_analytic_textures")
+TARG_PX_X: int = 32
+TARG_PX_Y: int = 32
+
+def exp1_output_dir(name: str) -> Path:
+    """Return a size-qualified Experiment 1 output directory."""
+    return Path("./out") / f"{name}_im{TARG_PX_X}"
+
+# Output directories for Exp 1.  The image-size suffix permits retaining
+# results for several target sizes side by side.
+OUTPUT_DIR: Path = exp1_output_dir("exp1_gridint2d_render_world")
+TEXTURE_OUTPUT_DIR: Path = exp1_output_dir("exp1_analytic_textures")
 CLEAR_DIR: bool = False
 # Re-render existing outputs instead of skipping completed render frames.
 FORCE_RENDER_OVER: bool = False
 
-TARG_PX_X: int = 256
-TARG_PX_Y: int = 256
 BACKGROUND: float = 0.5
 TEX_PX_PAD: int = 4
-TEX_OVERSAMPLES: List[int] = [1, 2, 4, 8, 16, 32, 64]
+TEX_OVERSAMPLES: List[int] = [1, 2, 4, 8, 16, 32, 64, 128]
 BIT_DEPTHS: List[int] = [8, 12, 16]
 NUM_PROCESSES: int = 8
 # Riley uses one scratch tile per active raster worker.  For f64 builds,

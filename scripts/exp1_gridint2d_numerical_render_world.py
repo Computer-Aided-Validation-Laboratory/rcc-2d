@@ -36,9 +36,10 @@ from exp1params import (
     DEFORMATION_CASES,
     ACTIVE_FRAMES,
     FORCE_RENDER_OVER,
+    exp1_output_dir,
 )
 
-OUTPUT_DIR = Path("./out/exp1_gridint2d_render_world")
+OUTPUT_DIR = exp1_output_dir("exp1_gridint2d_render_world")
 # INTEGRATION_METHODS = [
 #     ("rect", 1),
 #     ("rect", 2),

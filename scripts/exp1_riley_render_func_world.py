@@ -29,9 +29,10 @@ from exp1params import (
     DEFORMATION_CASES,
     RILEY_RASTER_THREADS,
     SSAA_LEVELS,
+    exp1_output_dir,
 )
 
-OUTPUT_ROOT = Path("./out/exp1_riley_render_func_world")
+OUTPUT_ROOT = exp1_output_dir("exp1_riley_render_func_world")
 
 
 def get_ssaa_levels() -> list[int]:

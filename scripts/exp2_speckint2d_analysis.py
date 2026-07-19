@@ -17,12 +17,18 @@ from pathlib import Path
 import numpy as np
 from PIL import Image
 
-from exp2params import ACTIVE_FRAMES, BIT_DEPTHS, DEFORMATION_CASES, OUTPUT_DIR
+from exp2params import (
+    ACTIVE_FRAMES,
+    BIT_DEPTHS,
+    DEFORMATION_CASES,
+    OUTPUT_DIR,
+    exp2_output_dir,
+)
 from expplots import plot_bespoke_convergence, samples_for_method
 from script_timing import ScriptTimer, timed_call
 
 
-RESULTS_DIR = Path("./out/exp2_speckint2d_analysis")
+RESULTS_DIR = exp2_output_dir("exp2_speckint2d_analysis")
 JOB_RE = re.compile(
     r"^(?P<pattern>.+)_int_(?P<method>analytic|rect|gauss|mc)_param_(?P<param>\d+)$"
 )

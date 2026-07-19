@@ -10,13 +10,14 @@
 from pathlib import Path
 
 import exp1_riley_analysis as riley_analysis
+from exp1params import exp1_output_dir
 from script_timing import ScriptTimer
 
-riley_analysis.OUTPUT_DIR = Path("./out/exp1_gridint2d_render_uvs")
-riley_analysis.RILEY_FUNC_DIR = Path("./out/exp1_riley_render_func_uvs")
-riley_analysis.RILEY_TEX_DIR = Path("./out/exp1_riley_render_tex")
-riley_analysis.RESULTS_DIR_FUNC = Path("./out/exp1_riley_analysis_uvs")
-riley_analysis.RESULTS_DIR_TEX = Path("./out/exp1_riley_analysis_uvs_tex")
+riley_analysis.OUTPUT_DIR = exp1_output_dir("exp1_gridint2d_render_uvs")
+riley_analysis.RILEY_FUNC_DIR = exp1_output_dir("exp1_riley_render_func_uvs")
+riley_analysis.RILEY_TEX_DIR = exp1_output_dir("exp1_riley_render_tex")
+riley_analysis.RESULTS_DIR_FUNC = exp1_output_dir("exp1_riley_analysis_uvs")
+riley_analysis.RESULTS_DIR_TEX = exp1_output_dir("exp1_riley_analysis_uvs_tex")
 riley_analysis.ANALYSIS_MODE = "func"
 
 

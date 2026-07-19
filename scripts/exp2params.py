@@ -12,17 +12,23 @@ from typing import List, Tuple
 
 import riley
 
-# Output directory for Exp 2
-OUTPUT_DIR: Path = Path("./out/exp2_speckint2d_render_uvs")
-TEXTURE_OUTPUT_DIR: Path = Path("./out/exp2_analytic_speckle_textures")
+TARG_PX_X: int = 32
+TARG_PX_Y: int = 32
+
+def exp2_output_dir(name: str) -> Path:
+    """Return a size-qualified Experiment 2 output directory."""
+    return Path("./out") / f"{name}_im{TARG_PX_X}"
+
+# Output directories for Exp 2.  The image-size suffix permits retaining
+# results for several target sizes side by side.
+OUTPUT_DIR: Path = exp2_output_dir("exp2_speckint2d_render_uvs")
+TEXTURE_OUTPUT_DIR: Path = exp2_output_dir("exp2_analytic_speckle_textures")
 # Re-render existing outputs instead of skipping completed render frames.
 FORCE_RENDER_OVER: bool = False
 
-TARG_PX_X: int = 256
-TARG_PX_Y: int = 256
 BACKGROUND: float = 0.5
 TEX_PX_PAD: int = 4
-TEX_OVERSAMPLES: List[int] = [1, 2, 4, 8, 16, 32]
+TEX_OVERSAMPLES: List[int] = [1, 2, 4, 8, 16, 32, 64, 128]
 BIT_DEPTHS: List[int] = [8, 12, 16]
 NUM_PROCESSES: int = 8
 # Riley uses one scratch tile per active raster worker.  For f64 builds,
@@ -63,8 +69,8 @@ INTEGRATION_METHODS: List[Tuple[str, int]] = [
     ("gauss", 32),
     ("gauss", 64),
     ("gauss", 128),
-    ("gauss", 256),
-    ("gauss", 512),
+    #("gauss", 256),
+    #("gauss", 512),
     ("analytic", 0),
 ]
 
@@ -78,8 +84,24 @@ BLACK_AREA_FRACTIONS: List[float] = [0.6]
 # They are excluded while the additive-saturation analytic reference is active.
 SPECKLE_TYPES: List[str] = []
 ANALYTIC_SPECKLE_TYPES: List[str] = ["diskaddsat", "gausscont"]
-PERTURBATION_DISTRIBUTIONS: List[str] = ["uniform"] # "gaussian"
-PERTURBATION_FRACTIONS: List[float] = [0.25]
+# Jitter is expressed as a fraction of the lattice pitch.  Keep separate
+# controls for the additive patterns: the disk pattern tolerates more jitter,
+# while the broader Gaussian pattern needs less to avoid clumping.
+ADDITIVE_DISK_JITTER_DISTRIBUTION: str = "uniform"
+ADDITIVE_DISK_JITTER_FRACTION: float = 0.25
+ADDITIVE_GAUSS_JITTER_DISTRIBUTION: str = "gaussian"
+ADDITIVE_GAUSS_JITTER_FRACTION: float = 0.12
+
+
+def additive_jitter_for(pattern_type: str) -> tuple[str, float]:
+    """Return the configured jitter PDF and fraction for an additive pattern."""
+    if pattern_type == "diskaddsat":
+        return ADDITIVE_DISK_JITTER_DISTRIBUTION, ADDITIVE_DISK_JITTER_FRACTION
+    if pattern_type == "gausscont":
+        return ADDITIVE_GAUSS_JITTER_DISTRIBUTION, ADDITIVE_GAUSS_JITTER_FRACTION
+    raise ValueError(f"No additive jitter configuration for {pattern_type!r}")
+
+
 RANDOM_SEED: int = 3
 GAUSSIAN_CUTOFF_SIGMAS: float = 4.0
 # For `gausscont`, this is the remaining fraction of peak coverage at the
@@ -99,7 +121,7 @@ DEFORMATION_CASES: List[str] = [
 ]
 
 # List of frames to generate and analyze (e.g. [0, 5])
-ACTIVE_FRAMES: List[int] = [0,1,2,3,4,5,6,7,8,9,10]
+ACTIVE_FRAMES: List[int] = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10]
 
 # Per-texel SSAA levels for the analytic speckle texture generator.
 TEX_SSAA_LEVELS: List[int] = [1, 2, 4, 8, 16] # Used for digitised input texture creation

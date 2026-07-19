@@ -13,11 +13,19 @@ from pathlib import Path
 import numpy as np
 from PIL import Image
 
-from exp1params import ACTIVE_FRAMES, BIT_DEPTHS, CLEAR_DIR, DEFORMATION_CASES, INTEGRATION_METHODS, OUTPUT_DIR
+from exp1params import (
+    ACTIVE_FRAMES,
+    BIT_DEPTHS,
+    CLEAR_DIR,
+    DEFORMATION_CASES,
+    INTEGRATION_METHODS,
+    OUTPUT_DIR,
+    exp1_output_dir,
+)
 from expplots import plot_bespoke_convergence, samples_for_method
 from script_timing import ScriptTimer, timed_call
 
-RESULTS_DIR = Path("./out/exp1_gridint2d_analysis")
+RESULTS_DIR = exp1_output_dir("exp1_gridint2d_analysis")
 
 
 def _paths(directory: Path, method: str, param: int, bit_depth: int, frame: int) -> tuple[Path, Path]:

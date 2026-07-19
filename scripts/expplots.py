@@ -22,12 +22,20 @@ METHOD_STYLES = {
     "mc": ("#ff7f0e", "^", "Monte Carlo"),
 }
 BIT_LINESTYLES = {8: "-", 12: "--", 16: ":"}
-SAMPLE_TICKS = [1, 4, 16, 64, 256, 1024, 4096, 16384, 65536, 262144]
+# The input data records total samples per pixel.  Figures show the equivalent
+# number of samples along one pixel axis, so a two-dimensional N-by-N grid is
+# plotted at N rather than N².
+SAMPLE_TICKS = [1, 2, 4, 8, 16, 32, 64, 128, 256, 512]
 
 
 def samples_for_method(method: str, param: int) -> int:
     """Return the total sample count represented by one integration setting."""
     return param * param if method in {"rect", "gauss"} else param
+
+
+def samples_per_pixel_axis(samples: Sequence[float]) -> np.ndarray:
+    """Convert total per-pixel sample counts to their one-axis equivalent."""
+    return np.sqrt(np.asarray(samples, dtype=float))
 
 
 def _style(method: str) -> tuple[str, str, str]:
@@ -51,7 +59,7 @@ def _plot_float_metric(
         if not values["samples"]:
             continue
         order = np.argsort(values["samples"])
-        samples = np.asarray(values["samples"])[order]
+        samples = samples_per_pixel_axis(np.asarray(values["samples"])[order])
         errors = np.asarray(values[metric])[order]
         valid = errors > 0.0
         if not np.any(valid):
@@ -73,14 +81,14 @@ def _plot_float_metric(
     plt.title(f"{title_metric} Convergence:\n{case_name} (Frame {frame:02d}) "
               f"| Reference: {reference_name}", fontsize=12,
               fontweight="bold", pad=15)
-    plt.xlabel("Total Samples per Pixel", fontsize=10)
+    plt.xlabel("Samples Along One Pixel Axis", fontsize=10)
     plt.ylabel(ylabel, fontsize=10)
     plt.xticks(SAMPLE_TICKS, [str(tick) for tick in SAMPLE_TICKS])
     plt.grid(True, which="both", ls="--", alpha=0.5)
     plt.legend(frameon=True, facecolor="white", edgecolor="none",
                loc="lower left", fontsize=9, ncol=2)
     plt.tight_layout()
-    path = output_dir / f"convergence_{case_name}_{filename_suffix}_frame{frame:02d}.png"
+    path = output_dir / f"{case_name}_{filename_suffix}_frame{frame:02d}.png"
     plt.savefig(path, dpi=150)
     plt.close()
     return path
@@ -117,7 +125,7 @@ def plot_bespoke_convergence(
             order = np.argsort(values["samples"])
             color, marker, label = _style(method)
             mismatch = np.asarray(values["max_eb"])[order]
-            plt.loglog(np.asarray(values["samples"])[order],
+            plt.loglog(samples_per_pixel_axis(np.asarray(values["samples"])[order]),
                        np.where(mismatch == 0.0, floor, mismatch),
                        linestyle=BIT_LINESTYLES.get(bit_depth, "-."),
                        marker=marker, color=color, label=f"{label} ({bit_depth}-bit)",
@@ -129,7 +137,7 @@ def plot_bespoke_convergence(
     plt.title(f"Digitised Maximum Error Convergence (LSB Mismatch):\n{case_name} "
               f"(Frame {frame:02d}) | Reference: {reference_name}", fontsize=12,
               fontweight="bold", pad=15)
-    plt.xlabel("Total Samples per Pixel")
+    plt.xlabel("Samples Along One Pixel Axis")
     plt.ylabel("Maximum Digitised Mismatch (LSB levels)")
     plt.xticks(SAMPLE_TICKS, [str(tick) for tick in SAMPLE_TICKS])
     plt.yticks([0.2, 1, 2, 5, 10, 20, 50, 100, 200, 500, 1000, 2000, 5000],
@@ -139,7 +147,7 @@ def plot_bespoke_convergence(
     plt.legend(frameon=True, facecolor="white", edgecolor="none", loc="lower left",
                fontsize=9, ncol=2)
     plt.tight_layout()
-    max_path = output_dir / f"convergence_{case_name}_max_eb_frame{frame:02d}.png"
+    max_path = output_dir / f"{case_name}_max_eb_frame{frame:02d}.png"
     plt.savefig(max_path, dpi=150)
     plt.close()
     paths.append(max_path)
@@ -151,7 +159,7 @@ def plot_bespoke_convergence(
                 continue
             order = np.argsort(values["samples"])
             color, marker, label = _style(method)
-            plt.plot(np.asarray(values["samples"])[order],
+            plt.plot(samples_per_pixel_axis(np.asarray(values["samples"])[order]),
                      np.asarray(values["delta_b"])[order],
                      linestyle=BIT_LINESTYLES.get(bit_depth, "-."), marker=marker,
                      color=color, label=f"{label} ({bit_depth}-bit)",
@@ -162,7 +170,7 @@ def plot_bespoke_convergence(
     plt.title(f"Fraction of Differing Pixels ($\\delta_b$):\n{case_name} "
               f"(Frame {frame:02d}) | Reference: {reference_name}", fontsize=12,
               fontweight="bold", pad=15)
-    plt.xlabel("Total Samples per Pixel")
+    plt.xlabel("Samples Along One Pixel Axis")
     plt.ylabel("Fraction of Differing Pixels ($\\delta_b$)")
     plt.xticks(SAMPLE_TICKS, [str(tick) for tick in SAMPLE_TICKS])
     plt.ylim(-0.05, 1.05)
@@ -170,7 +178,7 @@ def plot_bespoke_convergence(
     plt.legend(frameon=True, facecolor="white", edgecolor="none", loc="lower left",
                fontsize=9, ncol=2)
     plt.tight_layout()
-    fraction_path = output_dir / f"convergence_{case_name}_bits_frame{frame:02d}.png"
+    fraction_path = output_dir / f"{case_name}_bits_frame{frame:02d}.png"
     plt.savefig(fraction_path, dpi=150)
     plt.close()
     paths.append(fraction_path)

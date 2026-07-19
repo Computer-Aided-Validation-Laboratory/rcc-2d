@@ -11,9 +11,10 @@ from pathlib import Path
 import multiprocessing
 
 import exp1_gridint2d_numerical_render_uvs as renderer
+from exp1params import exp1_output_dir
 from script_timing import ScriptTimer
 
-renderer.OUTPUT_DIR = Path("./out/exp1_gridint2d_render_uvs")
+renderer.OUTPUT_DIR = exp1_output_dir("exp1_gridint2d_render_uvs")
 renderer.INTEGRATION_METHODS = [
     ("analytic", 0),
 ]

@@ -23,8 +23,7 @@ from exp2params import (
     GAMMA,
     INTEGRATION_METHODS,
     OUTPUT_DIR,
-    PERTURBATION_DISTRIBUTIONS,
-    PERTURBATION_FRACTIONS,
+    additive_jitter_for,
     PX_PER_SPECK,
     RANDOM_SEED,
     SPECKLE_TYPES,
@@ -90,8 +89,7 @@ def main() -> None:
         pattern_types = SPECKLE_TYPES + ANALYTIC_SPECKLE_TYPES
         for pattern_type in pattern_types:
             for black_fraction in BLACK_AREA_FRACTIONS:
-                for distribution in PERTURBATION_DISTRIBUTIONS:
-                    for fraction in PERTURBATION_FRACTIONS:
+                for distribution, fraction in (additive_jitter_for(pattern_type),):
                         tag = pattern_tag(
                             pattern_type,
                             black_fraction,

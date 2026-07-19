@@ -28,17 +28,18 @@ from exp1params import (
     SSAA_LEVELS,
     TEX_INTERPOLATORS,
     TEX_OVERSAMPLES,
+    exp1_output_dir,
 )
 from script_timing import ScriptTimer, timed_call
 
 # Defaults make this base entry point usable directly.  The world, UV, and
 # texture-only wrappers below override these paths for their specific studies.
-OUTPUT_DIR = Path("./out/exp1_gridint2d_render_world")
-RILEY_FUNC_DIR = Path("./out/exp1_riley_render_func_world")
-RILEY_TEX_DIR = Path("./out/exp1_riley_render_tex")
+OUTPUT_DIR = exp1_output_dir("exp1_gridint2d_render_world")
+RILEY_FUNC_DIR = exp1_output_dir("exp1_riley_render_func_world")
+RILEY_TEX_DIR = exp1_output_dir("exp1_riley_render_tex")
 
-RESULTS_DIR_FUNC = Path("./out/exp1_riley_analysis_func_world")
-RESULTS_DIR_TEX = Path("./out/exp1_riley_analysis_tex")
+RESULTS_DIR_FUNC = exp1_output_dir("exp1_riley_analysis_func_world")
+RESULTS_DIR_TEX = exp1_output_dir("exp1_riley_analysis_tex")
 ANALYSIS_MODE = "both"
 
 
@@ -50,7 +51,7 @@ def analyze_riley_case(case_name: str, tex_interp: str) -> None:
     case_dir = OUTPUT_DIR / case_name
     results_dir_tex = RESULTS_DIR_TEX / tex_interp
     results_dir_tex.mkdir(parents=True, exist_ok=True)
-    ssaa_ticks = [1, 4, 16, 64, 256, 1024, 4096, 16384, 65536, 262144]
+    ssaa_ticks = [1, 2, 4, 8, 16, 32, 64, 128, 256, 512]
 
     for ff in ACTIVE_FRAMES:
         print(f"\n--- Frame {ff:02d} ---")
@@ -133,7 +134,7 @@ def analyze_riley_case(case_name: str, tex_interp: str) -> None:
                         delta_b = np.mean(img_dig != ref_dig_by_bb[bb])
                         max_eb = np.max(np.abs(diff_dig))
 
-                        custom_data[bb][method]["samples"].append(samples)
+                        custom_data[bb][method]["samples"].append(np.sqrt(samples))
                         custom_data[bb][method]["e_f64"].append(e_f64)
                         custom_data[bb][method]["e_inf"].append(e_inf)
                         custom_data[bb][method]["delta_b"].append(delta_b)
@@ -175,7 +176,7 @@ def analyze_riley_case(case_name: str, tex_interp: str) -> None:
                     delta_b = np.mean(img_dig != ref_dig_by_bb[bb])
                     max_eb = np.max(np.abs(diff_dig))
 
-                    riley_func[bb]["samples"].append(samples)
+                    riley_func[bb]["samples"].append(np.sqrt(samples))
                     riley_func[bb]["e_f64"].append(e_f64)
                     riley_func[bb]["e_inf"].append(e_inf)
                     riley_func[bb]["delta_b"].append(delta_b)
@@ -223,7 +224,7 @@ def analyze_riley_case(case_name: str, tex_interp: str) -> None:
                         max_eb = np.max(np.abs(diff_dig))
 
                         r_tex = riley_tex[bb][oversamp]
-                        r_tex["samples"].append(samples)
+                        r_tex["samples"].append(np.sqrt(samples))
                         r_tex["e_f64"].append(e_f64)
                         r_tex["e_inf"].append(e_inf)
                         r_tex["delta_b"].append(delta_b)
@@ -308,7 +309,7 @@ def analyze_riley_case(case_name: str, tex_interp: str) -> None:
             fontweight="bold",
             pad=15,
         )
-        plt.xlabel("Total Samples per Pixel", fontsize=10)
+        plt.xlabel("Samples Along One Pixel Axis", fontsize=10)
         plt.ylabel("Floating-Point RMSE ($e_{f64}$)", fontsize=10)
         plt.xticks(ssaa_ticks, [str(t) for t in ssaa_ticks])
         plt.grid(True, which="both", ls="--", alpha=0.5)
@@ -323,7 +324,7 @@ def analyze_riley_case(case_name: str, tex_interp: str) -> None:
         plt.tight_layout()
         plt.savefig(
             RESULTS_DIR_FUNC
-            / f"convergence_{case_name}_func_float_rmse_frame{ff:02d}.png",
+            / f"{case_name}_func_float_rmse_frame{ff:02d}.png",
             dpi=150,
         )
         plt.close()
@@ -393,7 +394,7 @@ def analyze_riley_case(case_name: str, tex_interp: str) -> None:
             fontweight="bold",
             pad=15,
         )
-        plt.xlabel("Total Samples per Pixel", fontsize=10)
+        plt.xlabel("Samples Along One Pixel Axis", fontsize=10)
         plt.ylabel("Floating-Point Max Error ($e_{\\infty}$)", fontsize=10)
         plt.xticks(ssaa_ticks, [str(t) for t in ssaa_ticks])
         plt.grid(True, which="both", ls="--", alpha=0.5)
@@ -408,7 +409,7 @@ def analyze_riley_case(case_name: str, tex_interp: str) -> None:
         plt.tight_layout()
         plt.savefig(
             RESULTS_DIR_FUNC
-            / f"convergence_{case_name}_func_float_max_frame{ff:02d}.png",
+            / f"{case_name}_func_float_max_frame{ff:02d}.png",
             dpi=150,
         )
         plt.close()
@@ -457,7 +458,7 @@ def analyze_riley_case(case_name: str, tex_interp: str) -> None:
             fontweight="bold",
             pad=15,
         )
-        plt.xlabel("Total Samples per Pixel", fontsize=10)
+        plt.xlabel("Samples Along One Pixel Axis", fontsize=10)
         plt.ylabel("Fraction of Differing Pixels ($\\delta_b$)", fontsize=10)
         plt.xticks(ssaa_ticks, [str(t) for t in ssaa_ticks])
         plt.ylim(-0.05, 1.05)
@@ -473,7 +474,7 @@ def analyze_riley_case(case_name: str, tex_interp: str) -> None:
         plt.tight_layout()
         plt.savefig(
             RESULTS_DIR_FUNC
-            / f"convergence_{case_name}_func_bits_frame{ff:02d}.png",
+            / f"{case_name}_func_bits_frame{ff:02d}.png",
             dpi=150,
         )
         plt.close()
@@ -535,7 +536,7 @@ def analyze_riley_case(case_name: str, tex_interp: str) -> None:
             fontweight="bold",
             pad=15,
         )
-        plt.xlabel("Total Samples per Pixel", fontsize=10)
+        plt.xlabel("Samples Along One Pixel Axis", fontsize=10)
         plt.ylabel("Maximum Digitised Mismatch (LSB levels)", fontsize=10)
         plt.xticks(ssaa_ticks, [str(t) for t in ssaa_ticks])
         # Explicit integer y-ticks
@@ -554,7 +555,7 @@ def analyze_riley_case(case_name: str, tex_interp: str) -> None:
         plt.tight_layout()
         plt.savefig(
             RESULTS_DIR_FUNC
-            / f"convergence_{case_name}_func_max_eb_frame{ff:02d}.png",
+            / f"{case_name}_func_max_eb_frame{ff:02d}.png",
             dpi=150,
         )
         plt.close()
@@ -631,7 +632,7 @@ def analyze_riley_case(case_name: str, tex_interp: str) -> None:
             fontweight="bold",
             pad=15,
         )
-        plt.xlabel("Total Samples per Pixel", fontsize=10)
+        plt.xlabel("Samples Along One Pixel Axis", fontsize=10)
         plt.ylabel("Floating-Point RMSE ($e_{f64}$)", fontsize=10)
         plt.xticks(ssaa_ticks, [str(t) for t in ssaa_ticks])
         plt.grid(True, which="both", ls="--", alpha=0.5)
@@ -646,7 +647,7 @@ def analyze_riley_case(case_name: str, tex_interp: str) -> None:
         plt.tight_layout()
         plt.savefig(
             results_dir_tex
-            / f"convergence_{case_name}_tex_float_rmse_frame{ff:02d}.png",
+            / f"{case_name}_tex_float_rmse_frame{ff:02d}.png",
             dpi=150,
         )
         plt.close()
@@ -708,7 +709,7 @@ def analyze_riley_case(case_name: str, tex_interp: str) -> None:
             fontweight="bold",
             pad=15,
         )
-        plt.xlabel("Total Samples per Pixel", fontsize=10)
+        plt.xlabel("Samples Along One Pixel Axis", fontsize=10)
         plt.ylabel("Floating-Point Max Error ($e_{\\infty}$)", fontsize=10)
         plt.xticks(ssaa_ticks, [str(t) for t in ssaa_ticks])
         plt.grid(True, which="both", ls="--", alpha=0.5)
@@ -723,7 +724,7 @@ def analyze_riley_case(case_name: str, tex_interp: str) -> None:
         plt.tight_layout()
         plt.savefig(
             results_dir_tex
-            / f"convergence_{case_name}_tex_float_max_frame{ff:02d}.png",
+            / f"{case_name}_tex_float_max_frame{ff:02d}.png",
             dpi=150,
         )
         plt.close()
@@ -769,7 +770,7 @@ def analyze_riley_case(case_name: str, tex_interp: str) -> None:
             fontweight="bold",
             pad=15,
         )
-        plt.xlabel("Total Samples per Pixel", fontsize=10)
+        plt.xlabel("Samples Along One Pixel Axis", fontsize=10)
         plt.ylabel("Fraction of Differing Pixels ($\\delta_b$)", fontsize=10)
         plt.xticks(ssaa_ticks, [str(t) for t in ssaa_ticks])
         plt.ylim(-0.05, 1.05)
@@ -785,7 +786,7 @@ def analyze_riley_case(case_name: str, tex_interp: str) -> None:
         plt.tight_layout()
         plt.savefig(
             results_dir_tex
-            / f"convergence_{case_name}_tex_bits_frame{ff:02d}.png",
+            / f"{case_name}_tex_bits_frame{ff:02d}.png",
             dpi=150,
         )
         plt.close()
@@ -847,7 +848,7 @@ def analyze_riley_case(case_name: str, tex_interp: str) -> None:
             fontweight="bold",
             pad=15,
         )
-        plt.xlabel("Total Samples per Pixel", fontsize=10)
+        plt.xlabel("Samples Along One Pixel Axis", fontsize=10)
         plt.ylabel("Maximum Digitised Mismatch (LSB levels)", fontsize=10)
         plt.xticks(ssaa_ticks, [str(t) for t in ssaa_ticks])
         plt.yticks(y_ticks, [str(yt) for yt in y_ticks])
@@ -864,7 +865,7 @@ def analyze_riley_case(case_name: str, tex_interp: str) -> None:
         plt.tight_layout()
         plt.savefig(
             results_dir_tex
-            / f"convergence_{case_name}_tex_max_eb_frame{ff:02d}.png",
+            / f"{case_name}_tex_max_eb_frame{ff:02d}.png",
             dpi=150,
         )
         plt.close()

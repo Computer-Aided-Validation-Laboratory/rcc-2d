@@ -24,17 +24,17 @@ from exp2params import (
     BLACK_AREA_FRACTIONS,
     BIT_DEPTHS,
     DEFORMATION_CASES,
-    PERTURBATION_DISTRIBUTIONS,
-    PERTURBATION_FRACTIONS,
+    additive_jitter_for,
     RANDOM_SEED,
     TEX_INTERPOLATORS,
+    exp2_output_dir,
 )
 from script_timing import ScriptTimer, timed_call
 
 
-RILEY_OUTPUT_DIR = Path("./out/exp2_riley_render_texf")
-REFERENCE_OUTPUT_DIR = Path("./out/exp2_speckint2d_render_uvs")
-RESULTS_DIR = Path("./out/exp2_riley_analysis_texf")
+RILEY_OUTPUT_DIR = exp2_output_dir("exp2_riley_render_texf")
+REFERENCE_OUTPUT_DIR = exp2_output_dir("exp2_speckint2d_render_uvs")
+RESULTS_DIR = exp2_output_dir("exp2_riley_analysis_texf")
 RUN_RE = re.compile(r"^ss(?P<ssaa>\d+)_oversamp(?P<oversamp>\d+)$")
 INTERPOLATOR_COLORS = plt.rcParams["axes.prop_cycle"].by_key()["color"]
 OVERSAMP_MARKERS = ("o", "s", "^", "v", "<", ">", "D", "P", "X")
@@ -160,7 +160,7 @@ def _plot_metric(
         grouped[int(row["Oversamp"])].append(row)
     for index, (oversamp, group) in enumerate(sorted(grouped.items())):
         group.sort(key=lambda row: int(row["Samples"]))
-        samples = np.asarray([int(row["Samples"]) for row in group])
+        samples = np.sqrt(np.asarray([int(row["Samples"]) for row in group]))
         values = np.asarray([float(row[metric]) for row in group])
         color = INTERPOLATOR_COLORS[index % len(INTERPOLATOR_COLORS)]
         marker = OVERSAMP_MARKERS[index % len(OVERSAMP_MARKERS)]
@@ -174,7 +174,7 @@ def _plot_metric(
             label=f"oversamp={oversamp}",
         )
     axes.set_title(title, fontweight="bold")
-    axes.set_xlabel("Riley samples per pixel (SSAA²)")
+    axes.set_xlabel("Riley Samples Along One Pixel Axis")
     axes.set_ylabel(ylabel)
     axes.grid(True, which="both", ls="--", alpha=0.5)
     if grouped:
@@ -293,14 +293,14 @@ def analyse_pattern(
                 interp_rows,
                 "e_f64",
                 "Clamped-intensity RMSE ($e_{f64}$)",
-                output_dir / f"convergence_float_rmse_frame{frame:02d}.png",
+                output_dir / f"float_rmse_frame{frame:02d}.png",
                 title_prefix,
             )
             _plot_metric(
                 interp_rows,
                 "e_inf",
                 "Clamped-intensity max error ($e_{∞}$)",
-                output_dir / f"convergence_float_max_frame{frame:02d}.png",
+                output_dir / f"float_max_frame{frame:02d}.png",
                 title_prefix,
             )
             interpolator_digitised_rows = [
@@ -316,14 +316,14 @@ def analyse_pattern(
                     interp_digitised,
                     "delta_b",
                     f"Digitised mismatch fraction ({bit_depth}-bit)",
-                    output_dir / f"convergence_bits_delta_b{bit_depth}_frame{frame:02d}.png",
+                    output_dir / f"bits_delta_b{bit_depth}_frame{frame:02d}.png",
                     title_prefix,
                 )
                 _plot_metric(
                     interp_digitised,
                     "max_eb",
                     f"Maximum digitised error (LSB, {bit_depth}-bit)",
-                    output_dir / f"convergence_bits_max_eb{bit_depth}_frame{frame:02d}.png",
+                    output_dir / f"bits_max_eb{bit_depth}_frame{frame:02d}.png",
                     title_prefix,
                 )
             rows_by_interpolator[interpolator].extend(interp_rows)
@@ -366,8 +366,7 @@ def main() -> None:
     for case_name in cases:
         for pattern_type in ANALYTIC_SPECKLE_TYPES:
             for black_fraction in BLACK_AREA_FRACTIONS:
-                for distribution in PERTURBATION_DISTRIBUTIONS:
-                    for fraction in PERTURBATION_FRACTIONS:
+                for distribution, fraction in (additive_jitter_for(pattern_type),):
                         tag = pattern_tag(
                             pattern_type, black_fraction, distribution, fraction
                         )
