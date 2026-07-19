@@ -20,8 +20,10 @@ from exp1params import (
     DEFORMATION_CASES,
     INTEGRATION_METHODS,
     OUTPUT_DIR,
+    TARG_PX_X,
     exp1_output_dir,
 )
+from exp1common import output_case_name
 from expplots import plot_bespoke_convergence, samples_for_method
 from script_timing import ScriptTimer, timed_call
 
@@ -29,7 +31,7 @@ RESULTS_DIR = exp1_output_dir("exp1_gridint2d_analysis")
 
 
 def _paths(directory: Path, method: str, param: int, bit_depth: int, frame: int) -> tuple[Path, Path]:
-    prefix = f"targ_px256_int_{method}_param_{param}_b{bit_depth}_frame{frame:02d}"
+    prefix = f"targ_px{TARG_PX_X}_int_{method}_param_{param}_b{bit_depth}_frame{frame:02d}"
     return directory / f"{prefix}.npy", directory / f"{prefix}.tiff"
 
 
@@ -186,12 +188,13 @@ def main() -> None:
     all_rows: list[dict[str, object]] = []
     rectconv_rows: list[dict[str, object]] = []
     for case_name in DEFORMATION_CASES:
-        case_dir = OUTPUT_DIR / case_name
+        output_name = output_case_name(case_name, TARG_PX_X)
+        case_dir = OUTPUT_DIR / output_name
         if not case_dir.exists():
             print(f"Warning: {case_dir} does not exist. Skipping.")
             continue
-        all_rows.extend(timed_call(timer, case_name, analyse_case, case_dir))
-        rectconv_rows.extend(timed_call(timer, f"{case_name}_rectconv", analyse_rectangular_self_convergence, case_dir, rectconv_dir))
+        all_rows.extend(timed_call(timer, output_name, analyse_case, case_dir))
+        rectconv_rows.extend(timed_call(timer, f"{output_name}_rectconv", analyse_rectangular_self_convergence, case_dir, rectconv_dir))
     _write_rows(RESULTS_DIR / "summary.csv", all_rows)
     _write_rows(rectconv_dir / "summary.csv", rectconv_rows)
     print("Experiment 1 grid analysis completed.")

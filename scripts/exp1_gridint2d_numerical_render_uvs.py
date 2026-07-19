@@ -21,6 +21,7 @@ from exp1common import (
     compute_riley_bbox_uvs,
     get_riley_bbox_uv_transform,
     parse_case_params,
+    output_case_name,
 )
 from exp1params import (
     BACKGROUND,
@@ -329,7 +330,7 @@ def process_pixel_chunk(args) -> tuple[int, int, np.ndarray]:
 def generate_grid_images(case_dir: Path, method: str, param: int) -> None:
     """Load mesh, interpolate displacements, and generate target images."""
     timer = ScriptTimer(__file__)
-    case_name: str = case_dir.name
+    case_name: str = output_case_name(case_dir.name, TARG_PX_X)
     print(f"\nProcessing: {case_name} ({method}={param})")
 
     coords: np.ndarray = np.loadtxt(case_dir / "coords.csv", delimiter=",")

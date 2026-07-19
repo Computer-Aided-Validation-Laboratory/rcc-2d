@@ -20,7 +20,7 @@ import numpy as np
 import riley
 from script_timing import ScriptTimer, timed_call
 
-from exp1common import parse_case_params
+from exp1common import output_case_name, parse_case_params
 from exp2params import (
     ACTIVE_FRAMES,
     ANALYTIC_SPECKLE_TYPES,
@@ -215,7 +215,7 @@ def main() -> None:
                                 for oversamp in get_texture_oversamples():
                                     case_out = (
                                         OUTPUT_ROOT
-                                        / f"{case_path.name}_{tag}_{interp_name}"
+                                        / f"{output_case_name(case_path.name, TARG_PX_X)}_{tag}_{interp_name}"
                                         / f"ss{ssaa}_oversamp{oversamp}"
                                     )
                                     if not FORCE_RENDER_OVER and render_exists(

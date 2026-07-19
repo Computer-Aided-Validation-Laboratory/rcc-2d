@@ -8,6 +8,7 @@
 # --------------------------------------------------------------------------
 
 from pathlib import Path
+import re
 from typing import Tuple
 
 import numpy as np
@@ -62,6 +63,11 @@ def parse_case_params(case_dir: Path) -> Tuple[int, float]:
     # For square plates, the camera FOV (ROI) size equals camera_pixels
     roi_size = float(camera_pixels)
     return camera_pixels, roi_size
+
+
+def output_case_name(case_name: str, target_pixels: int) -> str:
+    """Label generated output with its configured camera resolution."""
+    return re.sub(r"_cam\d+(?=_|$)", f"_cam{target_pixels}", case_name)
 
 
 def compute_padded_uvs(

@@ -19,6 +19,7 @@ from exp1common import (
     compute_riley_bbox_uvs,
     get_riley_bbox_uv_transform,
     parse_case_params,
+    output_case_name,
 )
 from exp1params import (
     TARG_PX_X,
@@ -95,7 +96,7 @@ def main() -> None:
             print(f"Warning: {case_path} does not exist. Skipping.")
             continue
 
-        case_name = case_path.name
+        case_name = output_case_name(case_path.name, TARG_PX_X)
         print(f"\nProcessing case: {case_name}")
 
         out_base = OUTPUT_ROOT / case_name

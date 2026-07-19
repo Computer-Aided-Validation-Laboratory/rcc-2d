@@ -25,6 +25,7 @@ from exp2params import (
     TARG_PX_X,
     exp2_output_dir,
 )
+from exp1common import output_case_name
 from expplots import plot_bespoke_convergence, samples_for_method
 from script_timing import ScriptTimer, timed_call
 
@@ -65,6 +66,7 @@ def _discover_jobs() -> dict[str, dict[tuple[str, int], Path]]:
         if not directory.is_dir():
             continue
         for case_name in DEFORMATION_CASES:
+            case_name = output_case_name(case_name, TARG_PX_X)
             prefix = f"{case_name}_"
             if not directory.name.startswith(prefix):
                 continue

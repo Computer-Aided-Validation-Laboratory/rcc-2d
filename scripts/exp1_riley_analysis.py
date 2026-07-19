@@ -15,7 +15,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 from PIL import Image
 
-from exp1common import parse_case_params
+from exp1common import output_case_name, parse_case_params
 from exp1params import (
     TARG_PX_X,
     TARG_PX_Y,
@@ -44,6 +44,7 @@ ANALYSIS_MODE = "both"
 
 
 def analyze_riley_case(case_name: str, tex_interp: str) -> None:
+    case_name = output_case_name(case_name, TARG_PX_X)
     print(80 * "=")
     print(f"Analyzing Riley vs Custom: {case_name} ({tex_interp})")
     print(80 * "=")
@@ -63,7 +64,7 @@ def analyze_riley_case(case_name: str, tex_interp: str) -> None:
         for bb in BIT_DEPTHS:
             max_val = float(2**bb - 1)
             ref_prefix = (
-                f"targ_px256_int_analytic_param_0_b{bb}_frame{ff:02d}"
+                f"targ_px{TARG_PX_X}_int_analytic_param_0_b{bb}_frame{ff:02d}"
             )
             ref_npy = case_dir / f"{ref_prefix}.npy"
             ref_tiff = case_dir / f"{ref_prefix}.tiff"
@@ -114,7 +115,7 @@ def analyze_riley_case(case_name: str, tex_interp: str) -> None:
                         continue
                     max_val = float(2**bb - 1)
                     prefix = (
-                        f"targ_px256_int_{method}_param_{param}"
+                        f"targ_px{TARG_PX_X}_int_{method}_param_{param}"
                         f"_b{bb}_frame{ff:02d}"
                     )
                     npy_path = case_dir / f"{prefix}.npy"

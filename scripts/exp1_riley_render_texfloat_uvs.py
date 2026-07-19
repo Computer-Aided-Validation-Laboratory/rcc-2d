@@ -16,7 +16,7 @@ import numpy as np
 import riley
 from script_timing import ScriptTimer, timed_call
 
-from exp1common import parse_case_params
+from exp1common import output_case_name, parse_case_params
 from exp1params import (
     BIT_DEPTHS,
     CLEAR_DIR,
@@ -154,7 +154,7 @@ def main() -> None:
             print(f"Warning: {case_path} does not exist. Skipping.")
             continue
 
-        case_name = case_path.name
+        case_name = output_case_name(case_path.name, TARG_PX_X)
         print(f"\nProcessing case: {case_name}")
         is_subset_render = any(
             os.environ.get(name)

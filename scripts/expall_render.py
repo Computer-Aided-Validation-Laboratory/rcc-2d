@@ -20,6 +20,10 @@ SCRIPTS_DIR = Path(__file__).resolve().parent
 
 # Keep this explicit: analysis and data-generation scripts are deliberately
 # excluded, and each renderer must finish before the next begins.
+# - Excluded world coords as final analysis will be based on uvs alone - was good
+# to compare both and verify they are the same.
+# - Analytic render scripts for exp1 are also included in the numerical cases -
+# no need to run both
 EXP1_RENDER_SCRIPTS = (
     "exp1_eggbox_grid_texgen.py",
     #"exp1_gridint2d_numerical_render_world.py",

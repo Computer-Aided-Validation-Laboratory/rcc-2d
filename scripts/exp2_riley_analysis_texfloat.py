@@ -30,6 +30,7 @@ from exp2params import (
     TARG_PX_X,
     exp2_output_dir,
 )
+from exp1common import output_case_name
 from script_timing import ScriptTimer, timed_call
 
 
@@ -365,6 +366,7 @@ def main() -> None:
     )
     all_rows: list[dict[str, object]] = []
     for case_name in cases:
+        case_name = output_case_name(case_name, TARG_PX_X)
         for pattern_type in ANALYTIC_SPECKLE_TYPES:
             for black_fraction in BLACK_AREA_FRACTIONS:
                 for distribution, fraction in (additive_jitter_for(pattern_type),):

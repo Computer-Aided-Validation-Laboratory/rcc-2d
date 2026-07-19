@@ -12,7 +12,7 @@ import os
 import sys
 from pathlib import Path
 
-from exp1common import parse_case_params
+from exp1common import output_case_name, parse_case_params
 from exp2params import (
     ACTIVE_FRAMES,
     ANALYTIC_SPECKLE_TYPES,
@@ -114,7 +114,7 @@ def main() -> None:
                         )
                         for method, param in get_methods():
                             out_dir = OUTPUT_DIR / (
-                                f"{case_dir.name}_{tag}_int_"
+                                f"{output_case_name(case_dir.name, TARG_PX_X)}_{tag}_int_"
                                 f"{method}_param_{param}"
                             )
                             print(f"  {out_dir.name}")
