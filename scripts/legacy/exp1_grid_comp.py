@@ -23,10 +23,10 @@ ANALYTIC_DIR = Path(
     "./out/exp1_2d_analytic_render_world/plate260_cam256_quad9_rigid"
 )
 RILEY_FUNC_DIR = Path(
-    "./out/exp1_riley_render_world/plate260_cam256_quad9_rigid"
+    "./out/exp1_riley_render_func_world/plate260_cam256_quad9_rigid"
 )
 RILEY_TEX_DIR = Path(
-    "./out/riley_plate260_cam256_quad9_rigid_tex"
+    "./out/riley_plate260_cam256_quad9_rigid_texuint"
 )
 
 

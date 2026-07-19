@@ -126,18 +126,14 @@ def main() -> None:
         disp[:, :, 0] = disp_x.T
         disp[:, :, 1] = disp_y.T
 
-        camera_pixels, roi_size = parse_case_params(case_path)
-        uvs_path = case_path / "uvs_exp1_sin_grid_uvs.csv"
-        if uvs_path.exists():
-            uvs = np.loadtxt(uvs_path, delimiter=",")
-        else:
-            uvs = compute_riley_bbox_uvs(coords, camera_pixels, TEX_PX_PAD)
+        _case_camera_pixels, roi_size = parse_case_params(case_path)
+        uvs = compute_riley_bbox_uvs(coords, TARG_PX_X, TEX_PX_PAD)
 
         # Setup the mesh input
         mtype = get_riley_mesh_type(connect.shape[1])
-        p_phys = P_PIXELS * (roi_size / camera_pixels)
+        p_phys = P_PIXELS * (roi_size / TARG_PX_X)
         uv_scale, u_offset, v_offset = get_riley_bbox_uv_transform(
-            coords, camera_pixels, TEX_PX_PAD
+            coords, TARG_PX_X, TEX_PX_PAD
         )
         pitch_uv = uv_scale * p_phys
 

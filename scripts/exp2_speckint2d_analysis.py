@@ -26,7 +26,7 @@ from exp2params import (
     exp2_output_dir,
 )
 from exp1common import output_case_name
-from expplots import plot_bespoke_convergence, samples_for_method
+from expplots import plot_bespoke_four_panel, samples_for_method
 from script_timing import ScriptTimer, timed_call
 
 
@@ -165,9 +165,8 @@ def analyse_group(group_name: str, jobs: dict[tuple[str, int], Path]) -> list[di
                     float_data[method]["e_f64"].append(e_f64)
                     float_data[method]["e_inf"].append(e_inf)
                 rows.append({"Group": group_name, "Frame": frame, "BitDepth": bit_depth, "Method": method, "Param": param, "Samples": samples, "Reference": f"{ref_method}:{ref_param}", "e_f64": e_f64, "e_inf": e_inf, "e_b": e_b, "delta_b": delta_b, "max_eb": max_eb})
-        paths = plot_bespoke_convergence(group_name, frame, ref_name, output_dir, float_data, digitised_data, sorted(references))
-        for path in paths:
-            print(f"Saved {path}")
+        path = plot_bespoke_four_panel(group_name, frame, ref_name, output_dir, float_data, digitised_data, sorted(references))
+        print(f"Saved {path}")
     _write_rows(output_dir / "summary.csv", rows)
     return rows
 
@@ -238,7 +237,7 @@ def analyse_rectangular_self_convergence(
                     float_data["rect"]["e_inf"].append(e_inf)
                 frame_rows.append({"Group": group_name, "Frame": frame, "BitDepth": bit_depth, "Method": "rect", "Param": param, "Samples": samples, "Reference": f"rect:{ref_param}", "e_f64": e_f64, "e_inf": e_inf, "e_b": e_b, "delta_b": delta_b, "max_eb": max_eb})
         if frame_rows:
-            plot_bespoke_convergence(
+            plot_bespoke_four_panel(
                 group_name,
                 frame,
                 f"Rectangular SSAA Reference ({ref_param}x{ref_param})",

@@ -351,11 +351,13 @@ def generate_grid_images(case_dir: Path, method: str, param: int) -> None:
     if disp_y.ndim == 1:
         disp_y = disp_y.reshape(-1, 1)
 
-    camera_pixels, roi_size = parse_case_params(case_dir)
-    pixel_size: float = roi_size / camera_pixels
+    _case_camera_pixels, roi_size = parse_case_params(case_dir)
+    if TARG_PX_X != TARG_PX_Y:
+        raise ValueError("Experiment 1 currently requires square target dimensions.")
+    pixel_size: float = roi_size / TARG_PX_X
     num_frames: int = disp_x.shape[1]
 
-    uvs = compute_riley_bbox_uvs(coords, camera_pixels, TEX_PX_PAD)
+    uvs = compute_riley_bbox_uvs(coords, TARG_PX_X, TEX_PX_PAD)
     np.savetxt(case_dir / "uvs_exp1_sin_grid_uvs.csv", uvs, delimiter=",")
 
     case_out_dir: Path = OUTPUT_DIR / case_name
@@ -363,7 +365,7 @@ def generate_grid_images(case_dir: Path, method: str, param: int) -> None:
 
     p_phys: float = P_PIXELS * pixel_size
     uv_scale, u_offset, v_offset = get_riley_bbox_uv_transform(
-        coords, camera_pixels, TEX_PX_PAD
+        coords, TARG_PX_X, TEX_PX_PAD
     )
     active_frames = get_active_frames()
 

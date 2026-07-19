@@ -12,9 +12,7 @@ from typing import List, Tuple
 
 import riley
 
-
 CORES: int = 8
-
 TEST_RUN: bool = True
 
 if TEST_RUN:
@@ -51,7 +49,7 @@ if TEST_RUN:
 
 else:
     # SSAA levels to render with Riley
-    SSAA_LEVELS = [1, 2, 4, 8, 16, 32, 64, 128, 256, 512, 1024]    
+    SSAA_LEVELS = [1, 2, 4, 8, 16, 32, 64, 128, 256, 512]    
     TEX_OVERSAMPLES: List[int] = [1, 2, 4, 8, 16, 32, 64, 128, 256, 512]
     TEX_INTERPOLATORS: dict[str, riley.TextureSample] = {
         "nearest": riley.TextureSample.nearest,

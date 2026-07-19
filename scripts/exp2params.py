@@ -13,7 +13,6 @@ from typing import List, Tuple
 import riley
 
 CORES: int = 8
-
 TEST_RUN: bool = True
 
 if TEST_RUN:

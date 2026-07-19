@@ -33,7 +33,7 @@ EXP1_RENDER_SCRIPTS = (
     #"exp1_riley_render_func_world.py",
     "exp1_riley_render_func_uvs.py",
     "exp1_riley_render_texfloat_uvs.py",
-    #"exp1_riley_render_tex_uvs.py",
+    "exp1_riley_render_texuint_uvs.py",
 )
 EXP2_RENDER_SCRIPTS = (
     "exp2_texgen_speckle_analytic.py",

@@ -17,6 +17,8 @@ from pathlib import Path
 
 import matplotlib.pyplot as plt
 import numpy as np
+from matplotlib.ticker import FixedFormatter, FixedLocator
+from PIL import Image
 
 from exp2params import (
     ACTIVE_FRAMES,
@@ -34,9 +36,9 @@ from exp1common import output_case_name
 from script_timing import ScriptTimer, timed_call
 
 
-RILEY_OUTPUT_DIR = exp2_output_dir("exp2_riley_render_texf")
+RILEY_OUTPUT_DIR = exp2_output_dir("exp2_riley_render_texfloat")
 REFERENCE_OUTPUT_DIR = exp2_output_dir("exp2_speckint2d_render_uvs")
-RESULTS_DIR = exp2_output_dir("exp2_riley_analysis_texf")
+RESULTS_DIR = exp2_output_dir("exp2_riley_analysis_texfloat")
 RUN_RE = re.compile(r"^ss(?P<ssaa>\d+)_oversamp(?P<oversamp>\d+)$")
 INTERPOLATOR_COLORS = plt.rcParams["axes.prop_cycle"].by_key()["color"]
 OVERSAMP_MARKERS = ("o", "s", "^", "v", "<", ">", "D", "P", "X")
@@ -156,33 +158,117 @@ def _plot_metric(
     output_path: Path,
     title: str,
 ) -> None:
+    """Plot one metric with a zero-inclusive, physically meaningful y scale.
+
+    Exact agreement is a meaningful result here.  It must not be replaced by
+    ``float64.tiny`` for a logarithmic plot: that turns zero into an invented
+    10^-308 error and makes the limits of the figure meaningless.  The
+    symmetric-log scale retains useful resolution around the LSB thresholds
+    while allowing the axis to start at zero.
+    """
     figure, axes = plt.subplots(figsize=(10, 7), constrained_layout=True)
-    grouped: dict[int, list[dict[str, object]]] = defaultdict(list)
+    grouped: dict[object, list[dict[str, object]]] = defaultdict(list)
     for row in rows:
-        grouped[int(row["Oversamp"])].append(row)
-    for index, (oversamp, group) in enumerate(sorted(grouped.items())):
+        key: object = int(row["Oversamp"])
+        if "BitDepth" in row:
+            key = (int(row["Oversamp"]), int(row["BitDepth"]))
+        grouped[key].append(row)
+    for index, (key, group) in enumerate(sorted(grouped.items())):
+        oversamp = int(key[0]) if isinstance(key, tuple) else int(key)
         group.sort(key=lambda row: int(row["Samples"]))
         samples = np.sqrt(np.asarray([int(row["Samples"]) for row in group]))
         values = np.asarray([float(row[metric]) for row in group])
         color = INTERPOLATOR_COLORS[index % len(INTERPOLATOR_COLORS)]
         marker = OVERSAMP_MARKERS[index % len(OVERSAMP_MARKERS)]
-        axes.loglog(
+        axes.plot(
             samples,
-            np.maximum(values, np.finfo(np.float64).tiny),
+            values,
             color=color,
             marker=marker,
             linewidth=1.8,
             markersize=7,
-            label=f"oversamp={oversamp}",
+            label=(
+                f"Riley, Tex, OS={oversamp}, {key[1]}-bit"
+                if isinstance(key, tuple)
+                else f"Riley, Tex, OS={oversamp}"
+            ),
         )
+    axes.set_xscale("log")
+
+    all_values = np.asarray([float(row[metric]) for row in rows], dtype=float)
+    finite_values = all_values[np.isfinite(all_values) & (all_values >= 0.0)]
+    largest_value = float(np.max(finite_values)) if finite_values.size else 0.0
+    if metric in {"e_f64", "e_inf"}:
+        finest_half_lsb = 0.5 / float(2 ** max(BIT_DEPTHS) - 1)
+        coarsest_lsb = 1.0 / float(2 ** min(BIT_DEPTHS) - 1)
+        axes.set_yscale("symlog", linthresh=finest_half_lsb, linscale=0.8)
+        for bit_depth in BIT_DEPTHS:
+            maximum = float(2**bit_depth - 1)
+            axes.axhline(1.0 / maximum, color="black", linestyle="--", alpha=0.35)
+            axes.axhline(0.5 / maximum, color="red", linestyle=":", alpha=0.35)
+        axes.set_ylim(0.0, 1.15 * max(largest_value, coarsest_lsb))
+    elif metric == "delta_b":
+        axes.set_ylim(0.0, 1.0)
+    elif metric == "max_eb":
+        axes.set_yscale("symlog", linthresh=1.0, linscale=0.8)
+        axes.axhline(1.0, color="black", linestyle="--", alpha=0.5)
+        axes.axhline(0.0, color="red", linestyle=":", alpha=0.6)
+        axes.set_ylim(0.0, 1.15 * max(largest_value, 1.0))
     axes.set_title(title, fontweight="bold")
     axes.set_xlabel("Riley Samples Along One Pixel Axis")
     axes.set_ylabel(ylabel)
+    sample_ticks = sorted(
+        {
+            int(row["SSAA"])
+            for row in rows
+        }
+        | {
+            int(row["ReferenceParam"])
+            for row in rows
+            if int(row["ReferenceParam"]) > 0
+        }
+    )
+    axes.xaxis.set_major_locator(FixedLocator(sample_ticks))
+    axes.xaxis.set_major_formatter(FixedFormatter([str(tick) for tick in sample_ticks]))
+    axes.set_xlim(
+        0.85,
+        1.15 * sample_ticks[-1],
+    )
     axes.grid(True, which="both", ls="--", alpha=0.5)
     if grouped:
-        axes.legend(frameon=True, facecolor="white", edgecolor="none")
+        axes.legend(
+            loc="lower left",
+            fontsize=7,
+            frameon=True,
+            facecolor="white",
+            edgecolor="none",
+        )
     figure.savefig(output_path, dpi=150)
     plt.close(figure)
+
+
+def _combine_metric_panels(paths: list[Path], output_path: Path) -> None:
+    """Combine four metric figures into one 2-by-2 analysis figure."""
+    panels = [Image.open(path).convert("RGB") for path in paths]
+    try:
+        width = max(panel.width for panel in panels)
+        height = max(panel.height for panel in panels)
+        combined = Image.new("RGB", (2 * width, 2 * height), "white")
+        for index, panel in enumerate(panels):
+            combined.paste(panel, ((index % 2) * width, (index // 2) * height))
+        combined.save(output_path)
+    finally:
+        for panel in panels:
+            panel.close()
+    for path in paths:
+        path.unlink(missing_ok=True)
+
+
+def _clear_old_metric_images(output_dir: Path, frame: int) -> None:
+    """Remove pre-four-panel metric files from a regenerated frame."""
+    for path in output_dir.glob(f"*frame{frame:02d}.png"):
+        if path.name != f"metrics_frame{frame:02d}.png":
+            path.unlink()
 
 
 def _write_rows(path: Path, rows: list[dict[str, object]]) -> None:
@@ -212,6 +298,80 @@ def _write_digitised_rows(path: Path, rows: list[dict[str, object]]) -> None:
 def _quantize(image: np.ndarray, bit_depth: int) -> np.ndarray:
     max_value = float(2**bit_depth - 1)
     return np.clip(np.rint(image * max_value), 0.0, max_value)
+
+
+def _analyse_riley_self_convergence_frame(
+    runs: list[tuple[str, int, int, Path]],
+    frame: int,
+    group_name: str,
+) -> None:
+    """Plot each Riley run against the highest available SSAA of itself."""
+    images: dict[tuple[str, int], dict[int, np.ndarray]] = defaultdict(dict)
+    for interpolator, ssaa, oversamp, run_dir in runs:
+        image_path = run_dir / f"image_c00_f{frame:02d}_clamped.npy"
+        if image_path.exists():
+            images[(interpolator, oversamp)][ssaa] = np.load(image_path)
+
+    rows_by_interpolator: dict[str, list[dict[str, object]]] = defaultdict(list)
+    digitised_by_interpolator: dict[str, list[dict[str, object]]] = defaultdict(list)
+    for (interpolator, oversamp), by_ssaa in images.items():
+        if len(by_ssaa) < 2:
+            continue
+        reference_ssaa = max(by_ssaa)
+        reference = by_ssaa[reference_ssaa]
+        for ssaa, image in by_ssaa.items():
+            if ssaa == reference_ssaa:
+                continue
+            difference = image - reference
+            base_row = {
+                "Case": group_name,
+                "Pattern": group_name,
+                "Interpolator": interpolator,
+                "Frame": frame,
+                "SSAA": ssaa,
+                "Oversamp": oversamp,
+                "Samples": ssaa * ssaa,
+                "Reference": f"Riley SSAA {reference_ssaa}x{reference_ssaa}",
+                "ReferenceMethod": "riley_ssaa",
+                "ReferenceParam": reference_ssaa,
+            }
+            rows_by_interpolator[interpolator].append({
+                **base_row,
+                "e_f64": float(np.sqrt(np.mean(difference**2))),
+                "e_inf": float(np.max(np.abs(difference))),
+            })
+            for bit_depth in BIT_DEPTHS:
+                digitised_difference = (
+                    _quantize(image, bit_depth) - _quantize(reference, bit_depth)
+                )
+                digitised_by_interpolator[interpolator].append({
+                    **base_row,
+                    "BitDepth": bit_depth,
+                    "delta_b": float(np.mean(digitised_difference != 0.0)),
+                    "max_eb": float(np.max(np.abs(digitised_difference))),
+                })
+
+    rectconv_root = Path(f"{RESULTS_DIR}_rectconv") / group_name
+    for interpolator, rows in rows_by_interpolator.items():
+        output_dir = rectconv_root / interpolator
+        output_dir.mkdir(parents=True, exist_ok=True)
+        _clear_old_metric_images(output_dir, frame)
+        title = (
+            f"Riley {interpolator} texture self-convergence\n"
+            f"{group_name}, frame {frame:02d} | Reference: highest SSAA per oversamp"
+        )
+        digitised_rows = digitised_by_interpolator[interpolator]
+        metric_paths = [
+            output_dir / f"float_rmse_frame{frame:02d}.png",
+            output_dir / f"float_max_frame{frame:02d}.png",
+            output_dir / f"bits_delta_frame{frame:02d}.png",
+            output_dir / f"bits_max_frame{frame:02d}.png",
+        ]
+        _plot_metric(rows, "e_f64", "Clamped-intensity RMSE ($e_{f64}$)", metric_paths[0], title)
+        _plot_metric(rows, "e_inf", "Clamped-intensity max error ($e_{∞}$)", metric_paths[1], title)
+        _plot_metric(digitised_rows, "delta_b", "Digitised mismatch fraction", metric_paths[2], title)
+        _plot_metric(digitised_rows, "max_eb", "Maximum digitised error (LSB)", metric_paths[3], title)
+        _combine_metric_panels(metric_paths, output_dir / f"metrics_frame{frame:02d}.png")
 
 
 def analyse_pattern(
@@ -286,48 +446,27 @@ def analyse_pattern(
         for interpolator in sorted({str(row["Interpolator"]) for row in frame_rows}):
             output_dir = RESULTS_DIR / group_name / interpolator
             output_dir.mkdir(parents=True, exist_ok=True)
+            _clear_old_metric_images(output_dir, frame)
             interp_rows = [row for row in frame_rows if row["Interpolator"] == interpolator]
             title_prefix = (
                 f"Riley {interpolator} texture vs {reference_name}\n"
                 f"{group_name}, frame {frame:02d}"
             )
-            _plot_metric(
-                interp_rows,
-                "e_f64",
-                "Clamped-intensity RMSE ($e_{f64}$)",
-                output_dir / f"float_rmse_frame{frame:02d}.png",
-                title_prefix,
-            )
-            _plot_metric(
-                interp_rows,
-                "e_inf",
-                "Clamped-intensity max error ($e_{∞}$)",
-                output_dir / f"float_max_frame{frame:02d}.png",
-                title_prefix,
-            )
             interpolator_digitised_rows = [
                 row for row in frame_digitised_rows
                 if row["Interpolator"] == interpolator
             ]
-            for bit_depth in BIT_DEPTHS:
-                interp_digitised = [
-                    row for row in interpolator_digitised_rows
-                    if row["BitDepth"] == bit_depth
-                ]
-                _plot_metric(
-                    interp_digitised,
-                    "delta_b",
-                    f"Digitised mismatch fraction ({bit_depth}-bit)",
-                    output_dir / f"bits_delta_b{bit_depth}_frame{frame:02d}.png",
-                    title_prefix,
-                )
-                _plot_metric(
-                    interp_digitised,
-                    "max_eb",
-                    f"Maximum digitised error (LSB, {bit_depth}-bit)",
-                    output_dir / f"bits_max_eb{bit_depth}_frame{frame:02d}.png",
-                    title_prefix,
-                )
+            metric_paths = [
+                output_dir / f"float_rmse_frame{frame:02d}.png",
+                output_dir / f"float_max_frame{frame:02d}.png",
+                output_dir / f"bits_delta_frame{frame:02d}.png",
+                output_dir / f"bits_max_frame{frame:02d}.png",
+            ]
+            _plot_metric(interp_rows, "e_f64", "Clamped-intensity RMSE ($e_{f64}$)", metric_paths[0], title_prefix)
+            _plot_metric(interp_rows, "e_inf", "Clamped-intensity max error ($e_{∞}$)", metric_paths[1], title_prefix)
+            _plot_metric(interpolator_digitised_rows, "delta_b", "Digitised mismatch fraction", metric_paths[2], title_prefix)
+            _plot_metric(interpolator_digitised_rows, "max_eb", "Maximum digitised error (LSB)", metric_paths[3], title_prefix)
+            _combine_metric_panels(metric_paths, output_dir / f"metrics_frame{frame:02d}.png")
             rows_by_interpolator[interpolator].extend(interp_rows)
             digitised_by_interpolator[interpolator].extend(
                 interpolator_digitised_rows
@@ -335,6 +474,7 @@ def analyse_pattern(
             print(f"    Saved {len(interp_rows)} comparisons and figures to {output_dir}")
         rows.extend(frame_rows)
         digitised_rows.extend(frame_digitised_rows)
+        _analyse_riley_self_convergence_frame(runs, frame, group_name)
     group_dir = RESULTS_DIR / group_name
     group_dir.mkdir(parents=True, exist_ok=True)
     _write_rows(group_dir / "summary.csv", rows)

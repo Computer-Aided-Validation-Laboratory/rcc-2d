@@ -3,22 +3,23 @@
 #
 # Copyright (c) 2026 scepticalrabbit (Lloyd Fletcher)
 # Licensed under the MIT License (see LICENSE file for details)
-#
-# Authors: scepticalrabbit (Lloyd Fletcher)
 # --------------------------------------------------------------------------
 
-from pathlib import Path
+"""Floating-texture-shader-only analysis for Experiment 1.
 
-import exp1_riley_analysis as riley_analysis
+Floating texture sampling is UV based, so it is compared against the
+UV-integrator reference.  Results are deliberately kept separate from the
+digitised (unsigned-integer) texture analysis.
+"""
+
+import exp1_riley_analysis_common as riley_analysis
 from exp1params import exp1_output_dir
 from script_timing import ScriptTimer
 
 riley_analysis.OUTPUT_DIR = exp1_output_dir("exp1_gridint2d_render_uvs")
-riley_analysis.RILEY_FUNC_DIR = exp1_output_dir("exp1_riley_render_func_uvs")
-riley_analysis.RILEY_TEX_DIR = exp1_output_dir("exp1_riley_render_tex")
-riley_analysis.RESULTS_DIR_FUNC = exp1_output_dir("exp1_riley_analysis_uvs")
-riley_analysis.RESULTS_DIR_TEX = exp1_output_dir("exp1_riley_analysis_uvs_tex")
-riley_analysis.ANALYSIS_MODE = "func"
+riley_analysis.RILEY_TEX_DIR = exp1_output_dir("exp1_riley_render_texfloat")
+riley_analysis.RESULTS_DIR_TEX = exp1_output_dir("exp1_riley_analysis_texfloat")
+riley_analysis.ANALYSIS_MODE = "tex"
 
 
 if __name__ == "__main__":

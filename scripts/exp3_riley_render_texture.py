@@ -80,7 +80,8 @@ def _source_path(
 
 
 def _output_root(texture_kind: TextureKind, input_kind: InputKind) -> Path:
-    return Path(f"./out/exp3_riley_render_{texture_kind}_{input_kind}")
+    input_tag = "texfloat" if input_kind == "texf" else "texuint"
+    return Path(f"./out/exp3_riley_render_{texture_kind}_{input_tag}")
 
 
 def _result_suffixes(texture_kind: TextureKind, input_kind: InputKind) -> tuple[str, ...]:

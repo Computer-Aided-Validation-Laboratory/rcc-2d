@@ -24,7 +24,7 @@ from exp1params import (
     exp1_output_dir,
 )
 from exp1common import output_case_name
-from expplots import plot_bespoke_convergence, samples_for_method
+from expplots import plot_bespoke_four_panel, samples_for_method
 from script_timing import ScriptTimer, timed_call
 
 RESULTS_DIR = exp1_output_dir("exp1_gridint2d_analysis")
@@ -87,9 +87,8 @@ def analyse_case(case_dir: Path) -> list[dict[str, object]]:
                     float_data[method]["e_f64"].append(e_f64)
                     float_data[method]["e_inf"].append(e_inf)
                 rows.append({"Case": case_dir.name, "Frame": frame, "BitDepth": bit_depth, "Method": method, "Param": param, "Samples": samples, "Reference": "analytic:0", "e_f64": e_f64, "e_inf": e_inf, "e_b": float(np.sqrt(np.mean(digitised_diff**2))), "delta_b": delta_b, "max_eb": max_eb})
-        paths = plot_bespoke_convergence(case_dir.name, frame, "Analytic Reference", RESULTS_DIR, float_data, digitised_data, sorted(references))
-        for path in paths:
-            print(f"Saved {path}")
+        path = plot_bespoke_four_panel(case_dir.name, frame, "Analytic Reference", RESULTS_DIR, float_data, digitised_data, sorted(references))
+        print(f"Saved {path}")
     return rows
 
 
@@ -155,7 +154,7 @@ def analyse_rectangular_self_convergence(
                     float_data["rect"]["e_inf"].append(e_inf)
                 frame_rows.append({"Case": case_dir.name, "Frame": frame, "BitDepth": bit_depth, "Method": "rect", "Param": param, "Samples": samples, "Reference": f"rect:{ref_param}", "e_f64": e_f64, "e_inf": e_inf, "e_b": e_b, "delta_b": delta_b, "max_eb": max_eb})
         if frame_rows:
-            plot_bespoke_convergence(
+            plot_bespoke_four_panel(
                 case_dir.name,
                 frame,
                 f"Rectangular SSAA Reference ({ref_param}x{ref_param})",

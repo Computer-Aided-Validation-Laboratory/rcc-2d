@@ -42,7 +42,7 @@ from exp2params import (
     exp2_output_dir,
 )
 
-OUTPUT_ROOT = exp2_output_dir("exp2_riley_render_texf")
+OUTPUT_ROOT = exp2_output_dir("exp2_riley_render_texfloat")
 
 
 def get_ssaa_levels() -> list[int]:

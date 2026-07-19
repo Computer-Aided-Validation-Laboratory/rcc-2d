@@ -39,7 +39,7 @@ from exp1params import (
 )
 
 
-OUTPUT_ROOT = exp1_output_dir("exp1_riley_render_tex")
+OUTPUT_ROOT = exp1_output_dir("exp1_riley_render_texuint")
 
 
 def get_ssaa_levels() -> list[int]:

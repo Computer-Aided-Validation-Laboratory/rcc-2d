@@ -11,7 +11,7 @@ from pathlib import Path
 
 import exp1_riley_func_uv_cos as uvs_render
 
-uvs_render.OUTPUT_ROOT = Path("./out/exp1_riley_render_uvs")
+uvs_render.OUTPUT_ROOT = Path("./out/exp1_riley_render_func_uvs")
 
 
 if __name__ == "__main__":
