@@ -18,7 +18,6 @@ from pathlib import Path
 import matplotlib.pyplot as plt
 import numpy as np
 from matplotlib.ticker import FixedFormatter, FixedLocator
-from PIL import Image
 
 from exp2params import (
     ACTIVE_FRAMES,
@@ -151,124 +150,182 @@ def _discover_riley_runs(
     return sorted(runs, key=lambda item: (item[0], item[2], item[1]))
 
 
-def _plot_metric(
-    rows: list[dict[str, object]],
-    metric: str,
-    ylabel: str,
-    output_path: Path,
+def _clear_old_metric_images(output_dir: Path, frame: int) -> None:
+    """Remove all regenerated figures for one frame."""
+    for path in output_dir.glob(f"*frame{frame:02d}.png"):
+        path.unlink()
+
+
+def _axis_samples(axis, values: list[int], label: str) -> None:
+    """Apply the actual completed SSAA or OS levels to a log x axis."""
+    ticks = sorted(set(values))
+    if not ticks:
+        return
+    axis.set_xscale("log")
+    axis.xaxis.set_major_locator(FixedLocator(ticks))
+    axis.xaxis.set_major_formatter(FixedFormatter([str(value) for value in ticks]))
+    axis.set_xlim(0.85 * ticks[0], 1.15 * ticks[-1])
+    axis.set_xlabel(label)
+
+
+def _nonnegative_max(rows: list[dict[str, object]], metric: str) -> float:
+    values = [float(row[metric]) for row in rows if float(row[metric]) >= 0.0]
+    return max(values, default=0.0)
+
+
+def _set_float_axis(axis, rows: list[dict[str, object]], bit_depths: list[int]) -> None:
+    """Use a zero-inclusive floating-error scale derived from image precision."""
+    finest_half_lsb = 0.5 / float(2 ** max(bit_depths) - 1)
+    coarsest_lsb = 1.0 / float(2 ** min(bit_depths) - 1)
+    axis.set_yscale("symlog", linthresh=finest_half_lsb, linscale=0.8)
+    for bit_depth in bit_depths:
+        maximum = float(2**bit_depth - 1)
+        axis.axhline(1.0 / maximum, color="black", linestyle="--", alpha=0.35)
+        axis.axhline(0.5 / maximum, color="red", linestyle=":", alpha=0.35)
+    axis.set_ylim(0.0, 1.15 * max(_nonnegative_max(rows, "e_f64"), _nonnegative_max(rows, "e_inf"), coarsest_lsb))
+
+
+def _set_max_lsb_axis(axis, rows: list[dict[str, object]]) -> None:
+    axis.set_yscale("symlog", linthresh=1.0, linscale=0.8)
+    axis.axhline(1.0, color="black", linestyle="--", alpha=0.55, label="1 LSB")
+    axis.axhline(0.0, color="red", linestyle=":", alpha=0.6, label="0 LSB")
+    axis.set_ylim(0.0, 1.15 * max(_nonnegative_max(rows, "max_eb"), 1.0))
+
+
+def _plot_four_panel(
+    float_rows: list[dict[str, object]],
+    digitised_rows: list[dict[str, object]],
+    bit_depth: int,
+    x_key: str,
+    line_key: str,
+    x_label: str,
     title: str,
+    output_path: Path,
 ) -> None:
-    """Plot one metric with a zero-inclusive, physically meaningful y scale.
-
-    Exact agreement is a meaningful result here.  It must not be replaced by
-    ``float64.tiny`` for a logarithmic plot: that turns zero into an invented
-    10^-308 error and makes the limits of the figure meaningless.  The
-    symmetric-log scale retains useful resolution around the LSB thresholds
-    while allowing the axis to start at zero.
-    """
-    figure, axes = plt.subplots(figsize=(10, 7), constrained_layout=True)
-    grouped: dict[object, list[dict[str, object]]] = defaultdict(list)
-    for row in rows:
-        key: object = int(row["Oversamp"])
-        if "BitDepth" in row:
-            key = (int(row["Oversamp"]), int(row["BitDepth"]))
-        grouped[key].append(row)
-    for index, (key, group) in enumerate(sorted(grouped.items())):
-        oversamp = int(key[0]) if isinstance(key, tuple) else int(key)
-        group.sort(key=lambda row: int(row["Samples"]))
-        samples = np.sqrt(np.asarray([int(row["Samples"]) for row in group]))
-        values = np.asarray([float(row[metric]) for row in group])
-        color = INTERPOLATOR_COLORS[index % len(INTERPOLATOR_COLORS)]
-        marker = OVERSAMP_MARKERS[index % len(OVERSAMP_MARKERS)]
-        axes.plot(
-            samples,
-            values,
-            color=color,
-            marker=marker,
-            linewidth=1.8,
-            markersize=7,
-            label=(
-                f"Riley, Tex, OS={oversamp}, {key[1]}-bit"
-                if isinstance(key, tuple)
-                else f"Riley, Tex, OS={oversamp}"
-            ),
-        )
-    axes.set_xscale("log")
-
-    all_values = np.asarray([float(row[metric]) for row in rows], dtype=float)
-    finite_values = all_values[np.isfinite(all_values) & (all_values >= 0.0)]
-    largest_value = float(np.max(finite_values)) if finite_values.size else 0.0
-    if metric in {"e_f64", "e_inf"}:
-        finest_half_lsb = 0.5 / float(2 ** max(BIT_DEPTHS) - 1)
-        coarsest_lsb = 1.0 / float(2 ** min(BIT_DEPTHS) - 1)
-        axes.set_yscale("symlog", linthresh=finest_half_lsb, linscale=0.8)
-        for bit_depth in BIT_DEPTHS:
-            maximum = float(2**bit_depth - 1)
-            axes.axhline(1.0 / maximum, color="black", linestyle="--", alpha=0.35)
-            axes.axhline(0.5 / maximum, color="red", linestyle=":", alpha=0.35)
-        axes.set_ylim(0.0, 1.15 * max(largest_value, coarsest_lsb))
-    elif metric == "delta_b":
-        axes.set_ylim(0.0, 1.0)
-    elif metric == "max_eb":
-        axes.set_yscale("symlog", linthresh=1.0, linscale=0.8)
-        axes.axhline(1.0, color="black", linestyle="--", alpha=0.5)
-        axes.axhline(0.0, color="red", linestyle=":", alpha=0.6)
-        axes.set_ylim(0.0, 1.15 * max(largest_value, 1.0))
-    axes.set_title(title, fontweight="bold")
-    axes.set_xlabel("Riley Samples Along One Pixel Axis")
-    axes.set_ylabel(ylabel)
-    sample_ticks = sorted(
-        {
-            int(row["SSAA"])
-            for row in rows
-        }
-        | {
-            int(row["ReferenceParam"])
-            for row in rows
-            if int(row["ReferenceParam"]) > 0
-        }
-    )
-    axes.xaxis.set_major_locator(FixedLocator(sample_ticks))
-    axes.xaxis.set_major_formatter(FixedFormatter([str(tick) for tick in sample_ticks]))
-    axes.set_xlim(
-        0.85,
-        1.15 * sample_ticks[-1],
-    )
-    axes.grid(True, which="both", ls="--", alpha=0.5)
-    if grouped:
-        axes.legend(
-            loc="lower left",
-            fontsize=7,
-            frameon=True,
-            facecolor="white",
-            edgecolor="none",
-        )
+    """Plot one bit depth, varying either SSAA or texture OS."""
+    selected_digitised = [row for row in digitised_rows if int(row["BitDepth"]) == bit_depth]
+    figure, axes = plt.subplots(2, 2, figsize=(15, 10), constrained_layout=True)
+    grouped_float: dict[int, list[dict[str, object]]] = defaultdict(list)
+    grouped_digitised: dict[int, list[dict[str, object]]] = defaultdict(list)
+    for row in float_rows:
+        grouped_float[int(row[line_key])].append(row)
+    for row in selected_digitised:
+        grouped_digitised[int(row[line_key])].append(row)
+    line_values = sorted(set(grouped_float) | set(grouped_digitised))
+    colors = plt.rcParams["axes.prop_cycle"].by_key()["color"]
+    markers = OVERSAMP_MARKERS
+    for index, line_value in enumerate(line_values):
+        color = colors[index % len(colors)]
+        marker = markers[index % len(markers)]
+        float_group = sorted(grouped_float.get(line_value, []), key=lambda row: int(row[x_key]))
+        digitised_group = sorted(grouped_digitised.get(line_value, []), key=lambda row: int(row[x_key]))
+        label = f"Riley, Tex, {'OS' if line_key == 'Oversamp' else 'SSAA'}={line_value}"
+        for axis, metric in ((axes[0, 0], "e_f64"), (axes[0, 1], "e_inf")):
+            if float_group:
+                axis.plot(
+                    [int(row[x_key]) for row in float_group],
+                    [float(row[metric]) for row in float_group],
+                    color=color, marker=marker, linewidth=1.6, markersize=6, label=label,
+                )
+        for axis, metric in ((axes[1, 0], "delta_b"), (axes[1, 1], "max_eb")):
+            if digitised_group:
+                axis.plot(
+                    [int(row[x_key]) for row in digitised_group],
+                    [float(row[metric]) for row in digitised_group],
+                    color=color, marker=marker, linewidth=1.6, markersize=6, label=label,
+                )
+    x_values = [int(row[x_key]) for row in float_rows]
+    _set_float_axis(axes[0, 0], float_rows, [bit_depth])
+    _set_float_axis(axes[0, 1], float_rows, [bit_depth])
+    _set_max_lsb_axis(axes[1, 1], selected_digitised)
+    axes[1, 0].set_ylim(0.0, 1.0)
+    for axis, panel_title, ylabel in (
+        (axes[0, 0], "Floating-Point RMSE", "RMSE"),
+        (axes[0, 1], "Floating-Point Max Error", "Max error"),
+        (axes[1, 0], "Digitised Mismatch Fraction", "Fraction of differing pixels"),
+        (axes[1, 1], "Maximum Digitised Mismatch", "LSB levels"),
+    ):
+        _axis_samples(axis, x_values, x_label)
+        axis.set_title(panel_title)
+        axis.set_ylabel(ylabel)
+        axis.grid(True, which="both", ls="--", alpha=0.4)
+        handles, _ = axis.get_legend_handles_labels()
+        if handles:
+            axis.legend(loc="lower left", fontsize=6, frameon=True, facecolor="white", edgecolor="none")
+    figure.suptitle(title, fontweight="bold")
     figure.savefig(output_path, dpi=150)
     plt.close(figure)
 
 
-def _combine_metric_panels(paths: list[Path], output_path: Path) -> None:
-    """Combine four metric figures into one 2-by-2 analysis figure."""
-    panels = [Image.open(path).convert("RGB") for path in paths]
-    try:
-        width = max(panel.width for panel in panels)
-        height = max(panel.height for panel in panels)
-        combined = Image.new("RGB", (2 * width, 2 * height), "white")
-        for index, panel in enumerate(panels):
-            combined.paste(panel, ((index % 2) * width, (index // 2) * height))
-        combined.save(output_path)
-    finally:
-        for panel in panels:
-            panel.close()
-    for path in paths:
-        path.unlink(missing_ok=True)
+def _plot_limit_cuts(
+    float_rows: list[dict[str, object]],
+    digitised_rows: list[dict[str, object]],
+    title: str,
+    output_path: Path,
+) -> None:
+    """Show the highest-OS and highest-SSAA cuts with all bit depths together."""
+    highest_os = max(int(row["Oversamp"]) for row in float_rows)
+    highest_ssaa = max(int(row["SSAA"]) for row in float_rows)
+    high_os_float = sorted((row for row in float_rows if int(row["Oversamp"]) == highest_os), key=lambda row: int(row["SSAA"]))
+    high_ssaa_float = sorted((row for row in float_rows if int(row["SSAA"]) == highest_ssaa), key=lambda row: int(row["Oversamp"]))
+    figure, axes = plt.subplots(2, 2, figsize=(15, 10), constrained_layout=True)
+    for axis, rows, x_key, metric, label in (
+        (axes[0, 0], high_os_float, "SSAA", "e_f64", f"Riley, Tex, OS={highest_os}"),
+        (axes[0, 1], high_ssaa_float, "Oversamp", "e_inf", f"Riley, Tex, SSAA={highest_ssaa}"),
+    ):
+        axis.plot([int(row[x_key]) for row in rows], [float(row[metric]) for row in rows], marker="o", color="#1f77b4", label=label)
+        _set_float_axis(axis, rows, list(BIT_DEPTHS))
+        _axis_samples(axis, [int(row[x_key]) for row in rows], "Riley Samples Along One Pixel Axis" if x_key == "SSAA" else "Texture Oversampling Along One Pixel Axis")
+        axis.set_title("Highest OS: Floating-Point RMSE" if x_key == "SSAA" else "Highest SSAA: Floating-Point Max Error")
+        axis.set_ylabel("RMSE" if metric == "e_f64" else "Max error")
+        axis.grid(True, which="both", ls="--", alpha=0.4)
+        axis.legend(loc="lower left", fontsize=7, frameon=True, facecolor="white", edgecolor="none")
+    for axis, x_key, fixed_key, fixed_value, panel_title in (
+        (axes[1, 0], "SSAA", "Oversamp", highest_os, f"Highest OS={highest_os}: Maximum Digitised Mismatch"),
+        (axes[1, 1], "Oversamp", "SSAA", highest_ssaa, f"Highest SSAA={highest_ssaa}: Maximum Digitised Mismatch"),
+    ):
+        rows = [row for row in digitised_rows if int(row[fixed_key]) == fixed_value]
+        for index, bit_depth in enumerate(BIT_DEPTHS):
+            series = sorted((row for row in rows if int(row["BitDepth"]) == bit_depth), key=lambda row: int(row[x_key]))
+            if series:
+                axis.plot([int(row[x_key]) for row in series], [float(row["max_eb"]) for row in series], marker="o", color=INTERPOLATOR_COLORS[index % len(INTERPOLATOR_COLORS)], label=f"Riley, Tex, {bit_depth}-bit")
+        _set_max_lsb_axis(axis, rows)
+        _axis_samples(axis, [int(row[x_key]) for row in rows], "Riley Samples Along One Pixel Axis" if x_key == "SSAA" else "Texture Oversampling Along One Pixel Axis")
+        axis.set_title(panel_title)
+        axis.set_ylabel("LSB levels")
+        axis.grid(True, which="both", ls="--", alpha=0.4)
+        axis.legend(loc="lower left", fontsize=7, frameon=True, facecolor="white", edgecolor="none")
+    figure.suptitle(title, fontweight="bold")
+    figure.savefig(output_path, dpi=150)
+    plt.close(figure)
 
 
-def _clear_old_metric_images(output_dir: Path, frame: int) -> None:
-    """Remove pre-four-panel metric files from a regenerated frame."""
-    for path in output_dir.glob(f"*frame{frame:02d}.png"):
-        if path.name != f"metrics_frame{frame:02d}.png":
-            path.unlink()
+def _write_analysis_figures(
+    output_dir: Path,
+    frame: int,
+    float_rows: list[dict[str, object]],
+    digitised_rows: list[dict[str, object]],
+    title: str,
+) -> None:
+    """Write per-bit SSAA/OS studies plus a compact all-bit limits figure."""
+    for bit_depth in BIT_DEPTHS:
+        bit_title = f"{title} | {bit_depth}-bit"
+        _plot_four_panel(
+            float_rows, digitised_rows, bit_depth,
+            "SSAA", "Oversamp", "Riley Samples Along One Pixel Axis",
+            bit_title,
+            output_dir / f"metrics_b{bit_depth:02d}_frame{frame:02d}.png",
+        )
+        _plot_four_panel(
+            float_rows, digitised_rows, bit_depth,
+            "Oversamp", "SSAA", "Texture Oversampling Along One Pixel Axis",
+            bit_title,
+            output_dir / f"os_metrics_b{bit_depth:02d}_frame{frame:02d}.png",
+        )
+    _plot_limit_cuts(
+        float_rows, digitised_rows, title,
+        output_dir / f"limits_metrics_frame{frame:02d}.png",
+    )
 
 
 def _write_rows(path: Path, rows: list[dict[str, object]]) -> None:
@@ -357,21 +414,11 @@ def _analyse_riley_self_convergence_frame(
         output_dir.mkdir(parents=True, exist_ok=True)
         _clear_old_metric_images(output_dir, frame)
         title = (
-            f"Riley {interpolator} texture self-convergence\n"
-            f"{group_name}, frame {frame:02d} | Reference: highest SSAA per oversamp"
+            f"Riley, Tex, {interpolator}: self-convergence | frame {frame:02d}\n"
+            "Reference: highest SSAA at each OS"
         )
         digitised_rows = digitised_by_interpolator[interpolator]
-        metric_paths = [
-            output_dir / f"float_rmse_frame{frame:02d}.png",
-            output_dir / f"float_max_frame{frame:02d}.png",
-            output_dir / f"bits_delta_frame{frame:02d}.png",
-            output_dir / f"bits_max_frame{frame:02d}.png",
-        ]
-        _plot_metric(rows, "e_f64", "Clamped-intensity RMSE ($e_{f64}$)", metric_paths[0], title)
-        _plot_metric(rows, "e_inf", "Clamped-intensity max error ($e_{∞}$)", metric_paths[1], title)
-        _plot_metric(digitised_rows, "delta_b", "Digitised mismatch fraction", metric_paths[2], title)
-        _plot_metric(digitised_rows, "max_eb", "Maximum digitised error (LSB)", metric_paths[3], title)
-        _combine_metric_panels(metric_paths, output_dir / f"metrics_frame{frame:02d}.png")
+        _write_analysis_figures(output_dir, frame, rows, digitised_rows, title)
 
 
 def analyse_pattern(
@@ -449,24 +496,17 @@ def analyse_pattern(
             _clear_old_metric_images(output_dir, frame)
             interp_rows = [row for row in frame_rows if row["Interpolator"] == interpolator]
             title_prefix = (
-                f"Riley {interpolator} texture vs {reference_name}\n"
-                f"{group_name}, frame {frame:02d}"
+                f"Riley, Tex, {interpolator}: analytic convergence | frame {frame:02d}\n"
+                f"Reference: {reference_name}"
             )
             interpolator_digitised_rows = [
                 row for row in frame_digitised_rows
                 if row["Interpolator"] == interpolator
             ]
-            metric_paths = [
-                output_dir / f"float_rmse_frame{frame:02d}.png",
-                output_dir / f"float_max_frame{frame:02d}.png",
-                output_dir / f"bits_delta_frame{frame:02d}.png",
-                output_dir / f"bits_max_frame{frame:02d}.png",
-            ]
-            _plot_metric(interp_rows, "e_f64", "Clamped-intensity RMSE ($e_{f64}$)", metric_paths[0], title_prefix)
-            _plot_metric(interp_rows, "e_inf", "Clamped-intensity max error ($e_{∞}$)", metric_paths[1], title_prefix)
-            _plot_metric(interpolator_digitised_rows, "delta_b", "Digitised mismatch fraction", metric_paths[2], title_prefix)
-            _plot_metric(interpolator_digitised_rows, "max_eb", "Maximum digitised error (LSB)", metric_paths[3], title_prefix)
-            _combine_metric_panels(metric_paths, output_dir / f"metrics_frame{frame:02d}.png")
+            _write_analysis_figures(
+                output_dir, frame, interp_rows, interpolator_digitised_rows,
+                title_prefix,
+            )
             rows_by_interpolator[interpolator].extend(interp_rows)
             digitised_by_interpolator[interpolator].extend(
                 interpolator_digitised_rows

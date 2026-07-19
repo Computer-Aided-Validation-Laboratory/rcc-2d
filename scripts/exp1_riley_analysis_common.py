@@ -69,6 +69,7 @@ def _plot_texture_oversample_metrics(
     output_dir: Path,
     selected_ssaa: list[int],
     group_name: str,
+    bit_depth: int | None = None,
 ) -> None:
     """Plot texture oversampling convergence with one line per Riley SSAA."""
     group_label = group_name.replace("odd_exp", "odd-exponent").replace(
@@ -106,6 +107,7 @@ def _plot_texture_oversample_metrics(
     figure, axes = plt.subplots(2, 2, figsize=(15, 10))
     colors = plt.rcParams["axes.prop_cycle"].by_key()["color"]
     bit_styles = {8: "-", 12: "--", 16: ":"}
+    plotted_bit_depths = [bit_depth] if bit_depth is not None else BIT_DEPTHS
     for index, ssaa in enumerate(ssaa_values):
         color = colors[index % len(colors)]
         for axis, metric, title, ylabel in (
@@ -121,26 +123,26 @@ def _plot_texture_oversample_metrics(
                                 marker="o", linewidth=1.6)
             axis.set_title(title)
             axis.set_ylabel(ylabel)
-        for bit_depth in BIT_DEPTHS:
+        for plotted_bit_depth in plotted_bit_depths:
             for axis, metric, title, ylabel in (
                 (axes[1, 0], "delta_b", "Digitised Mismatch Fraction", "Fraction of differing pixels"),
                 (axes[1, 1], "max_eb", "Maximum Digitised Mismatch", "LSB levels"),
             ):
-                points = values_for(bit_depth, ssaa, metric)
+                points = values_for(plotted_bit_depth, ssaa, metric)
                 if points:
                     x, y = zip(*points)
                     if metric == "max_eb":
                         axis.loglog(x, np.maximum(0.2, y), color=color, marker="o",
-                                    linestyle=bit_styles.get(bit_depth, "-"), linewidth=1.4)
+                                    linestyle=bit_styles.get(plotted_bit_depth, "-"), linewidth=1.4)
                     else:
                         axis.semilogx(x, y, color=color, marker="o",
-                                      linestyle=bit_styles.get(bit_depth, "-"), linewidth=1.4)
+                                      linestyle=bit_styles.get(plotted_bit_depth, "-"), linewidth=1.4)
                 axis.set_title(title)
                 axis.set_ylabel(ylabel)
 
-    for bit_depth in BIT_DEPTHS:
-        maximum = float(2**bit_depth - 1)
-        style = bit_styles.get(bit_depth, "-")
+    for plotted_bit_depth in plotted_bit_depths:
+        maximum = float(2**plotted_bit_depth - 1)
+        style = bit_styles.get(plotted_bit_depth, "-")
         axes[0, 0].axhline(1.0 / maximum, color="black", linestyle=style, alpha=0.35)
         axes[0, 1].axhline(0.5 / maximum, color="red", linestyle=style, alpha=0.35)
     axes[1, 0].set_ylim(-0.05, 1.05)
@@ -159,8 +161,8 @@ def _plot_texture_oversample_metrics(
         for index, ssaa in enumerate(ssaa_values)
     ]
     handles.extend(
-        Line2D([], [], color="black", linestyle=bit_styles[bit_depth], label=f"{bit_depth}-bit")
-        for bit_depth in BIT_DEPTHS
+        Line2D([], [], color="black", linestyle=bit_styles[plotted_bit_depth], label=f"{plotted_bit_depth}-bit")
+        for plotted_bit_depth in plotted_bit_depths
     )
     handles.extend(
         [
@@ -169,14 +171,15 @@ def _plot_texture_oversample_metrics(
         ]
     )
     figure.suptitle(
-        f"Texture Oversampling Study ({group_label} SSAA): {case_name} (Frame {frame:02d})\n"
+        f"Texture Oversampling Study ({group_label} SSAA){f', {bit_depth}-bit' if bit_depth is not None else ''}: {case_name} (Frame {frame:02d})\n"
         "Reference: analytic renderer",
         fontweight="bold",
     )
     figure.legend(handles=handles, loc="upper center", bbox_to_anchor=(0.5, 0.93),
                   ncol=3, fontsize=6, frameon=True, facecolor="white", edgecolor="none")
     figure.tight_layout(rect=(0, 0, 1, 0.86))
-    figure.savefig(output_dir / f"{case_name}_tex_oversamp_{group_name}_metrics_frame{frame:02d}.png", dpi=150)
+    suffix = f"_b{bit_depth:02d}" if bit_depth is not None else ""
+    figure.savefig(output_dir / f"{case_name}_tex_oversamp_{group_name}{suffix}_metrics_frame{frame:02d}.png", dpi=150)
     plt.close(figure)
 
 
@@ -187,6 +190,7 @@ def _plot_texture_ssaa_metrics(
     output_dir: Path,
     selected_oversamp: list[int],
     group_name: str,
+    bit_depth: int | None = None,
 ) -> None:
     """Plot raster SSAA convergence with a compact selected OS subset."""
     group_label = group_name.replace("odd_exp", "odd-exponent").replace(
@@ -205,6 +209,7 @@ def _plot_texture_ssaa_metrics(
     figure, axes = plt.subplots(2, 2, figsize=(15, 10))
     colors = plt.rcParams["axes.prop_cycle"].by_key()["color"]
     bit_styles = {8: "-", 12: "--", 16: ":"}
+    plotted_bit_depths = [bit_depth] if bit_depth is not None else BIT_DEPTHS
     for index, oversamp in enumerate(oversamp_values):
         color = colors[index % len(colors)]
         for axis, metric, title, ylabel in (
@@ -219,23 +224,23 @@ def _plot_texture_ssaa_metrics(
                     axis.loglog(np.asarray(x)[valid], np.asarray(y)[valid], color=color, marker="o", linewidth=1.6)
             axis.set_title(title)
             axis.set_ylabel(ylabel)
-        for bit_depth in BIT_DEPTHS:
+        for plotted_bit_depth in plotted_bit_depths:
             for axis, metric, title, ylabel in (
                 (axes[1, 0], "delta_b", "Digitised Mismatch Fraction", "Fraction of differing pixels"),
                 (axes[1, 1], "max_eb", "Maximum Digitised Mismatch", "LSB levels"),
             ):
-                points = values_for(bit_depth, oversamp, metric)
+                points = values_for(plotted_bit_depth, oversamp, metric)
                 if points:
                     x, y = zip(*points)
                     if metric == "max_eb":
-                        axis.loglog(x, np.maximum(0.2, y), color=color, marker="o", linestyle=bit_styles.get(bit_depth, "-"), linewidth=1.4)
+                        axis.loglog(x, np.maximum(0.2, y), color=color, marker="o", linestyle=bit_styles.get(plotted_bit_depth, "-"), linewidth=1.4)
                     else:
-                        axis.semilogx(x, y, color=color, marker="o", linestyle=bit_styles.get(bit_depth, "-"), linewidth=1.4)
+                        axis.semilogx(x, y, color=color, marker="o", linestyle=bit_styles.get(plotted_bit_depth, "-"), linewidth=1.4)
                 axis.set_title(title)
                 axis.set_ylabel(ylabel)
-    for bit_depth in BIT_DEPTHS:
-        maximum = float(2**bit_depth - 1)
-        style = bit_styles.get(bit_depth, "-")
+    for plotted_bit_depth in plotted_bit_depths:
+        maximum = float(2**plotted_bit_depth - 1)
+        style = bit_styles.get(plotted_bit_depth, "-")
         axes[0, 0].axhline(1.0 / maximum, color="black", linestyle=style, alpha=0.35)
         axes[0, 1].axhline(0.5 / maximum, color="red", linestyle=style, alpha=0.35)
     axes[1, 0].set_ylim(-0.05, 1.05)
@@ -249,12 +254,13 @@ def _plot_texture_ssaa_metrics(
         axis.set_xlim(0.85 * ssaa_values[0], 1.15 * ssaa_values[-1])
         axis.grid(True, which="both", ls="--", alpha=0.4)
     handles = [Line2D([], [], color=colors[index % len(colors)], marker="o", label=f"Riley, Tex, OS={oversamp}") for index, oversamp in enumerate(oversamp_values)]
-    handles.extend(Line2D([], [], color="black", linestyle=bit_styles[bit_depth], label=f"{bit_depth}-bit") for bit_depth in BIT_DEPTHS)
+    handles.extend(Line2D([], [], color="black", linestyle=bit_styles[plotted_bit_depth], label=f"{plotted_bit_depth}-bit") for plotted_bit_depth in plotted_bit_depths)
     handles.extend([Line2D([], [], color="black", linestyle="--", label="1 LSB"), Line2D([], [], color="red", linestyle=":", label="0 LSB")])
-    figure.suptitle(f"Texture SSAA Study ({group_label} OS): {case_name} (Frame {frame:02d})\nReference: analytic renderer", fontweight="bold")
+    figure.suptitle(f"Texture SSAA Study ({group_label} OS){f', {bit_depth}-bit' if bit_depth is not None else ''}: {case_name} (Frame {frame:02d})\nReference: analytic renderer", fontweight="bold")
     figure.legend(handles=handles, loc="upper center", bbox_to_anchor=(0.5, 0.93), ncol=3, fontsize=6, frameon=True, facecolor="white", edgecolor="none")
     figure.tight_layout(rect=(0, 0, 1, 0.86))
-    figure.savefig(output_dir / f"{case_name}_tex_ssaa_{group_name}_metrics_frame{frame:02d}.png", dpi=150)
+    suffix = f"_b{bit_depth:02d}" if bit_depth is not None else ""
+    figure.savefig(output_dir / f"{case_name}_tex_ssaa_{group_name}{suffix}_metrics_frame{frame:02d}.png", dpi=150)
     plt.close(figure)
 
 
@@ -1247,6 +1253,18 @@ def analyze_riley_case(case_name: str, tex_interp: str) -> None:
                 )
                 _plot_texture_oversample_metrics(
                     riley_tex, case_name, ff, results_dir_tex, selected_ssaa, group_name
+                )
+            # Keep complete per-bit studies alongside the odd/even exponent
+            # figures.  These make within-bit trends legible without removing
+            # the across-bit comparison in the split figures.
+            for bit_depth in BIT_DEPTHS:
+                _plot_texture_ssaa_metrics(
+                    riley_tex, case_name, ff, results_dir_tex, available_os,
+                    "all", bit_depth,
+                )
+                _plot_texture_oversample_metrics(
+                    riley_tex, case_name, ff, results_dir_tex, available_ssaa,
+                    "all", bit_depth,
                 )
             _plot_texture_limit_curves(riley_tex, case_name, ff, results_dir_tex)
 
