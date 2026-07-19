@@ -27,6 +27,7 @@ from exp2params import (
     additive_jitter_for,
     RANDOM_SEED,
     TEX_INTERPOLATORS,
+    TARG_PX_X,
     exp2_output_dir,
 )
 from script_timing import ScriptTimer, timed_call
@@ -83,7 +84,7 @@ def pattern_tag(
 
 def _reference_path(directory: Path, method: str, param: int, frame: int) -> Path:
     return directory / (
-        f"targ_px256_int_{method}_param_{param}_frame{frame:02d}.npy"
+        f"targ_px{TARG_PX_X}_int_{method}_param_{param}_frame{frame:02d}.npy"
     )
 
 

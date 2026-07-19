@@ -102,14 +102,14 @@ def get_riley_mesh_type(nodes_per_elem: int) -> riley.MeshType:
 def compute_texture_world_uvs(
     coords: np.ndarray,
     roi_size: float,
-    camera_pixels: int,
+    texture_pixels: int,
     pad: int,
     oversamp: int,
 ) -> np.ndarray:
     """Map world coordinates to centres of rows-flipped texture texels."""
-    tex_w = oversamp * (camera_pixels + 2 * pad)
-    tex_h = oversamp * (camera_pixels + 2 * pad)
-    pixel_size = roi_size / camera_pixels
+    tex_w = oversamp * (texture_pixels + 2 * pad)
+    tex_h = oversamp * (texture_pixels + 2 * pad)
+    pixel_size = roi_size / texture_pixels
     texel_size = pixel_size / oversamp
     x_start = -0.5 * roi_size - pad * pixel_size
     y_end = 0.5 * roi_size + pad * pixel_size
@@ -182,7 +182,8 @@ def main() -> None:
         disp[:, :, 1] = disp_y.T
         frame_range = range(num_frames)
 
-        camera_pixels, roi_size = parse_case_params(case_path)
+        _case_camera_pixels, roi_size = parse_case_params(case_path)
+        texture_pixels = max(TARG_PX_X, TARG_PX_Y)
         roi_coords = np.array(
             [
                 [-128.0, -128.0, 0.0],
@@ -229,7 +230,7 @@ def main() -> None:
                                     if not texture_path.exists():
                                         print(f"Warning: {texture_path.name} does not exist. Skipping.")
                                         continue
-                                    tex_size = oversamp * (camera_pixels + 2 * TEX_PX_PAD)
+                                    tex_size = oversamp * (texture_pixels + 2 * TEX_PX_PAD)
                                     texture = load_raw_texture(
                                         texture_path, (tex_size, tex_size)
                                     )
@@ -246,7 +247,7 @@ def main() -> None:
                                         uvs=compute_texture_world_uvs(
                                             coords,
                                             roi_size,
-                                            camera_pixels,
+                                            texture_pixels,
                                             TEX_PX_PAD,
                                             oversamp,
                                         ),

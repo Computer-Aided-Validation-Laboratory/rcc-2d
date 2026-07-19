@@ -13,7 +13,7 @@ import numpy as np
 
 from exp2params import (
     BIT_DEPTHS,
-    BLACK_WHITE_RATIOS,
+    BLACK_AREA_FRACTIONS,
     FORCE_RENDER_OVER,
     GAUSSIAN_CUTOFF_SIGMAS,
     I0,
@@ -35,19 +35,19 @@ from script_timing import ScriptTimer, timed_call
 
 def tag(
     pattern_type: str,
-    ratio: float,
+    black_fraction: float,
     distribution: str,
     fraction: float,
 ) -> str:
     return (
-        f"{pattern_type}_bw{ratio:g}_{distribution}_j{fraction:g}_"
+        f"{pattern_type}_blackfrac{black_fraction:g}_{distribution}_j{fraction:g}_"
         f"seed{RANDOM_SEED}"
     )
 
 
 def generate_texture(
     pattern_type: str,
-    ratio: float,
+    black_fraction: float,
     distribution: str,
     fraction: float,
     oversample: int,
@@ -55,7 +55,7 @@ def generate_texture(
 ) -> None:
     """Render a texture with ``ssaa`` squared midpoint samples per texel."""
     prefix = (
-        f"tex_px{TARG_PX_X}_{tag(pattern_type, ratio, distribution, fraction)}"
+        f"tex_px{TARG_PX_X}_{tag(pattern_type, black_fraction, distribution, fraction)}"
         f"_pad{TEX_PX_PAD}_oversamp{oversample}_ssaa{ssaa}"
     )
     if not FORCE_RENDER_OVER and image_outputs_complete(TEXTURE_OUTPUT_DIR, prefix):
@@ -77,7 +77,7 @@ def generate_texture(
     pattern = make_speckle_pattern(
         pattern_type,
         PX_PER_SPECK * pixel_size,
-        ratio,
+        black_fraction,
         distribution,
         fraction,
         RANDOM_SEED,
@@ -118,14 +118,14 @@ def main() -> None:
     timer = ScriptTimer(__file__)
 
     for pattern_type in SPECKLE_TYPES:
-        for ratio in BLACK_WHITE_RATIOS:
+        for black_fraction in BLACK_AREA_FRACTIONS:
             for distribution, fraction in (additive_jitter_for(pattern_type),):
                     for oversample in TEX_OVERSAMPLES:
                         for ssaa in TEX_SSAA_LEVELS:
 
                             pattern_name = tag(
                                 pattern_type,
-                                ratio,
+                                black_fraction,
                                 distribution,
                                 fraction,
                             )
@@ -136,7 +136,7 @@ def main() -> None:
 
                             timed_call(
                                 timer, f"{pattern_name}_oversamp{oversample}_ssaa{ssaa}",
-                                generate_texture, pattern_type, ratio,
+                                generate_texture, pattern_type, black_fraction,
                                 distribution, fraction, oversample, ssaa,
                             )
 

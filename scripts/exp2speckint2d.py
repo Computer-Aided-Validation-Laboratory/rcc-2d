@@ -808,14 +808,13 @@ def render_case(
     if disp_x.ndim == 1:
         disp_x = disp_x.reshape(-1, 1)
         disp_y = disp_y.reshape(-1, 1)
-    camera_pixels, roi_size = parse_case_params(case_dir)
-    if (camera_pixels, camera_pixels) != (TARG_PX_X, TARG_PX_Y):
+    _case_camera_pixels, roi_size = parse_case_params(case_dir)
+    if TARG_PX_X != TARG_PX_Y:
         raise ValueError(
-            "Experiment 2 requires square target dimensions matching "
-            "the case camera."
+            "Experiment 2 currently requires square target dimensions."
         )
 
-    pixel_size = roi_size / camera_pixels
+    pixel_size = roi_size / TARG_PX_X
     samples = 1 if method == "analytic" else param * param
     chunk_pixels = max(1, MAX_PTS_PER_CHUNK // samples)
     tasks = [

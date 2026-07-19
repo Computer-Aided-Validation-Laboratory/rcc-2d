@@ -22,6 +22,7 @@ from exp2params import (
     BIT_DEPTHS,
     DEFORMATION_CASES,
     OUTPUT_DIR,
+    TARG_PX_X,
     exp2_output_dir,
 )
 from expplots import plot_bespoke_convergence, samples_for_method
@@ -35,7 +36,7 @@ JOB_RE = re.compile(
 
 
 def _image_pair(directory: Path, method: str, param: int, bit_depth: int, frame: int):
-    prefix = f"targ_px256_int_{method}_param_{param}_frame{frame:02d}"
+    prefix = f"targ_px{TARG_PX_X}_int_{method}_param_{param}_frame{frame:02d}"
     npy_path = directory / f"{prefix}.npy"
     tiff_path = directory / f"{prefix}_b{bit_depth}.tiff"
     if npy_path.exists() and tiff_path.exists():

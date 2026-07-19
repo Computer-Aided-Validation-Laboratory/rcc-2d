@@ -96,14 +96,14 @@ def get_riley_mesh_type(nodes_per_elem: int) -> riley.MeshType:
 def compute_texture_world_uvs(
     coords: np.ndarray,
     roi_size: float,
-    camera_pixels: int,
+    texture_pixels: int,
     pad: int,
     oversamp: int,
 ) -> np.ndarray:
     """Map world coordinates to centres of the generated texture texels."""
-    tex_w = oversamp * (camera_pixels + 2 * pad)
-    tex_h = oversamp * (camera_pixels + 2 * pad)
-    pixel_size = roi_size / camera_pixels
+    tex_w = oversamp * (texture_pixels + 2 * pad)
+    tex_h = oversamp * (texture_pixels + 2 * pad)
+    pixel_size = roi_size / texture_pixels
     texel_size = pixel_size / oversamp
     x_start = -0.5 * roi_size - pad * pixel_size
     y_end = 0.5 * roi_size + pad * pixel_size
@@ -189,7 +189,8 @@ def main() -> None:
         disp[:, :, 0] = disp_x.T
         disp[:, :, 1] = disp_y.T
 
-        camera_pixels, roi_size = parse_case_params(case_path)
+        _camera_pixels, roi_size = parse_case_params(case_path)
+        texture_pixels = max(TARG_PX_X, TARG_PX_Y)
         roi_coords = np.array(
             [
                 [-128.0, -128.0, 0.0],
@@ -234,10 +235,10 @@ def main() -> None:
                         if not tex_path.exists():
                             print(f"Warning: {tex_path.name} does not exist. Skipping.")
                             continue
-                        tex_size = oversamp * (camera_pixels + 2 * TEX_PX_PAD)
+                        tex_size = oversamp * (texture_pixels + 2 * TEX_PX_PAD)
                         texture = load_float_texture(tex_path, (tex_size, tex_size))
                         uvs = compute_texture_world_uvs(
-                            coords, roi_size, camera_pixels, TEX_PX_PAD, oversamp
+                            coords, roi_size, texture_pixels, TEX_PX_PAD, oversamp
                         )
                         case_out.mkdir(parents=True, exist_ok=True)
                         mesh = riley.Mesh(

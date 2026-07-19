@@ -182,6 +182,14 @@ def generate_texture(
     save_image(image, TEXTURE_OUTPUT_DIR, prefix, float_texture=raw_coverage)
 
 
+def get_texture_oversamples() -> list[int]:
+    """Return configured texture oversamples, optionally restricted by env."""
+    value = os.environ.get("EXP2_TEX_OVERSAMPLES")
+    if not value:
+        return TEX_OVERSAMPLES
+    return [int(item.strip()) for item in value.split(",") if item.strip()]
+
+
 def main() -> None:
     print("Experiment 2: analytic additive-saturation texture generator")
     TEXTURE_OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
@@ -191,7 +199,7 @@ def main() -> None:
             raise ValueError(f"Unsupported analytic type: {pattern_type}")
         for black_fraction in BLACK_AREA_FRACTIONS:
             for distribution, fraction in (additive_jitter_for(pattern_type),):
-                    for oversample in TEX_OVERSAMPLES:
+                    for oversample in get_texture_oversamples():
                         pattern_name = tag(
                             pattern_type,
                             black_fraction,

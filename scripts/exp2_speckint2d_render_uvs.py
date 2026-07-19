@@ -28,6 +28,8 @@ from exp2params import (
     RANDOM_SEED,
     SPECKLE_TYPES,
     TEX_PX_PAD,
+    TARG_PX_X,
+    TARG_PX_Y,
 )
 from exp2speckint2d import make_speckle_pattern, render_case
 from script_timing import ScriptTimer
@@ -78,8 +80,10 @@ def main() -> None:
         if not case_dir.exists():
             print(f"Warning: {case_dir} does not exist. Skipping.")
             continue
-        camera_pixels, roi_size = parse_case_params(case_dir)
-        pixel_size = roi_size / camera_pixels
+        _case_camera_pixels, roi_size = parse_case_params(case_dir)
+        if TARG_PX_X != TARG_PX_Y:
+            raise ValueError("Experiment 2 currently requires square target dimensions.")
+        pixel_size = roi_size / TARG_PX_X
         bounds = (
             -0.5 * roi_size - TEX_PX_PAD * pixel_size,
             0.5 * roi_size + TEX_PX_PAD * pixel_size,

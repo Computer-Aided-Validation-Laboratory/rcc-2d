@@ -22,22 +22,19 @@ SCRIPTS_DIR = Path(__file__).resolve().parent
 # excluded, and each renderer must finish before the next begins.
 EXP1_RENDER_SCRIPTS = (
     "exp1_eggbox_grid_texgen.py",
-    "exp1_gridint2d_numerical_render_world.py",
+    #"exp1_gridint2d_numerical_render_world.py",
     "exp1_gridint2d_numerical_render_uvs.py",
-    "exp1_gridint2d_analytic_render_world.py",
-    "exp1_gridint2d_analytic_render_uvs.py",
-    "exp1_riley_render_func_world.py",
+    #"exp1_gridint2d_analytic_render_world.py",
+    #"exp1_gridint2d_analytic_render_uvs.py",
+    #"exp1_riley_render_func_world.py",
     "exp1_riley_render_func_uvs.py",
-    "exp1_riley_render_tex_uvs.py",
     "exp1_riley_render_texfloat_uvs.py",
+    #"exp1_riley_render_tex_uvs.py",
 )
 EXP2_RENDER_SCRIPTS = (
-    # The maintained area-fraction texture generator.  The older
-    # ``exp2_speckle_texgen.py`` is a superseded ratio-based variant.
-    "exp2_texgen_speckle.py",
     "exp2_texgen_speckle_analytic.py",
     "exp2_speckint2d_render_uvs.py",
-    "exp2_riley_render_texf.py",
+    "exp2_riley_render_texfloat.py",
 )
 
 
