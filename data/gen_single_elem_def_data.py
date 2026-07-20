@@ -117,6 +117,27 @@ def save_case(out_dir, coords, connect, disp_x, disp_y, disp_z, uvs):
     save_csv(os.path.join(out_dir, "uvs.csv"), uvs)
 
 
+def generate_quad9_saddle_case():
+    """Write the Quad9 quadratic-saddle case using the common frame ramp."""
+    num_frames = 11
+    coords, connect = get_mesh("quad9", PLATE_SIZE)
+    uvs = compute_uvs(coords, ROI_SIZE)
+    disp_vals = np.arange(num_frames, dtype=np.float64) * 0.1 * PIXEL_SIZE
+    half_plate = PLATE_SIZE / 2.0
+    xi = coords[:, 0] / half_plate
+    eta = coords[:, 1] / half_plate
+
+    # u_x = d/2 (xi^2 - eta^2), u_y = d xi eta.  The corner magnitude
+    # is exactly d, so this shares the 0--1 physical-pixel ramp of the
+    # rigid and affine cases.
+    disp_x = np.outer(0.5 * (xi**2 - eta**2), disp_vals)
+    disp_y = np.outer(xi * eta, disp_vals)
+    disp_z = np.zeros((len(coords), num_frames), dtype=np.float64)
+    case_tag = f"plate{int(PLATE_SIZE)}_cam{CAMERA_PIXELS}_quad9_quadsaddle"
+    save_case(os.path.join("data", case_tag), coords, connect, disp_x, disp_y, disp_z, uvs)
+    print(f"Generated case: {case_tag}")
+
+
 def generate_cases():
     # Import visualizer function dynamically
     script_dir = os.path.dirname(os.path.abspath(__file__))
@@ -161,6 +182,9 @@ def generate_cases():
         print(f"Generated case: {case_tag}")
         visualize_case(out_dir, vis_dir)
 
+        if etype == "quad9":
+            generate_quad9_saddle_case()
+
         # --- Case 2: Affine Deformation ---
         disp_z_affine = np.zeros((num_nodes, num_frames), dtype=np.float64)
 
@@ -186,4 +210,7 @@ def generate_cases():
 
 
 if __name__ == "__main__":
-    generate_cases()
+    if len(sys.argv) > 1 and sys.argv[1] == "--quadsaddle-only":
+        generate_quad9_saddle_case()
+    else:
+        generate_cases()

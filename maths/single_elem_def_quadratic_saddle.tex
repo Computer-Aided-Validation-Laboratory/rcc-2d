@@ -1,0 +1,277 @@
+\documentclass[11pt,a4paper]{article}
+\usepackage[margin=24mm]{geometry}
+\usepackage{amsmath,amssymb,bm,booktabs,array,microtype}
+\usepackage[T1]{fontenc}
+\usepackage{lmodern}
+\usepackage[hidelinks]{hyperref}
+\usepackage{xcolor}
+
+\definecolor{rileyblue}{RGB}{35,83,120}
+\hypersetup{pdftitle={Single-Element Quadratic Saddle Deformation for a Quad9 Element}}
+
+\newcommand{\vect}[1]{\bm{#1}}
+\newcommand{\dd}{\mathrm{d}}
+
+\title{\textbf{Single-Element Quadratic Saddle Deformation}\\
+\large Manufactured displacement field for a nine-node quadrilateral (Quad9) element}
+\author{}
+\date{}
+
+\begin{document}
+\maketitle
+
+\section{Purpose}
+
+This note defines a compact, purely quadratic displacement field for a single Quad9 finite element. The field is intended for controlled image-rendering and digital image correlation (DIC) studies in which the deformation amplitude is ramped from zero to one pixel while the geometry, texture, camera and image-processing settings remain fixed.
+
+The field provides a useful progression beyond rigid and affine motion because it contains no constant or linear displacement terms, exercises both image-coordinate displacement components, and is represented exactly by the biquadratic interpolation of a Quad9 element.
+
+\section{Element coordinates}
+
+Let the element occupy a square plate-centred domain
+\begin{equation}
+  x\in[x_c-L_x,\,x_c+L_x],
+  \qquad
+  y\in[y_c-L_y,\,y_c+L_y].
+\end{equation}
+Define the normalised element coordinates
+\begin{equation}
+  \xi=\frac{x-x_c}{L_x},
+  \qquad
+  \eta=\frac{y-y_c}{L_y},
+  \qquad
+  (\xi,\eta)\in[-1,1]^2.
+\end{equation}
+The shared single-element generator uses a plate side length $P=260$ and an
+ROI side length $R=256$.  Therefore the saddle element uses
+\begin{equation}
+  x_c=y_c=0,
+  \qquad
+  L_x=L_y=P/2=130.
+\end{equation}
+The generator's $256\times256$ reference camera gives a physical pixel width
+$\Delta=R/256=1$.  The ROI is used for UV mapping and padded texture coverage;
+it does not change the plate-coordinate normalisation above.
+
+\section{Quadratic saddle displacement field}
+
+Let $d$ denote the prescribed maximum displacement amplitude in physical units
+(one unit is one reference-camera pixel). Define
+\begin{equation}
+  \boxed{
+  \vect{u}(\xi,\eta;d)
+  =
+  \begin{bmatrix}
+    u_x\\[2pt]
+    u_y
+  \end{bmatrix}
+  =
+  \frac{d}{2}
+  \begin{bmatrix}
+    \xi^2-\eta^2\\[2pt]
+    2\xi\eta
+  \end{bmatrix}.}
+  \label{eq:saddle}
+\end{equation}
+Equivalently,
+\begin{equation}
+  u_x(\xi,\eta;d)=\frac{d}{2}(\xi^2-\eta^2),
+  \qquad
+  u_y(\xi,\eta;d)=d\xi\eta.
+\end{equation}
+The amplitude can be swept as
+\begin{equation}
+  d\in\{0,0.1,0.2,\ldots,1.0\}\ \text{pixels}.
+\end{equation}
+This creates a one-parameter family of geometrically similar deformation fields, with the displacement and displacement gradient scaling linearly with $d$.
+
+\section{Amplitude normalisation}
+
+The squared displacement magnitude is
+\begin{align}
+  \|\vect{u}\|^2
+  &=\frac{d^2}{4}(\xi^2-\eta^2)^2+d^2\xi^2\eta^2\\
+  &=\frac{d^2}{4}(\xi^2+\eta^2)^2.
+\end{align}
+Hence
+\begin{equation}
+  \boxed{\|\vect{u}(\xi,\eta;d)\|
+  =\frac{d}{2}(\xi^2+\eta^2).}
+\end{equation}
+Since $\xi^2+\eta^2\le2$ on the square element,
+\begin{equation}
+  \max_{[-1,1]^2}\|\vect{u}\|=d,
+\end{equation}
+with the maximum attained at all four corner nodes. Therefore, setting $d=1$ gives an exact maximum nodal displacement of one pixel.
+
+The displacement vanishes at the element centre and changes direction around it. Along the horizontal and vertical centre lines, the motion lies entirely in the $x$ direction; along the diagonals, the motion lies entirely in the $y$ direction.
+
+\section{Quad9 interpolation}
+
+The one-dimensional quadratic Lagrange basis functions on $\{-1,0,1\}$ are
+\begin{equation}
+  \ell_{-1}(s)=\frac{1}{2}s(s-1),
+  \qquad
+  \ell_0(s)=1-s^2,
+  \qquad
+  \ell_{+1}(s)=\frac{1}{2}s(s+1).
+\end{equation}
+The nine tensor-product Quad9 shape functions are
+\begin{equation}
+  N_{ab}(\xi,\eta)=\ell_a(\xi)\ell_b(\eta),
+  \qquad a,b\in\{-1,0,1\}.
+\end{equation}
+The finite-element displacement is
+\begin{equation}
+  \vect{u}_h(\xi,\eta)
+  =\sum_{a,b\in\{-1,0,1\}}
+  N_{ab}(\xi,\eta)\vect{u}_{ab},
+\end{equation}
+where $\vect{u}_{ab}$ is obtained by evaluating Eq.~\eqref{eq:saddle} at the corresponding node.
+
+Because $u_x$ and $u_y$ are polynomials contained in the biquadratic space
+\begin{equation}
+  \mathcal{Q}_2
+  =\operatorname{span}\{\xi^i\eta^j:0\le i,j\le2\},
+\end{equation}
+the Quad9 interpolation reproduces the manufactured field exactly:
+\begin{equation}
+  \boxed{\vect{u}_h(\xi,\eta)=\vect{u}(\xi,\eta)
+  \quad\text{for all }(\xi,\eta)\in[-1,1]^2.}
+\end{equation}
+There is therefore no finite-element interpolation error in the imposed displacement field. Any observed image error arises from the rendering, texture representation, pixel integration, image quantisation or subsequent measurement process.
+
+\section{Quad9 nodal displacement values}
+
+Using the conventional node layout
+\[
+\begin{array}{ccc}
+4&7&3\\
+8&9&6\\
+1&5&2
+\end{array}
+\]
+with the natural coordinates shown in Table~\ref{tab:nodes}, the exact nodal displacements are as follows.
+
+\begin{table}[ht]
+\centering
+\caption{Quad9 nodal values for the quadratic saddle field.}
+\label{tab:nodes}
+\renewcommand{\arraystretch}{1.2}
+\begin{tabular}{ccccc}
+\toprule
+Node & $\xi$ & $\eta$ & $u_x$ & $u_y$\\
+\midrule
+1 & $-1$ & $-1$ & $0$ & $+d$\\
+2 & $+1$ & $-1$ & $0$ & $-d$\\
+3 & $+1$ & $+1$ & $0$ & $+d$\\
+4 & $-1$ & $+1$ & $0$ & $-d$\\
+5 & $0$  & $-1$ & $-d/2$ & $0$\\
+6 & $+1$ & $0$  & $+d/2$ & $0$\\
+7 & $0$  & $+1$ & $-d/2$ & $0$\\
+8 & $-1$ & $0$  & $+d/2$ & $0$\\
+9 & $0$  & $0$  & $0$ & $0$\\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\section{Displacement gradient and small-strain field}
+
+The natural-coordinate derivatives are
+\begin{equation}
+  \frac{\partial u_x}{\partial\xi}=d\xi,
+  \qquad
+  \frac{\partial u_x}{\partial\eta}=-d\eta,
+  \qquad
+  \frac{\partial u_y}{\partial\xi}=d\eta,
+  \qquad
+  \frac{\partial u_y}{\partial\eta}=d\xi.
+\end{equation}
+Using
+\begin{equation}
+  \frac{\partial}{\partial x}=\frac{1}{L_x}\frac{\partial}{\partial\xi},
+  \qquad
+  \frac{\partial}{\partial y}=\frac{1}{L_y}\frac{\partial}{\partial\eta},
+\end{equation}
+the image-space displacement gradient is
+\begin{equation}
+  \boxed{
+  \nabla\vect{u}
+  =
+  \begin{bmatrix}
+    d\xi/L_x & -d\eta/L_y\\[4pt]
+    d\eta/L_x & d\xi/L_y
+  \end{bmatrix}.}
+\end{equation}
+For a square element, $L_x=L_y=L$, this becomes
+\begin{equation}
+  \nabla\vect{u}
+  =\frac{d}{L}
+  \begin{bmatrix}
+    \xi & -\eta\\
+    \eta & \xi
+  \end{bmatrix}.
+\end{equation}
+The infinitesimal strain tensor is
+\begin{equation}
+  \vect{\varepsilon}
+  =\frac{1}{2}\left(\nabla\vect{u}+\nabla\vect{u}^{\mathsf T}\right).
+\end{equation}
+For the square case,
+\begin{equation}
+  \boxed{
+  \vect{\varepsilon}
+  =\frac{d\xi}{L}
+  \begin{bmatrix}
+    1&0\\
+    0&1
+  \end{bmatrix}.}
+\end{equation}
+Thus the symmetric part is a linearly varying equibiaxial strain field, while the antisymmetric part is a linearly varying local rotation proportional to $\eta$. Although the displacement field has a saddle-like directional pattern, its first-order strain and rotation components remain simple and interpretable.
+
+For $L=130$ and $d=1$, the characteristic gradient scale is
+\begin{equation}
+  \frac{d}{L}=\frac{1}{130}\approx7.6923\times10^{-3},
+\end{equation}
+which exercises quadratic mapping while remaining consistent with the small
+one-pixel displacement scale of the rigid and affine cases.
+
+\section{Recommended parameter sweep}
+
+A minimal study can use
+\begin{equation}
+  d_k=0.1k\ \text{pixels},
+  \qquad k=0,1,\ldots,10.
+\end{equation}
+At each amplitude, keep all other quantities fixed and compare:
+\begin{itemize}
+  \item the analytic or independently generated image;
+  \item Riley renders across texture oversampling levels;
+  \item Riley renders across pixel-box supersampling levels;
+  \item floating-point image error;
+  \item digitised image error at the selected camera bit depths;
+  \item optionally, a fixed-setting DIC measurement against the prescribed field.
+\end{itemize}
+The field complements rigid and affine tests by providing the sequence
+\begin{equation}
+  \text{constant displacement}
+  \;\longrightarrow\;
+  \text{linear displacement}
+  \;\longrightarrow\;
+  \text{quadratic displacement}.
+\end{equation}
+
+\section{Implementation summary}
+
+For each amplitude $d$:
+\begin{enumerate}
+  \item create a single planar Quad9 element over the centred $260\times260$ plate;
+  \item assign the nodal displacements from Table~\ref{tab:nodes};
+  \item use the $256\times256$ ROI and any texture pad only for rendering and texture support;
+  \item render the undeformed and deformed states using identical camera and texture settings;
+  \item crop or analyse only the central active region when evaluating convergence and DIC error.
+\end{enumerate}
+
+The manufactured field is exactly representable by the Quad9 element, has a maximum displacement equal to the scalar ramp parameter $d$, and provides a compact non-affine deformation case for the initial convergence experiments.
+
+\end{document}
