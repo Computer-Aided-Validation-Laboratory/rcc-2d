@@ -342,6 +342,148 @@ def _plot_texture_limit_curves(
     plt.close(figure)
 
 
+def _write_texture_analysis_figures(
+    riley_tex: dict,
+    case_name: str,
+    frame: int,
+    output_dir: Path,
+) -> None:
+    """Write only the requested texture-study figures, directly to their outputs.
+
+    The texture analysis used to render four temporary PNGs, read them back
+    through Pillow, assemble a fifth PNG, then delete all five.  None of those
+    images was a user-facing output, so the final figures are now generated
+    directly from the in-memory metric arrays.
+    """
+    # Clear obsolete output names left by older versions of this analysis.
+    for suffix in (
+        "tex_metrics", "tex_oversamp_metrics", "tex_float_rmse", "tex_float_max",
+        "tex_bits", "tex_max_eb",
+    ):
+        (output_dir / f"{case_name}_{suffix}_frame{frame:02d}.png").unlink(
+            missing_ok=True
+        )
+    available_os = sorted(
+        oversamp
+        for oversamp in TEX_OVERSAMPLES
+        if any(riley_tex[bit_depth][oversamp]["samples"] for bit_depth in BIT_DEPTHS)
+    )
+    if not available_os:
+        return
+    float_bit_depth = 16 if 16 in BIT_DEPTHS else max(BIT_DEPTHS)
+    available_ssaa = sorted(
+        {
+            int(round(sample))
+            for oversamp in available_os
+            for sample in riley_tex[float_bit_depth][oversamp]["samples"]
+        }
+    )
+    if not available_ssaa:
+        return
+    odd_os = [value for value in available_os if value.bit_length() % 2 == 0]
+    even_os = [value for value in available_os if value.bit_length() % 2 == 1]
+    odd_ssaa = [value for value in available_ssaa if value.bit_length() % 2 == 0]
+    even_ssaa = [value for value in available_ssaa if value.bit_length() % 2 == 1]
+    for group_name, selected_os, selected_ssaa in (
+        ("odd_exp", odd_os, odd_ssaa),
+        ("even_exp", even_os, even_ssaa),
+    ):
+        _plot_texture_ssaa_metrics(
+            riley_tex, case_name, frame, output_dir, selected_os, group_name
+        )
+        _plot_texture_oversample_metrics(
+            riley_tex, case_name, frame, output_dir, selected_ssaa, group_name
+        )
+    for bit_depth in BIT_DEPTHS:
+        _plot_texture_ssaa_metrics(
+            riley_tex, case_name, frame, output_dir, available_os, "all", bit_depth
+        )
+        _plot_texture_oversample_metrics(
+            riley_tex, case_name, frame, output_dir, available_ssaa, "all", bit_depth
+        )
+    _plot_texture_limit_curves(riley_tex, case_name, frame, output_dir)
+
+
+def _write_function_analysis_figure(
+    custom_data: dict,
+    riley_func: dict,
+    case_name: str,
+    frame: int,
+    output_dir: Path,
+    float_bit_depth: int,
+) -> None:
+    """Write the function-shader four-panel figure without temporary PNGs."""
+    for suffix in ("func_float_rmse", "func_float_max", "func_bits", "func_max_eb"):
+        (output_dir / f"{case_name}_{suffix}_frame{frame:02d}.png").unlink(
+            missing_ok=True
+        )
+    figure, axes = plt.subplots(2, 2, figsize=(15, 10), constrained_layout=True)
+    styles = (
+        ("rect", "Custom, Rect", "#1f77b4", "o", "-"),
+        ("gauss", "Custom, Gauss", "#2ca02c", "s", "-"),
+        ("func", "Riley, Func", "black", "x", "--"),
+    )
+
+    def series(method: str, bit_depth: int, metric: str):
+        values = riley_func[bit_depth] if method == "func" else custom_data[bit_depth][method]
+        return sorted(zip(values["samples"], values[metric]))
+
+    for method, label, color, marker, linestyle in styles:
+        for axis, metric in ((axes[0, 0], "e_f64"), (axes[0, 1], "e_inf")):
+            points = series(method, float_bit_depth, metric)
+            if points:
+                x, y = zip(*points)
+                positive = np.asarray(y) > 0.0
+                if np.any(positive):
+                    axis.loglog(np.asarray(x)[positive], np.asarray(y)[positive], color=color,
+                                marker=marker, linestyle=linestyle, linewidth=1.6,
+                                markersize=6, label=label)
+    for bit_depth in BIT_DEPTHS:
+        maximum = float(2**bit_depth - 1)
+        style = {8: "-", 12: "--", 16: ":"}.get(bit_depth, "-")
+        for axis in axes[0, :]:
+            axis.axhline(1.0 / maximum, color="black", linestyle=style, alpha=0.3)
+            axis.axhline(0.5 / maximum, color="red", linestyle=style, alpha=0.3)
+        for method, label, color, marker, _ in styles:
+            for axis, metric in ((axes[1, 0], "delta_b"), (axes[1, 1], "max_eb")):
+                points = series(method, bit_depth, metric)
+                if points:
+                    x, y = zip(*points)
+                    values = np.asarray(y)
+                    if metric == "max_eb":
+                        axis.loglog(x, np.maximum(0.2, values), color=color, marker=marker,
+                                    linestyle=style, linewidth=1.3, markersize=5,
+                                    label=f"{label}, {bit_depth}-bit")
+                    else:
+                        axis.semilogx(x, values, color=color, marker=marker,
+                                      linestyle=style, linewidth=1.3, markersize=5,
+                                      label=f"{label}, {bit_depth}-bit")
+    axes[1, 0].set_ylim(-0.05, 1.05)
+    axes[1, 1].axhline(1.0, color="black", linestyle="--", alpha=0.6, label="1 LSB")
+    axes[1, 1].axhline(0.2, color="red", linestyle=":", alpha=0.6, label="0 LSB")
+    axes[1, 1].set_ylim(0.16, None)
+    for axis, title, ylabel in (
+        (axes[0, 0], "Floating-Point RMSE", "RMSE"),
+        (axes[0, 1], "Floating-Point Max Error", "Max error"),
+        (axes[1, 0], "Digitised Mismatch Fraction", "Fraction of differing pixels"),
+        (axes[1, 1], "Maximum Digitised Mismatch", "LSB levels"),
+    ):
+        axis.set_title(title)
+        axis.set_xlabel("Samples Along One Pixel Axis")
+        axis.grid(True, which="both", ls="--", alpha=0.4)
+        axis.set_ylabel(ylabel)
+        handles, _ = axis.get_legend_handles_labels()
+        if handles:
+            axis.legend(loc="lower left", fontsize=6, frameon=True,
+                        facecolor="white", edgecolor="none")
+    figure.suptitle(
+        f"Riley, Func: {case_name} (Frame {frame:02d}) | Reference: Analytic",
+        fontweight="bold",
+    )
+    figure.savefig(output_dir / f"{case_name}_func_metrics_frame{frame:02d}.png", dpi=150)
+    plt.close(figure)
+
+
 def analyze_riley_case(case_name: str, tex_interp: str) -> None:
     case_name = output_case_name(case_name, TARG_PX_X)
     print(80 * "=")
@@ -537,6 +679,21 @@ def analyze_riley_case(case_name: str, tex_interp: str) -> None:
                 "Warning: No Riley texture render samples found for "
                 f"{case_name} ({tex_interp}); plots contain only the custom baseline."
             )
+
+        # Texture-only analyses have no need for the historical intermediate
+        # single-panel PNGs.  Generate their requested four-panel figures
+        # directly and move on to the next frame.
+        if ANALYSIS_MODE in {"tex", "both"}:
+            _write_texture_analysis_figures(riley_tex, case_name, ff, results_dir_tex)
+
+        if ANALYSIS_MODE in {"func", "both"}:
+            float_bit_depth = 16 if 16 in ref_float_by_bb else max(ref_float_by_bb)
+            _write_function_analysis_figure(
+                custom_data, riley_func, case_name, ff, RESULTS_DIR_FUNC,
+                float_bit_depth,
+            )
+        if ANALYSIS_MODE in {"tex", "func", "both"}:
+            continue
 
         # ------------------------------------------------------------------
         # GENERATE PLOTS - GROUP A: Riley, Func vs Custom Renderer

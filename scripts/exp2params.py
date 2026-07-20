@@ -24,8 +24,10 @@ if TEST_RUN:
         "nearest": riley.TextureSample.nearest,
         "linear": riley.TextureSample.linear,
         "cubic_catmull_rom": riley.TextureSample.cubic_catmull_rom,
-        # "cubic_mitchell_netravali": riley.TextureSample.cubic_mitchell_netravali,
-        # "lanczos3": riley.TextureSample.lanczos3,
+        "cubic_mitchell_netravali": riley.TextureSample.cubic_mitchell_netravali,
+        "cubic_bspline": riley.TextureSample.cubic_bspline,
+        "quintic_bspline": riley.TextureSample.quintic_bspline,
+        "lanczos3": riley.TextureSample.lanczos3,
     }
     # Integration methods and parameters
     INTEGRATION_METHODS: List[Tuple[str, int]] = [
@@ -163,4 +165,3 @@ DEFORMATION_CASES: List[str] = [
 
 # List of frames to generate and analyze (e.g. [0, 5])
 ACTIVE_FRAMES: List[int] = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10]
-

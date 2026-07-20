@@ -39,6 +39,7 @@ EXP2_RENDER_SCRIPTS = (
     "exp2_texgen_speckle_analytic.py",
     "exp2_speckint2d_render_uvs.py",
     "exp2_riley_render_texfloat.py",
+    "exp2_riley_render_texuint.py",
 )
 
 

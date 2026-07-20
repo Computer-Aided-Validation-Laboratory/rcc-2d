@@ -151,9 +151,9 @@ def _discover_riley_runs(
 
 
 def _clear_old_metric_images(output_dir: Path, frame: int) -> None:
-    """Remove all regenerated figures for one frame."""
-    for path in output_dir.glob(f"*frame{frame:02d}.png"):
-        path.unlink()
+    """Remove only obsolete pre-direct-plot output names for one frame."""
+    for stem in ("metrics", "float_rmse", "float_max", "bits_delta", "bits_max"):
+        (output_dir / f"{stem}_frame{frame:02d}.png").unlink(missing_ok=True)
 
 
 def _axis_samples(axis, values: list[int], label: str) -> None:
@@ -361,13 +361,20 @@ def _analyse_riley_self_convergence_frame(
     runs: list[tuple[str, int, int, Path]],
     frame: int,
     group_name: str,
+    completed_images: dict[tuple[str, int, int], np.ndarray] | None = None,
 ) -> None:
     """Plot each Riley run against the highest available SSAA of itself."""
     images: dict[tuple[str, int], dict[int, np.ndarray]] = defaultdict(dict)
     for interpolator, ssaa, oversamp, run_dir in runs:
-        image_path = run_dir / f"image_c00_f{frame:02d}_clamped.npy"
-        if image_path.exists():
-            images[(interpolator, oversamp)][ssaa] = np.load(image_path)
+        image = None
+        if completed_images is not None:
+            image = completed_images.get((interpolator, ssaa, oversamp))
+        if image is None:
+            image_path = run_dir / f"image_c00_f{frame:02d}_clamped.npy"
+            if image_path.exists():
+                image = np.load(image_path)
+        if image is not None:
+            images[(interpolator, oversamp)][ssaa] = image
 
     rows_by_interpolator: dict[str, list[dict[str, object]]] = defaultdict(list)
     digitised_by_interpolator: dict[str, list[dict[str, object]]] = defaultdict(list)
@@ -450,11 +457,13 @@ def analyse_pattern(
         )
         frame_rows: list[dict[str, object]] = []
         frame_digitised_rows: list[dict[str, object]] = []
+        completed_images: dict[tuple[str, int, int], np.ndarray] = {}
         for interpolator, ssaa, oversamp, run_dir in runs:
             image_path = run_dir / f"image_c00_f{frame:02d}_clamped.npy"
             if not image_path.exists():
                 continue
             image = np.load(image_path)
+            completed_images[(interpolator, ssaa, oversamp)] = image
             if image.shape != reference_image.shape:
                 print(f"Warning: {image_path} shape {image.shape} does not match reference.")
                 continue
@@ -514,7 +523,9 @@ def analyse_pattern(
             print(f"    Saved {len(interp_rows)} comparisons and figures to {output_dir}")
         rows.extend(frame_rows)
         digitised_rows.extend(frame_digitised_rows)
-        _analyse_riley_self_convergence_frame(runs, frame, group_name)
+        _analyse_riley_self_convergence_frame(
+            runs, frame, group_name, completed_images
+        )
     group_dir = RESULTS_DIR / group_name
     group_dir.mkdir(parents=True, exist_ok=True)
     _write_rows(group_dir / "summary.csv", rows)
