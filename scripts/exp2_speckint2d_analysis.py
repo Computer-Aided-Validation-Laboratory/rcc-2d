@@ -10,7 +10,6 @@
 from __future__ import annotations
 
 import csv
-import gc
 import re
 from collections import defaultdict
 from pathlib import Path
@@ -27,6 +26,7 @@ from exp2params import (
     exp2_output_dir,
 )
 from exp1common import output_case_name
+from analysis_memory import release_batch
 from expplots import plot_bespoke_four_panel, samples_for_method
 from script_timing import ScriptTimer, timed_call
 
@@ -170,7 +170,7 @@ def analyse_group(group_name: str, jobs: dict[tuple[str, int], Path]) -> list[di
         path = plot_bespoke_four_panel(group_name, frame, ref_name, output_dir, float_data, digitised_data, sorted(references))
         print(f"Saved {path}")
         del references, float_data, digitised_data
-        gc.collect()
+        release_batch()
     _write_rows(output_dir / "summary.csv", rows)
     return rows
 
@@ -253,7 +253,7 @@ def analyse_rectangular_self_convergence(
             )
             rows.extend(frame_rows)
         del references, float_data, digitised_data, frame_rows
-        gc.collect()
+        release_batch()
     _write_rows(output_dir / "summary.csv", rows)
     return rows
 
@@ -269,7 +269,7 @@ def main() -> None:
         print(f"Analysing {group_name}")
         all_rows.extend(timed_call(timer, group_name, analyse_group, group_name, jobs))
         rectconv_rows.extend(timed_call(timer, f"{group_name}_rectconv", analyse_rectangular_self_convergence, group_name, jobs))
-        gc.collect()
+        release_batch()
     _write_rows(RESULTS_DIR / "summary.csv", all_rows)
     _write_rows(rectconv_dir / "summary.csv", rectconv_rows)
     print("Experiment 2 grid analysis completed.")

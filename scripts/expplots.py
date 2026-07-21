@@ -12,9 +12,10 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Mapping, Sequence
 
-import matplotlib.pyplot as plt
 from matplotlib.ticker import FixedFormatter, FixedLocator
 import numpy as np
+
+from analysis_memory import make_agg_figure, release_figure
 
 
 METHOD_STYLES = {
@@ -70,7 +71,9 @@ def plot_bespoke_four_panel(
         (output_dir / f"{case_name}_{suffix}_frame{frame:02d}.png").unlink(
             missing_ok=True
         )
-    figure, axes = plt.subplots(2, 2, figsize=(15, 10), constrained_layout=True)
+    figure, axes = make_agg_figure(
+        2, 2, figsize=(15, 10), constrained_layout=True
+    )
     all_samples: list[float] = []
     for values in float_data.values():
         all_samples.extend(samples_per_pixel_axis(values["samples"]))
@@ -141,8 +144,6 @@ def plot_bespoke_four_panel(
     figure.suptitle(f"{case_name} (Frame {frame:02d}) | Reference: {reference_name}", fontweight="bold")
     path = output_dir / f"{case_name}_metrics_frame{frame:02d}.png"
     figure.savefig(path, dpi=150)
-    # Matplotlib keeps artist/renderer cycles until the figure is cleared.
-    # These analyses create many figures, so break those references promptly.
-    figure.clear()
-    plt.close(figure)
+    # This also breaks renderer/artist cycles and trims released allocator pages.
+    release_figure(figure)
     return path

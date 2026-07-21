@@ -34,6 +34,10 @@ from exp1params import (
     I0,
     GAMMA,
     NUM_PROCESSES,
+    AFFINE_MAX_POINTS_PER_CHUNK,
+    VTK_MAX_POINTS_PER_CHUNK,
+    NEWTON_MAX_POINTS_PER_CHUNK,
+    mapping_mode_for_case,
     DEFORMATION_CASES,
     ACTIVE_FRAMES,
     FORCE_RENDER_OVER,
@@ -64,12 +68,29 @@ OUTPUT_DIR = exp1_output_dir("exp1_gridint2d_render_uvs")
 # ]
 
 _worker_mesh = None
-MAX_PTS_PER_CHUNK = int(
-    os.environ.get("EXP1_MAX_PTS_PER_CHUNK", "10000000")
-)
+_worker_reference_coords = None
+_worker_deformed_coords = None
+_worker_connect = None
 NUM_PROCESSES_RUN = int(
     os.environ.get("EXP1_NUM_PROCESSES", str(NUM_PROCESSES))
 )
+
+
+def max_points_per_chunk(mapping_mode: str) -> int:
+    """Return the RAM-safe worker point cap for the selected map evaluator."""
+    default = (
+        VTK_MAX_POINTS_PER_CHUNK if mapping_mode == "vtk" else
+        NEWTON_MAX_POINTS_PER_CHUNK if mapping_mode == "newton" else
+        AFFINE_MAX_POINTS_PER_CHUNK
+    )
+    # The mode-specific override prevents a nonlinear run accidentally inheriting
+    # the large affine cap.  The legacy override remains useful for either
+    # mode when deliberately set for a controlled benchmark.
+    value = os.environ.get(
+        f"EXP1_{mapping_mode.upper()}_MAX_PTS_PER_CHUNK",
+        os.environ.get("EXP1_MAX_PTS_PER_CHUNK", str(default)),
+    )
+    return max(1, int(value))
 
 
 def get_active_frames() -> set[int]:
@@ -92,18 +113,27 @@ def get_integration_methods() -> list[tuple[str, int]]:
     return methods
 
 
-def init_worker(coords, connect, disp_x_ff, disp_y_ff) -> None:
+def init_worker(coords, connect, disp_x_ff, disp_y_ff, mapping_mode: str | None = None) -> None:
     """Initialize worker process with mesh and displacement field."""
-    global _worker_mesh
+    global _worker_mesh, _worker_reference_coords, _worker_deformed_coords, _worker_connect
     if coords is not None and connect is not None:
         coords_def = np.array(coords, copy=True)
         coords_def[:, 0] += disp_x_ff
         coords_def[:, 1] += disp_y_ff
-        _worker_mesh = build_pv_mesh(coords_def, connect)
-        _worker_mesh.point_data["x_ref"] = coords[:, 0]
-        _worker_mesh.point_data["y_ref"] = coords[:, 1]
+        _worker_reference_coords = coords
+        _worker_deformed_coords = coords_def
+        _worker_connect = connect
+        if mapping_mode == "newton":
+            _worker_mesh = None
+        else:
+            _worker_mesh = build_pv_mesh(coords_def, connect)
+            _worker_mesh.point_data["x_ref"] = coords[:, 0]
+            _worker_mesh.point_data["y_ref"] = coords[:, 1]
     else:
         _worker_mesh = None
+        _worker_reference_coords = None
+        _worker_deformed_coords = None
+        _worker_connect = None
 
 
 def process_pixel_chunk(args) -> tuple[int, int, np.ndarray]:
@@ -119,6 +149,7 @@ def process_pixel_chunk(args) -> tuple[int, int, np.ndarray]:
         uv_scale,
         u_offset,
         v_offset,
+        mapping_mode,
     ) = args
 
     pixel_indices = np.arange(start_idx, end_idx)
@@ -162,12 +193,37 @@ def process_pixel_chunk(args) -> tuple[int, int, np.ndarray]:
     px_x = start_x + px_indices * pixel_size
     px_y = start_y + py_indices * pixel_size
 
-    # Get local affine inverse map from deformed pixel coordinates to
-    # reference world coordinates.
+    # Map deformed quadrature points to reference coordinates.  The affine
+    # mode is an exact fast path only for global-affine deformation; ``newton``
+    # evaluates every requested point through the exact Quad9 inverse map.
     h = 0.5 * pixel_size
     pixel_valid = np.ones(num_pixels, dtype=bool)
-    global _worker_mesh
-    if _worker_mesh is not None:
+    global _worker_mesh, _worker_reference_coords, _worker_deformed_coords, _worker_connect
+    if mapping_mode == "newton" and _worker_deformed_coords is not None and method != "analytic":
+        from quad9_newton import inverse_map_quad9
+
+        x_ref_flat, y_ref_flat, valid = inverse_map_quad9(
+            (px_x[:, None] + dx[None, :]).ravel(),
+            (px_y[:, None] + dy[None, :]).ravel(),
+            _worker_deformed_coords,
+            _worker_reference_coords,
+            _worker_connect,
+        )
+        x_ref_samples = x_ref_flat.reshape(num_pixels, len(dx))
+        y_ref_samples = y_ref_flat.reshape(num_pixels, len(dx))
+        valid_samples = valid.reshape(num_pixels, len(dx))
+        pixel_valid = valid_samples.all(axis=1)
+    elif _worker_mesh is not None and mapping_mode == "vtk" and method != "analytic":
+        query = np.zeros((num_pixels * len(dx), 3), dtype=np.float64)
+        query[:, 0] = (px_x[:, None] + dx[None, :]).ravel()
+        query[:, 1] = (px_y[:, None] + dy[None, :]).ravel()
+        sampled = pv.PolyData(query).sample(_worker_mesh)
+        valid = sampled.point_data["vtkValidPointMask"].astype(bool)
+        x_ref_samples = sampled.point_data["x_ref"].reshape(num_pixels, len(dx))
+        y_ref_samples = sampled.point_data["y_ref"].reshape(num_pixels, len(dx))
+        valid_samples = valid.reshape(num_pixels, len(dx))
+        pixel_valid = valid_samples.all(axis=1)
+    elif _worker_mesh is not None:
         dx_c = np.array([0.0, pixel_size, 0.0, pixel_size])
         dy_c = np.array([0.0, 0.0, pixel_size, pixel_size])
         pts_xc = px_x[:, None] + dx_c[None, :]
@@ -213,6 +269,11 @@ def process_pixel_chunk(args) -> tuple[int, int, np.ndarray]:
         A22 = np.ones(num_pixels)
 
     if method == "analytic":
+        if mapping_mode in {"vtk", "newton"} and _worker_mesh is not None:
+            raise ValueError(
+                "The closed-form analytic rule assumes an affine inverse map; "
+                "use rect/gauss numerical integration for nonlinear mapping."
+            )
         pitch_uv = uv_scale * p_phys
         k_uv = 2.0 * np.pi / pitch_uv
 
@@ -297,6 +358,20 @@ def process_pixel_chunk(args) -> tuple[int, int, np.ndarray]:
 
         total_int = val_const + val_t2 + val_t3 + val_t4 + val_t5
         chunk_raw = total_int / (pixel_size * pixel_size)
+    elif (mapping_mode == "newton" and _worker_deformed_coords is not None) or (
+        mapping_mode == "vtk" and _worker_mesh is not None
+    ):
+        u_ref = uv_scale * x_ref_samples
+        v_ref = -uv_scale * y_ref_samples
+        pitch_uv = uv_scale * p_phys
+        sub_intensity = (
+            I0
+            + 0.5 * GAMMA * (1.0 + np.cos(2.0 * np.pi * u_ref / pitch_uv))
+            * (1.0 + np.cos(2.0 * np.pi * v_ref / pitch_uv))
+            - GAMMA
+        )
+        sub_intensity[~valid_samples] = BACKGROUND
+        chunk_raw = np.sum(sub_intensity * weights[None, :], axis=1)
     else:
         x_local = dx - h
         y_local = dy - h
@@ -331,7 +406,12 @@ def generate_grid_images(case_dir: Path, method: str, param: int) -> None:
     """Load mesh, interpolate displacements, and generate target images."""
     timer = ScriptTimer(__file__)
     case_name: str = output_case_name(case_dir.name, TARG_PX_X)
-    print(f"\nProcessing: {case_name} ({method}={param})")
+    mapping_mode = os.environ.get(
+        "EXP1_MAPPING_MODE", mapping_mode_for_case(case_dir.name)
+    )
+    if mapping_mode not in {"affine", "vtk", "newton"}:
+        raise ValueError(f"Unsupported EXP1 mapping mode: {mapping_mode!r}")
+    print(f"\nProcessing: {case_name} ({method}={param}, mapping={mapping_mode})")
 
     coords: np.ndarray = np.loadtxt(case_dir / "coords.csv", delimiter=",")
     connect: np.ndarray = np.loadtxt(
@@ -399,7 +479,8 @@ def generate_grid_images(case_dir: Path, method: str, param: int) -> None:
         else:
             S = param
 
-        pixels_per_chunk = max(1, MAX_PTS_PER_CHUNK // S)
+        point_cap = max_points_per_chunk(mapping_mode)
+        pixels_per_chunk = max(1, point_cap // S)
         total_pixels = TARG_PX_X * TARG_PX_Y
 
         tasks = []
@@ -417,13 +498,22 @@ def generate_grid_images(case_dir: Path, method: str, param: int) -> None:
                     uv_scale,
                     u_offset,
                     v_offset,
+                    mapping_mode,
                 )
             )
 
+        print(
+            f"    frame {ff:02d}/{num_frames - 1:02d}: rendering "
+            f"{method} param={param} ({len(tasks):,} chunk"
+            f"{'s' if len(tasks) != 1 else ''}; "
+            f"worker point cap={point_cap:,}).",
+            flush=True,
+        )
+
         if ff == 0:
-            init_args = (None, None, None, None)
+            init_args = (None, None, None, None, mapping_mode)
         else:
-            init_args = (coords, connect, disp_x[:, ff], disp_y[:, ff])
+            init_args = (coords, connect, disp_x[:, ff], disp_y[:, ff], mapping_mode)
 
         with Pool(
             processes=NUM_PROCESSES_RUN,
@@ -484,7 +574,19 @@ def main() -> None:
                 "does not exist. Skipping."
             )
             continue
+        mapping_mode = os.environ.get(
+            "EXP1_MAPPING_MODE", mapping_mode_for_case(case_path.name)
+        )
         for method, param in get_integration_methods():
+            # The analytic eggbox integral is closed form only after an affine
+            # inverse map.  A nonlinear-mapped element (e.g. quadratic saddle) must
+            # therefore use one of the numerical quadrature rules instead.
+            if method == "analytic" and mapping_mode in {"vtk", "newton"}:
+                print(
+                    f"Skipping {case_path.name} analytic integration: "
+                    f"mapping={mapping_mode} requires numerical rect/gauss quadrature."
+                )
+                continue
             generate_grid_images(case_path, method, param)
 
     print("\nAll numerical integrations completed successfully!")

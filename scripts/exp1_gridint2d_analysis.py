@@ -7,7 +7,6 @@
 from __future__ import annotations
 
 import csv
-import gc
 import shutil
 from pathlib import Path
 
@@ -25,6 +24,7 @@ from exp1params import (
     exp1_output_dir,
 )
 from exp1common import output_case_name
+from analysis_memory import release_batch
 from expplots import plot_bespoke_four_panel, samples_for_method
 from script_timing import ScriptTimer, timed_call
 
@@ -53,20 +53,44 @@ def _empty_digitised(methods: list[str]) -> dict[int, dict[str, dict[str, list[f
     return {bit_depth: {method: {"samples": [], "max_eb": [], "delta_b": []} for method in methods} for bit_depth in BIT_DEPTHS}
 
 
+def _reference_for_frame(case_dir: Path, frame: int):
+    """Prefer an analytic image, otherwise use the highest completed Gauss rule."""
+    candidates = [("analytic", 0, "Analytic Reference")]
+    candidates.extend(
+        ("gauss", param, f"Gauss Quadrature Reference ({param}x{param})")
+        for param in sorted(
+            (param for method, param in INTEGRATION_METHODS if method == "gauss"),
+            reverse=True,
+        )
+    )
+    for method, param, label in candidates:
+        references = {
+            bit_depth: _load_pair(case_dir, method, param, bit_depth, frame)
+            for bit_depth in BIT_DEPTHS
+        }
+        references = {
+            bit_depth: value for bit_depth, value in references.items()
+            if value is not None
+        }
+        if references:
+            return (method, param), references, label
+    return None
+
+
 def analyse_case(case_dir: Path) -> list[dict[str, object]]:
     methods = sorted({method for method, _ in INTEGRATION_METHODS if method != "analytic"})
     rows: list[dict[str, object]] = []
     for frame in ACTIVE_FRAMES:
-        references = {bit_depth: _load_pair(case_dir, "analytic", 0, bit_depth, frame) for bit_depth in BIT_DEPTHS}
-        references = {bit_depth: value for bit_depth, value in references.items() if value is not None}
-        if not references:
-            print(f"Warning: {case_dir.name}, frame {frame:02d}: analytic reference missing.")
+        selected = _reference_for_frame(case_dir, frame)
+        if selected is None:
+            print(f"Warning: {case_dir.name}, frame {frame:02d}: no analytic or Gauss reference.")
             continue
+        (ref_method, ref_param), references, ref_label = selected
         float_data = _empty_float(methods)
         digitised_data = _empty_digitised(methods)
         preferred_bit_depth = 16 if 16 in references else max(references)
         for method, param in INTEGRATION_METHODS:
-            if method == "analytic":
+            if method == "analytic" or (method, param) == (ref_method, ref_param):
                 continue
             samples = samples_for_method(method, param)
             for bit_depth, (ref_float, ref_digitised) in references.items():
@@ -87,12 +111,12 @@ def analyse_case(case_dir: Path) -> list[dict[str, object]]:
                     float_data[method]["samples"].append(samples)
                     float_data[method]["e_f64"].append(e_f64)
                     float_data[method]["e_inf"].append(e_inf)
-                rows.append({"Case": case_dir.name, "Frame": frame, "BitDepth": bit_depth, "Method": method, "Param": param, "Samples": samples, "Reference": "analytic:0", "e_f64": e_f64, "e_inf": e_inf, "e_b": float(np.sqrt(np.mean(digitised_diff**2))), "delta_b": delta_b, "max_eb": max_eb})
+                rows.append({"Case": case_dir.name, "Frame": frame, "BitDepth": bit_depth, "Method": method, "Param": param, "Samples": samples, "Reference": f"{ref_method}:{ref_param}", "e_f64": e_f64, "e_inf": e_inf, "e_b": float(np.sqrt(np.mean(digitised_diff**2))), "delta_b": delta_b, "max_eb": max_eb})
                 del image, image_float, image_digitised, float_diff, digitised_diff
-        path = plot_bespoke_four_panel(case_dir.name, frame, "Analytic Reference", RESULTS_DIR, float_data, digitised_data, sorted(references))
+        path = plot_bespoke_four_panel(case_dir.name, frame, ref_label, RESULTS_DIR, float_data, digitised_data, sorted(references))
         print(f"Saved {path}")
         del references, float_data, digitised_data
-        gc.collect()
+        release_batch()
     return rows
 
 
@@ -170,7 +194,7 @@ def analyse_rectangular_self_convergence(
             )
             rows.extend(frame_rows)
         del references, float_data, digitised_data, frame_rows
-        gc.collect()
+        release_batch()
     return rows
 
 
@@ -201,7 +225,7 @@ def main() -> None:
             continue
         all_rows.extend(timed_call(timer, output_name, analyse_case, case_dir))
         rectconv_rows.extend(timed_call(timer, f"{output_name}_rectconv", analyse_rectangular_self_convergence, case_dir, rectconv_dir))
-        gc.collect()
+        release_batch()
     _write_rows(RESULTS_DIR / "summary.csv", all_rows)
     _write_rows(rectconv_dir / "summary.csv", rectconv_rows)
     print("Experiment 1 grid analysis completed.")

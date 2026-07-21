@@ -106,6 +106,12 @@ BACKGROUND: float = 0.5
 TEX_PX_PAD: int = 4
 BIT_DEPTHS: List[int] = [8, 12, 16]
 NUM_PROCESSES: int = CORES
+# Limit quadrature points held by each bespoke-renderer worker.  VTK mapping
+# retains query, sampled-point and field arrays simultaneously, so it needs a
+# much smaller cap than the affine corner-fit path on a 32 GiB workstation.
+AFFINE_MAX_POINTS_PER_CHUNK: int = 10_000_000
+VTK_MAX_POINTS_PER_CHUNK: int = 1_000_000
+NEWTON_MAX_POINTS_PER_CHUNK: int = 1_000_000
 # Riley uses one scratch tile per active raster worker.  For f64 builds,
 # scalingpolicy uses about 154 B/sub-pixel, so per-worker scratch is
 # 154 * ((tile_px + 2 * halo_px) * SSAA)^2 bytes.  With tile_size_min=1
@@ -126,6 +132,26 @@ DEFORMATION_CASES: List[str] = [
     "plate260_cam256_quad9_affine",
     "plate260_cam256_quad9_quadsaddle",
 ]
+
+# Mapping from a deformed camera/image-plane point back to its reference
+# coordinate.  ``affine`` fits one inverse affine map from the four pixel
+# corners: it is exact for the rigid and global-affine manufactured fields,
+# but is only an approximation for a general FE displacement.  ``newton`` is
+# an accurate 2D inverse map for the current single Quad9 saddle; it remains
+# explicit until other element-specific shape functions are added.
+DEFORMATION_MAPPING_MODES: dict[str, str] = {
+    "plate260_cam256_quad9_rigid": "affine",
+    "plate260_cam256_quad9_affine": "affine",
+    "plate260_cam256_quad9_quadsaddle": "newton",
+}
+
+
+def mapping_mode_for_case(case_name: str) -> str:
+    """Return the explicitly configured reference-mapping mode for a case."""
+    mode = DEFORMATION_MAPPING_MODES.get(case_name)
+    if mode not in {"affine", "vtk", "newton"}:
+        raise ValueError(f"No valid mapping mode configured for {case_name!r}.")
+    return mode
 
 # List of frames to generate and analyze (e.g. [0, 5])
 ACTIVE_FRAMES: List[int] = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10]

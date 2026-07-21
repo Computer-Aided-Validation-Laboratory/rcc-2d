@@ -30,6 +30,7 @@ from exp2params import (
     TEX_PX_PAD,
     TARG_PX_X,
     TARG_PX_Y,
+    mapping_mode_for_case,
 )
 from exp2speckint2d import make_speckle_pattern, render_case
 from script_timing import ScriptTimer
@@ -113,6 +114,21 @@ def main() -> None:
                             GAMMA,
                         )
                         for method, param in get_methods():
+                            mapping_mode = os.environ.get(
+                                "EXP2_MAPPING_MODE",
+                                mapping_mode_for_case(case_dir.name),
+                            )
+                            # The analytic speckle integral assumes an affine
+                            # inverse map.  VTK mapping is required for the
+                            # quadratic saddle, so render its numerical rules
+                            # only.
+                            if method == "analytic" and mapping_mode in {"vtk", "newton"}:
+                                print(
+                                    f"  Skipping {case_dir.name} analytic "
+                                    f"integration: mapping={mapping_mode} requires "
+                                    "numerical rect/gauss quadrature."
+                                )
+                                continue
                             out_dir = OUTPUT_DIR / (
                                 f"{output_case_name(case_dir.name, TARG_PX_X)}_{tag}_int_"
                                 f"{method}_param_{param}"
@@ -125,6 +141,7 @@ def main() -> None:
                                 method,
                                 param,
                                 get_active_frames(),
+                                mapping_mode,
                                 timer,
                             )
 

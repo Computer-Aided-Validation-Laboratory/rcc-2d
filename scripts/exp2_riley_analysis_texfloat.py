@@ -10,13 +10,12 @@
 from __future__ import annotations
 
 import csv
-import gc
 import os
 import re
 from collections import defaultdict
 from pathlib import Path
 
-import matplotlib.pyplot as plt
+from matplotlib import rcParams
 import numpy as np
 from matplotlib.ticker import FixedFormatter, FixedLocator
 
@@ -33,6 +32,7 @@ from exp2params import (
     exp2_output_dir,
 )
 from exp1common import output_case_name
+from analysis_memory import make_agg_figure, release_batch, release_figure
 from script_timing import ScriptTimer, timed_call
 
 
@@ -40,7 +40,7 @@ RILEY_OUTPUT_DIR = exp2_output_dir("exp2_riley_render_texfloat")
 REFERENCE_OUTPUT_DIR = exp2_output_dir("exp2_speckint2d_render_uvs")
 RESULTS_DIR = exp2_output_dir("exp2_riley_analysis_texfloat")
 RUN_RE = re.compile(r"^ss(?P<ssaa>\d+)_oversamp(?P<oversamp>\d+)$")
-INTERPOLATOR_COLORS = plt.rcParams["axes.prop_cycle"].by_key()["color"]
+INTERPOLATOR_COLORS = rcParams["axes.prop_cycle"].by_key()["color"]
 OVERSAMP_MARKERS = ("o", "s", "^", "v", "<", ">", "D", "P", "X")
 
 
@@ -153,7 +153,7 @@ def _discover_riley_runs(
 
 def _clear_old_metric_images(output_dir: Path, frame: int) -> None:
     """Remove only obsolete pre-direct-plot output names for one frame."""
-    for stem in ("metrics", "float_rmse", "float_max", "bits_delta", "bits_max"):
+    for stem in ("metrics", "float_rmse", "float_max", "bits_delta", "bits_max", "limits_metrics"):
         (output_dir / f"{stem}_frame{frame:02d}.png").unlink(missing_ok=True)
 
 
@@ -205,7 +205,9 @@ def _plot_four_panel(
 ) -> None:
     """Plot one bit depth, varying either SSAA or texture OS."""
     selected_digitised = [row for row in digitised_rows if int(row["BitDepth"]) == bit_depth]
-    figure, axes = plt.subplots(2, 2, figsize=(15, 10), constrained_layout=True)
+    figure, axes = make_agg_figure(
+        2, 2, figsize=(15, 10), constrained_layout=True
+    )
     grouped_float: dict[int, list[dict[str, object]]] = defaultdict(list)
     grouped_digitised: dict[int, list[dict[str, object]]] = defaultdict(list)
     for row in float_rows:
@@ -213,7 +215,7 @@ def _plot_four_panel(
     for row in selected_digitised:
         grouped_digitised[int(row[line_key])].append(row)
     line_values = sorted(set(grouped_float) | set(grouped_digitised))
-    colors = plt.rcParams["axes.prop_cycle"].by_key()["color"]
+    colors = rcParams["axes.prop_cycle"].by_key()["color"]
     markers = OVERSAMP_MARKERS
     for index, line_value in enumerate(line_values):
         color = colors[index % len(colors)]
@@ -255,52 +257,55 @@ def _plot_four_panel(
             axis.legend(loc="lower left", fontsize=6, frameon=True, facecolor="white", edgecolor="none")
     figure.suptitle(title, fontweight="bold")
     figure.savefig(output_path, dpi=150)
-    figure.clear()
-    plt.close(figure)
+    release_figure(figure)
 
 
 def _plot_limit_cuts(
     float_rows: list[dict[str, object]],
     digitised_rows: list[dict[str, object]],
     title: str,
-    output_path: Path,
+    output_dir: Path,
+    frame: int,
 ) -> None:
-    """Show the highest-OS and highest-SSAA cuts with all bit depths together."""
+    """Write separate limiting cuts for texture OS and raster SSAA."""
     highest_os = max(int(row["Oversamp"]) for row in float_rows)
     highest_ssaa = max(int(row["SSAA"]) for row in float_rows)
     high_os_float = sorted((row for row in float_rows if int(row["Oversamp"]) == highest_os), key=lambda row: int(row["SSAA"]))
     high_ssaa_float = sorted((row for row in float_rows if int(row["SSAA"]) == highest_ssaa), key=lambda row: int(row["Oversamp"]))
-    figure, axes = plt.subplots(2, 2, figsize=(15, 10), constrained_layout=True)
-    for axis, rows, x_key, metric, label in (
-        (axes[0, 0], high_os_float, "SSAA", "e_f64", f"Riley, Tex, OS={highest_os}"),
-        (axes[0, 1], high_ssaa_float, "Oversamp", "e_inf", f"Riley, Tex, SSAA={highest_ssaa}"),
+    for suffix, rows_float, x_key, fixed_key, fixed_value, fixed_name, x_label in (
+        ("ssaa", high_os_float, "SSAA", "Oversamp", highest_os, "OS", "Riley Samples Along One Pixel Axis"),
+        ("oversamp", high_ssaa_float, "Oversamp", "SSAA", highest_ssaa, "SSAA", "Texture Oversampling Along One Pixel Axis"),
     ):
-        axis.plot([int(row[x_key]) for row in rows], [float(row[metric]) for row in rows], marker="o", color="#1f77b4", label=label)
-        _set_float_axis(axis, rows, list(BIT_DEPTHS))
-        _axis_samples(axis, [int(row[x_key]) for row in rows], "Riley Samples Along One Pixel Axis" if x_key == "SSAA" else "Texture Oversampling Along One Pixel Axis")
-        axis.set_title("Highest OS: Floating-Point RMSE" if x_key == "SSAA" else "Highest SSAA: Floating-Point Max Error")
-        axis.set_ylabel("RMSE" if metric == "e_f64" else "Max error")
-        axis.grid(True, which="both", ls="--", alpha=0.4)
-        axis.legend(loc="lower left", fontsize=7, frameon=True, facecolor="white", edgecolor="none")
-    for axis, x_key, fixed_key, fixed_value, panel_title in (
-        (axes[1, 0], "SSAA", "Oversamp", highest_os, f"Highest OS={highest_os}: Maximum Digitised Mismatch"),
-        (axes[1, 1], "Oversamp", "SSAA", highest_ssaa, f"Highest SSAA={highest_ssaa}: Maximum Digitised Mismatch"),
-    ):
+        figure, axes = make_agg_figure(1, 2, figsize=(12, 6), constrained_layout=True)
+        axes[0].plot(
+            [int(row[x_key]) for row in rows_float],
+            [float(row["e_inf"]) for row in rows_float], marker="o",
+            color="#1f77b4", label=f"Riley, Tex, {fixed_name}={fixed_value}",
+        )
+        _set_float_axis(axes[0], rows_float, list(BIT_DEPTHS))
+        _axis_samples(axes[0], [int(row[x_key]) for row in rows_float], x_label)
+        axes[0].set_title("Floating-Point Maximum Error")
+        axes[0].set_ylabel("Max error")
+        axes[0].grid(True, which="both", ls="--", alpha=0.4)
+        axes[0].legend(loc="lower left", fontsize=7, frameon=True, facecolor="white", edgecolor="none")
         rows = [row for row in digitised_rows if int(row[fixed_key]) == fixed_value]
         for index, bit_depth in enumerate(BIT_DEPTHS):
             series = sorted((row for row in rows if int(row["BitDepth"]) == bit_depth), key=lambda row: int(row[x_key]))
             if series:
-                axis.plot([int(row[x_key]) for row in series], [float(row["max_eb"]) for row in series], marker="o", color=INTERPOLATOR_COLORS[index % len(INTERPOLATOR_COLORS)], label=f"Riley, Tex, {bit_depth}-bit")
-        _set_max_lsb_axis(axis, rows)
-        _axis_samples(axis, [int(row[x_key]) for row in rows], "Riley Samples Along One Pixel Axis" if x_key == "SSAA" else "Texture Oversampling Along One Pixel Axis")
-        axis.set_title(panel_title)
-        axis.set_ylabel("LSB levels")
-        axis.grid(True, which="both", ls="--", alpha=0.4)
-        axis.legend(loc="lower left", fontsize=7, frameon=True, facecolor="white", edgecolor="none")
-    figure.suptitle(title, fontweight="bold")
-    figure.savefig(output_path, dpi=150)
-    figure.clear()
-    plt.close(figure)
+                axes[1].plot(
+                    [int(row[x_key]) for row in series], [float(row["max_eb"]) for row in series],
+                    marker="o", linestyle={8: "-", 12: "--", 16: ":"}.get(bit_depth, "-"),
+                    color="#1f77b4", label=f"Riley, Tex, {fixed_name}={fixed_value}, {bit_depth}-bit",
+                )
+        _set_max_lsb_axis(axes[1], rows)
+        _axis_samples(axes[1], [int(row[x_key]) for row in rows], x_label)
+        axes[1].set_title("Maximum Digitised Mismatch")
+        axes[1].set_ylabel("LSB levels")
+        axes[1].grid(True, which="both", ls="--", alpha=0.4)
+        axes[1].legend(loc="lower left", fontsize=7, frameon=True, facecolor="white", edgecolor="none")
+        figure.suptitle(f"{title}\nLimit: {fixed_name}={fixed_value}", fontweight="bold")
+        figure.savefig(output_dir / f"limit_{suffix}_frame{frame:02d}.png", dpi=150)
+        release_figure(figure)
 
 
 def _write_analysis_figures(
@@ -326,8 +331,7 @@ def _write_analysis_figures(
             output_dir / f"os_metrics_b{bit_depth:02d}_frame{frame:02d}.png",
         )
     _plot_limit_cuts(
-        float_rows, digitised_rows, title,
-        output_dir / f"limits_metrics_frame{frame:02d}.png",
+        float_rows, digitised_rows, title, output_dir, frame,
     )
 
 
@@ -364,30 +368,30 @@ def _analyse_riley_self_convergence_frame(
     runs: list[tuple[str, int, int, Path]],
     frame: int,
     group_name: str,
-    completed_images: dict[tuple[str, int, int], np.ndarray] | None = None,
 ) -> None:
     """Plot each Riley run against the highest available SSAA of itself."""
-    images: dict[tuple[str, int], dict[int, np.ndarray]] = defaultdict(dict)
+    # Keep paths, rather than every rendered array.  A complete SSAA/OS sweep
+    # can otherwise retain dozens of full-resolution textures at once.
+    paths: dict[tuple[str, int], dict[int, Path]] = defaultdict(dict)
     for interpolator, ssaa, oversamp, run_dir in runs:
-        image = None
-        if completed_images is not None:
-            image = completed_images.get((interpolator, ssaa, oversamp))
-        if image is None:
-            image_path = run_dir / f"image_c00_f{frame:02d}_clamped.npy"
-            if image_path.exists():
-                image = np.load(image_path)
-        if image is not None:
-            images[(interpolator, oversamp)][ssaa] = image
+        image_path = run_dir / f"image_c00_f{frame:02d}_clamped.npy"
+        if image_path.exists():
+            paths[(interpolator, oversamp)][ssaa] = image_path
 
     rows_by_interpolator: dict[str, list[dict[str, object]]] = defaultdict(list)
     digitised_by_interpolator: dict[str, list[dict[str, object]]] = defaultdict(list)
-    for (interpolator, oversamp), by_ssaa in images.items():
+    for (interpolator, oversamp), by_ssaa in paths.items():
         if len(by_ssaa) < 2:
             continue
         reference_ssaa = max(by_ssaa)
-        reference = by_ssaa[reference_ssaa]
-        for ssaa, image in by_ssaa.items():
+        reference = np.load(by_ssaa[reference_ssaa])
+        for ssaa, image_path in by_ssaa.items():
             if ssaa == reference_ssaa:
+                continue
+            image = np.load(image_path)
+            if image.shape != reference.shape:
+                print(f"Warning: {image_path} shape {image.shape} does not match self reference.")
+                del image
                 continue
             difference = image - reference
             base_row = {
@@ -418,7 +422,8 @@ def _analyse_riley_self_convergence_frame(
                     "max_eb": float(np.max(np.abs(digitised_difference))),
                 })
                 del digitised_difference
-            del difference
+            del image, difference
+        del reference
 
     rectconv_root = Path(f"{RESULTS_DIR}_rectconv") / group_name
     for interpolator, rows in rows_by_interpolator.items():
@@ -431,8 +436,8 @@ def _analyse_riley_self_convergence_frame(
         )
         digitised_rows = digitised_by_interpolator[interpolator]
         _write_analysis_figures(output_dir, frame, rows, digitised_rows, title)
-    del images, rows_by_interpolator, digitised_by_interpolator
-    gc.collect()
+    del paths, rows_by_interpolator, digitised_by_interpolator
+    release_batch()
 
 
 def analyse_pattern(
@@ -464,15 +469,14 @@ def analyse_pattern(
         )
         frame_rows: list[dict[str, object]] = []
         frame_digitised_rows: list[dict[str, object]] = []
-        completed_images: dict[tuple[str, int, int], np.ndarray] = {}
         for interpolator, ssaa, oversamp, run_dir in runs:
             image_path = run_dir / f"image_c00_f{frame:02d}_clamped.npy"
             if not image_path.exists():
                 continue
             image = np.load(image_path)
-            completed_images[(interpolator, ssaa, oversamp)] = image
             if image.shape != reference_image.shape:
                 print(f"Warning: {image_path} shape {image.shape} does not match reference.")
+                del image
                 continue
             difference = image - reference_image
             base_row = {
@@ -507,8 +511,8 @@ def analyse_pattern(
             del difference, image
         if not frame_rows:
             print(f"    No completed clamped Riley outputs; skipping plots.")
-            del completed_images, reference_image, reference
-            gc.collect()
+            del reference_image, reference
+            release_batch()
             continue
         for interpolator in sorted({str(row["Interpolator"]) for row in frame_rows}):
             output_dir = RESULTS_DIR / group_name / interpolator
@@ -535,12 +539,11 @@ def analyse_pattern(
         rows.extend(frame_rows)
         digitised_rows.extend(frame_digitised_rows)
         _analyse_riley_self_convergence_frame(
-            runs, frame, group_name, completed_images
+            runs, frame, group_name
         )
-        del completed_images, frame_rows, frame_digitised_rows
+        del frame_rows, frame_digitised_rows
         del reference_image, reference
-        plt.close("all")
-        gc.collect()
+        release_batch()
     group_dir = RESULTS_DIR / group_name
     group_dir.mkdir(parents=True, exist_ok=True)
     _write_rows(group_dir / "summary.csv", rows)
@@ -583,7 +586,7 @@ def main() -> None:
                             timer, f"{case_name}_{tag}", analyse_pattern,
                             case_name, pattern_type, tag, frames, allowed_interpolators,
                         ))
-                        gc.collect()
+                        release_batch()
     _write_rows(RESULTS_DIR / "summary.csv", all_rows)
     print(f"\nSaved overall summary: {RESULTS_DIR / 'summary.csv'}")
     print("Experiment 2 Riley floating-texture analysis completed.")

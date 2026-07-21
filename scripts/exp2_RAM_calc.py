@@ -11,7 +11,13 @@ footprint at a given image size, oversampling and storage type.
 
 from __future__ import annotations
 
-from exp2params import TARG_PX_X, TARG_PX_Y, TEX_PX_PAD
+from exp2params import (
+    AFFINE_MAX_POINTS_PER_CHUNK,
+    TARG_PX_X,
+    TARG_PX_Y,
+    TEX_PX_PAD,
+    VTK_MAX_POINTS_PER_CHUNK,
+)
 
 
 # User settings -------------------------------------------------------------
@@ -24,9 +30,11 @@ RILEY_BYTES_PER_SUBPIXEL = 154
 RILEY_FIXED_GB = 1.0
 RILEY_TEXTURE_COPIES = 2
 CUSTOM_FIXED_PER_WORKER_GB = 0.25
-CUSTOM_BYTES_PER_ACTIVE_POINT = 128
+# Exp2 retains coordinate, coverage and lattice-index temporaries in addition
+# to the raw point arrays, unlike Exp1's scalar eggbox kernel.
+AFFINE_BYTES_PER_ACTIVE_POINT = 384
+VTK_BYTES_PER_ACTIVE_POINT = 768
 CUSTOM_BYTES_PER_SAMPLE = 48
-CUSTOM_MAX_POINTS_PER_CHUNK = 10_000_000
 
 
 def _gib(value: float) -> float:
@@ -42,12 +50,14 @@ def _largest_power_of_two(predicate) -> int:
     return value
 
 
-def _custom_bytes(ssaa: int) -> int:
+def _custom_bytes(ssaa: int, *, mapping: str) -> int:
     samples = ssaa * ssaa
-    active_points = min(CUSTOM_MAX_POINTS_PER_CHUNK, TARG_PX_X * TARG_PX_Y * samples)
+    point_cap = VTK_MAX_POINTS_PER_CHUNK if mapping == "vtk" else AFFINE_MAX_POINTS_PER_CHUNK
+    per_point = VTK_BYTES_PER_ACTIVE_POINT if mapping == "vtk" else AFFINE_BYTES_PER_ACTIVE_POINT
+    active_points = min(point_cap, TARG_PX_X * TARG_PX_Y * samples)
     per_worker = (
         CUSTOM_FIXED_PER_WORKER_GB * 2**30
-        + CUSTOM_BYTES_PER_ACTIVE_POINT * active_points
+        + per_point * active_points
         + CUSTOM_BYTES_PER_SAMPLE * samples
     )
     return int(NUM_CORES * per_worker)
@@ -68,9 +78,15 @@ def main() -> None:
     print("Experiment 2 RAM planner")
     print(f"  Image: {TARG_PX_X}x{TARG_PX_Y}; pad: {TEX_PX_PAD}; workers: {NUM_CORES}")
     print(f"  Nominal RAM: {NOM_RAM_GB:g} GiB; reserve: {OS_AND_OTHER_GB:g} GiB; render budget: {_gib(budget):.2f} GiB")
-    custom_max = _largest_power_of_two(lambda ssaa: _custom_bytes(ssaa) <= budget)
+    affine_max = _largest_power_of_two(
+        lambda ssaa: _custom_bytes(ssaa, mapping="affine") <= budget
+    )
+    vtk_max = _largest_power_of_two(
+        lambda ssaa: _custom_bytes(ssaa, mapping="vtk") <= budget
+    )
     print("\nBespoke orthographic renderer (rectangular/Gauss SSAA)")
-    print(f"  Maximum conservative SSAA: {custom_max} ({_gib(_custom_bytes(custom_max)):.2f} GiB)")
+    print(f"  Affine cap: {AFFINE_MAX_POINTS_PER_CHUNK:,}; maximum SSAA: {affine_max} ({_gib(_custom_bytes(affine_max, mapping='affine')):.2f} GiB)")
+    print(f"  VTK cap:    {VTK_MAX_POINTS_PER_CHUNK:,}; maximum SSAA: {vtk_max} ({_gib(_custom_bytes(vtk_max, mapping='vtk')):.2f} GiB)")
     print("\nRiley f64 texture (diskaddsat and gausscont have the same footprint)")
     print("  OS    maximum feasible SSAA    estimated peak GiB")
     coupled_max = _largest_power_of_two(lambda value: _riley_float_bytes(value, value) <= budget)

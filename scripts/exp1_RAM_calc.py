@@ -14,7 +14,13 @@ from __future__ import annotations
 
 import math
 
-from exp1params import TARG_PX_X, TARG_PX_Y, TEX_PX_PAD
+from exp1params import (
+    AFFINE_MAX_POINTS_PER_CHUNK,
+    TARG_PX_X,
+    TARG_PX_Y,
+    TEX_PX_PAD,
+    VTK_MAX_POINTS_PER_CHUNK,
+)
 
 
 # User settings -------------------------------------------------------------
@@ -27,9 +33,9 @@ RILEY_BYTES_PER_SUBPIXEL = 154
 RILEY_FIXED_GB = 1.0
 RILEY_TEXTURE_COPIES = 2
 CUSTOM_FIXED_PER_WORKER_GB = 0.25
-CUSTOM_BYTES_PER_ACTIVE_POINT = 128
+AFFINE_BYTES_PER_ACTIVE_POINT = 128
+VTK_BYTES_PER_ACTIVE_POINT = 512
 CUSTOM_BYTES_PER_SAMPLE = 48
-CUSTOM_MAX_POINTS_PER_CHUNK = 10_000_000
 
 
 def _gib(value: float) -> float:
@@ -45,13 +51,15 @@ def _largest_power_of_two(predicate) -> int:
     return value
 
 
-def _custom_bytes(ssaa: int) -> int:
-    """Peak estimate for the multiprocessing bespoke rectangular renderer."""
+def _custom_bytes(ssaa: int, *, mapping: str) -> int:
+    """Peak estimate for one bespoke renderer mapping mode."""
     samples = ssaa * ssaa
-    active_points = min(CUSTOM_MAX_POINTS_PER_CHUNK, TARG_PX_X * TARG_PX_Y * samples)
+    point_cap = VTK_MAX_POINTS_PER_CHUNK if mapping == "vtk" else AFFINE_MAX_POINTS_PER_CHUNK
+    per_point = VTK_BYTES_PER_ACTIVE_POINT if mapping == "vtk" else AFFINE_BYTES_PER_ACTIVE_POINT
+    active_points = min(point_cap, TARG_PX_X * TARG_PX_Y * samples)
     per_worker = (
         CUSTOM_FIXED_PER_WORKER_GB * 2**30
-        + CUSTOM_BYTES_PER_ACTIVE_POINT * active_points
+        + per_point * active_points
         + CUSTOM_BYTES_PER_SAMPLE * samples
     )
     return int(NUM_CORES * per_worker)
@@ -96,10 +104,16 @@ def main() -> None:
     print(f"  Image: {TARG_PX_X}x{TARG_PX_Y}; pad: {TEX_PX_PAD}; workers: {NUM_CORES}")
     print(f"  Nominal RAM: {NOM_RAM_GB:g} GiB; reserve: {OS_AND_OTHER_GB:g} GiB; render budget: {_gib(budget):.2f} GiB")
 
-    custom_max = _largest_power_of_two(lambda ssaa: _custom_bytes(ssaa) <= budget)
+    affine_max = _largest_power_of_two(
+        lambda ssaa: _custom_bytes(ssaa, mapping="affine") <= budget
+    )
+    vtk_max = _largest_power_of_two(
+        lambda ssaa: _custom_bytes(ssaa, mapping="vtk") <= budget
+    )
     func_max = _largest_power_of_two(lambda ssaa: _riley_function_bytes(ssaa) <= budget)
     print("\nBespoke orthographic renderer (rectangular SSAA)")
-    print(f"  Maximum conservative SSAA: {custom_max} ({_gib(_custom_bytes(custom_max)):.2f} GiB)")
+    print(f"  Affine cap: {AFFINE_MAX_POINTS_PER_CHUNK:,}; maximum SSAA: {affine_max} ({_gib(_custom_bytes(affine_max, mapping='affine')):.2f} GiB)")
+    print(f"  VTK cap:    {VTK_MAX_POINTS_PER_CHUNK:,}; maximum SSAA: {vtk_max} ({_gib(_custom_bytes(vtk_max, mapping='vtk')):.2f} GiB)")
     print("\nRiley function shader")
     print(f"  Maximum conservative SSAA: {func_max} ({_gib(_riley_function_bytes(func_max)):.2f} GiB)")
     _report_texture_case("Riley float texture (f64)", 8, budget)

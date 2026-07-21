@@ -109,6 +109,12 @@ BACKGROUND: float = 0.5
 TEX_PX_PAD: int = 4
 BIT_DEPTHS: List[int] = [8, 12, 16]
 NUM_PROCESSES: int = CORES
+# Limit quadrature points held by each bespoke-renderer worker.  Exp2 keeps
+# additional pattern-coverage temporaries, hence its caps are lower than
+# Exp1's.  Retain the established 2M affine cap and use a lower VTK cap.
+AFFINE_MAX_POINTS_PER_CHUNK: int = 2_000_000
+VTK_MAX_POINTS_PER_CHUNK: int = 500_000
+NEWTON_MAX_POINTS_PER_CHUNK: int = 1_000_000
 # Riley uses one scratch tile per active raster worker.  For f64 builds,
 # scalingpolicy uses about 154 B/sub-pixel, so per-worker scratch is
 # 154 * ((tile_px + 2 * halo_px) * SSAA)^2 bytes.  With tile_size_min=1
@@ -163,6 +169,24 @@ DEFORMATION_CASES: List[str] = [
     "plate260_cam256_quad9_affine",
     "plate260_cam256_quad9_quadsaddle",
 ]
+
+# ``affine`` is a four-corner inverse-map approximation, exact only for the
+# rigid/global-affine fields.  ``newton`` is an accurate 2D inverse map for
+# the current single Quad9 saddle; it remains explicit until other
+# element-specific shape functions are added.
+DEFORMATION_MAPPING_MODES: dict[str, str] = {
+    "plate260_cam256_quad9_rigid": "affine",
+    "plate260_cam256_quad9_affine": "affine",
+    "plate260_cam256_quad9_quadsaddle": "newton",
+}
+
+
+def mapping_mode_for_case(case_name: str) -> str:
+    """Return the explicitly configured reference-mapping mode for a case."""
+    mode = DEFORMATION_MAPPING_MODES.get(case_name)
+    if mode not in {"affine", "vtk", "newton"}:
+        raise ValueError(f"No valid mapping mode configured for {case_name!r}.")
+    return mode
 
 # List of frames to generate and analyze (e.g. [0, 5])
 ACTIVE_FRAMES: List[int] = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10]

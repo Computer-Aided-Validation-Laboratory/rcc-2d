@@ -19,6 +19,11 @@ import numpy as np
 from PIL import Image
 from script_timing import ScriptTimer, timed_call
 
+try:
+    from numba import njit
+except ImportError:  # pragma: no cover - retained for minimal environments
+    njit = None
+
 from exp2params import (
     BACKGROUND,
     BIT_DEPTHS,
@@ -28,14 +33,14 @@ from exp2params import (
     GAUSSIAN_EQUIVALENT_DISK_EDGE_FRACTION,
     I0,
     NUM_PROCESSES,
+    AFFINE_MAX_POINTS_PER_CHUNK,
+    VTK_MAX_POINTS_PER_CHUNK,
+    NEWTON_MAX_POINTS_PER_CHUNK,
     TARG_PX_X,
     TARG_PX_Y,
     TEX_PX_PAD,
 )
 
-MAX_PTS_PER_CHUNK = int(
-    os.environ.get("EXP2_MAX_PTS_PER_CHUNK", "2000000")
-)
 MAX_PIXELS_PER_CHUNK = int(
     os.environ.get("EXP2_MAX_PIXELS_PER_CHUNK", "1000000")
 )
@@ -45,6 +50,85 @@ NUM_PROCESSES_RUN = max(1, min(
 ))
 _worker_mesh: Any = None
 _worker_pattern: SpecklePattern | None = None
+_worker_coords: np.ndarray | None = None
+_worker_connect: np.ndarray | None = None
+_worker_disp_x: np.ndarray | None = None
+_worker_disp_y: np.ndarray | None = None
+_worker_frame: int | None = None
+_worker_global_affine: tuple[np.ndarray, np.ndarray] | None = None
+_worker_deformed_coords: np.ndarray | None = None
+
+
+def max_points_per_chunk(mapping_mode: str) -> int:
+    """Return the RAM-safe worker point cap for the selected map evaluator."""
+    default = (
+        VTK_MAX_POINTS_PER_CHUNK if mapping_mode == "vtk" else
+        NEWTON_MAX_POINTS_PER_CHUNK if mapping_mode == "newton" else
+        AFFINE_MAX_POINTS_PER_CHUNK
+    )
+    value = os.environ.get(
+        f"EXP2_{mapping_mode.upper()}_MAX_PTS_PER_CHUNK",
+        os.environ.get("EXP2_MAX_PTS_PER_CHUNK", str(default)),
+    )
+    return max(1, int(value))
+
+
+if njit is not None:
+    @njit(cache=True)
+    def _coverage_kernel(
+        x: np.ndarray,
+        y: np.ndarray,
+        centres: np.ndarray,
+        origin_x: float,
+        origin_y: float,
+        pitch: float,
+        reach: int,
+        radius_squared: float,
+        support_squared: float,
+        sigma_squared: float,
+        gaussian: bool,
+    ) -> np.ndarray:
+        """Evaluate the local jittered lattice without Python mask churn."""
+        result = np.zeros(x.size, dtype=np.float64)
+        ny, nx = centres.shape[0], centres.shape[1]
+        for point in range(x.size):
+            ix0 = int(np.floor((x[point] - origin_x) / pitch + 0.5))
+            iy0 = int(np.floor((y[point] - origin_y) / pitch + 0.5))
+            coverage = 0.0
+            for oy in range(-reach, reach + 1):
+                iy = iy0 + oy
+                if iy < 0 or iy >= ny:
+                    continue
+                for ox in range(-reach, reach + 1):
+                    ix = ix0 + ox
+                    if ix < 0 or ix >= nx:
+                        continue
+                    dx = x[point] - centres[iy, ix, 0]
+                    dy = y[point] - centres[iy, ix, 1]
+                    distance_squared = dx * dx + dy * dy
+                    if gaussian:
+                        if distance_squared <= support_squared:
+                            coverage += np.exp(-0.5 * distance_squared / sigma_squared)
+                    elif distance_squared <= radius_squared:
+                        coverage += 1.0
+            result[point] = coverage
+        return result
+
+
+def _numba_coverage(pattern: "SpecklePattern", x: np.ndarray, y: np.ndarray) -> np.ndarray | None:
+    """Run the compiled pointwise kernel, unless explicitly disabled."""
+    if njit is None or os.environ.get("EXP2_DISABLE_NUMBA"):
+        return None
+    reach = int(np.ceil((pattern.support_radius + pattern.max_jitter) / pattern.pitch))
+    centres = np.ascontiguousarray(pattern.centers.reshape(*pattern.grid_shape, 2))
+    return _coverage_kernel(
+        np.ascontiguousarray(np.asarray(x, dtype=np.float64).ravel()),
+        np.ascontiguousarray(np.asarray(y, dtype=np.float64).ravel()),
+        centres,
+        pattern.lattice_origin[0], pattern.lattice_origin[1], pattern.pitch,
+        reach, pattern.radius**2, pattern.support_radius**2, pattern.sigma**2,
+        pattern.pattern_type not in {"disk", "diskaddsat"},
+    ).reshape(np.shape(x))
 
 
 def _circle_primitive(x: np.ndarray, radius: float) -> np.ndarray:
@@ -154,6 +238,9 @@ class SpecklePattern:
 
     def evaluate_coverage(self, x: np.ndarray, y: np.ndarray) -> np.ndarray:
         """Evaluate additive blob coverage using nearby lattice cells."""
+        compiled = _numba_coverage(self, x, y)
+        if compiled is not None:
+            return compiled
         x_flat = np.asarray(x, dtype=np.float64).ravel()
         y_flat = np.asarray(y, dtype=np.float64).ravel()
         ny, nx = self.grid_shape
@@ -590,26 +677,77 @@ def init_worker(
     disp_y,
     pattern: SpecklePattern,
 ) -> None:
-    global _worker_mesh, _worker_pattern
+    global _worker_connect, _worker_coords, _worker_disp_x, _worker_disp_y
+    global _worker_frame, _worker_global_affine, _worker_mesh, _worker_pattern, _worker_deformed_coords
     _worker_pattern = pattern
-    if coords is None:
-        _worker_mesh = None
-        return
+    _worker_coords = coords
+    _worker_connect = connect
+    _worker_disp_x = disp_x
+    _worker_disp_y = disp_y
+    _worker_frame = None
+    _worker_global_affine = None
+    _worker_mesh = None
+    _worker_deformed_coords = None
 
+
+def _cache_global_affine_map() -> None:
+    """Cache r=A*x+b once for the explicitly selected global-affine path."""
+    global _worker_global_affine
+    if _worker_mesh is None:
+        return
+    import pyvista as pv
+
+    # Interior test points avoid sensitivity to the moving element boundary.
+    query_xy = np.array(
+        [[-64.0, -64.0], [-63.0, -64.0], [-64.0, -63.0], [64.0, 64.0]],
+        dtype=np.float64,
+    )
+    query = np.zeros((len(query_xy), 3), dtype=np.float64)
+    query[:, :2] = query_xy
+    sampled = pv.PolyData(query).sample(_worker_mesh)
+    valid = sampled.point_data["vtkValidPointMask"].astype(bool)
+    if not np.all(valid):
+        return
+    references = np.column_stack((sampled.point_data["x_ref"], sampled.point_data["y_ref"]))
+    a = np.column_stack((references[1] - references[0], references[2] - references[0]))
+    b = references[0] - a @ query_xy[0]
+    if np.max(np.abs(a @ query_xy[3] + b - references[3])) <= 1e-10:
+        _worker_global_affine = (a, b)
+
+
+def ensure_worker_frame(frame: int, mapping_mode: str) -> None:
+    """Build the deformed worker state once per frame."""
+    global _worker_frame, _worker_global_affine, _worker_mesh, _worker_deformed_coords
+    if frame == _worker_frame:
+        return
+    _worker_frame = frame
+    _worker_global_affine = None
+    if frame == 0:
+        _worker_mesh = None
+        _worker_deformed_coords = None
+        return
+    if any(value is None for value in (_worker_coords, _worker_connect, _worker_disp_x, _worker_disp_y)):
+        raise RuntimeError("Speckle worker has no mesh state.")
     from exp1common import build_pv_mesh
 
-    coords_def = np.array(coords, copy=True)
-    coords_def[:, 0] += disp_x
-    coords_def[:, 1] += disp_y
-    _worker_mesh = build_pv_mesh(coords_def, connect)
-    _worker_mesh.point_data["x_ref"] = coords[:, 0]
-    _worker_mesh.point_data["y_ref"] = coords[:, 1]
+    coords_def = np.array(_worker_coords, copy=True)
+    coords_def[:, 0] += _worker_disp_x[:, frame]
+    coords_def[:, 1] += _worker_disp_y[:, frame]
+    _worker_deformed_coords = coords_def
+    if mapping_mode == "newton":
+        _worker_mesh = None
+        return
+    _worker_mesh = build_pv_mesh(coords_def, _worker_connect)
+    _worker_mesh.point_data["x_ref"] = _worker_coords[:, 0]
+    _worker_mesh.point_data["y_ref"] = _worker_coords[:, 1]
+    if mapping_mode == "affine":
+        _cache_global_affine_map()
 
 
 def process_pixel_chunk(
-    args: tuple[int, int, str, int, float, float],
+    args: tuple[int, int, str, int, float, float, str, int],
 ) -> tuple[int, int, np.ndarray, int, int, int]:
-    start_idx, end_idx, method, param, pixel_size, roi_size = args
+    start_idx, end_idx, method, param, pixel_size, roi_size, mapping_mode, frame = args
     indices = np.arange(start_idx, end_idx)
     px = -0.5 * roi_size + (indices % TARG_PX_X) * pixel_size
     py = -0.5 * roi_size + (indices // TARG_PX_X) * pixel_size
@@ -617,9 +755,23 @@ def process_pixel_chunk(
     global _worker_mesh, _worker_pattern
     if _worker_pattern is None:
         raise RuntimeError("Speckle worker has not been initialized.")
+    ensure_worker_frame(frame, mapping_mode)
 
     if method == "analytic":
-        r0, a, valid, ill_conditioned = _local_affine_map(px, py, pixel_size)
+        if mapping_mode in {"vtk", "newton"} and _worker_mesh is not None:
+            raise ValueError(
+                "The Exp2 closed-form analytic rule assumes an affine inverse "
+                "map; use rect/gauss numerical integration for nonlinear mapping."
+            )
+        if _worker_global_affine is not None:
+            global_a, global_b = _worker_global_affine
+            centres = np.column_stack((px + 0.5 * pixel_size, py + 0.5 * pixel_size))
+            r0 = centres @ global_a.T + global_b
+            a = np.broadcast_to(global_a, (len(indices), 2, 2)).copy()
+            valid = np.ones(len(indices), dtype=bool)
+            ill_conditioned = np.zeros(len(indices), dtype=bool)
+        else:
+            r0, a, valid, ill_conditioned = _local_affine_map(px, py, pixel_size)
         pixel_average = np.full(len(indices), BACKGROUND, dtype=np.float64)
         if _worker_pattern.pattern_type == "diskaddsat":
             identity = np.eye(2)
@@ -685,7 +837,16 @@ def process_pixel_chunk(
         "diskaddsat",
         "gausscont",
     }
-    if _worker_mesh is not None:
+    if mapping_mode == "newton" and _worker_deformed_coords is not None:
+        from quad9_newton import inverse_map_quad9
+
+        x_ref_flat, y_ref_flat, valid = inverse_map_quad9(
+            xx.ravel(), yy.ravel(), _worker_deformed_coords, _worker_coords,
+            _worker_connect,
+        )
+        x_ref = x_ref_flat.reshape(xx.shape)
+        y_ref = y_ref_flat.reshape(yy.shape)
+    elif _worker_mesh is not None and mapping_mode == "vtk":
         import pyvista as pv
 
         query = np.zeros((xx.size, 3), dtype=np.float64)
@@ -695,6 +856,33 @@ def process_pixel_chunk(
         valid = sampled.point_data["vtkValidPointMask"].astype(bool)
         x_ref = sampled.point_data["x_ref"].reshape(xx.shape)
         y_ref = sampled.point_data["y_ref"].reshape(yy.shape)
+    elif _worker_mesh is not None:
+        if _worker_global_affine is not None:
+            global_a, global_b = _worker_global_affine
+            x_ref = global_a[0, 0] * xx + global_a[0, 1] * yy + global_b[0]
+            y_ref = global_a[1, 0] * xx + global_a[1, 1] * yy + global_b[1]
+            valid = np.ones(xx.size, dtype=bool)
+        else:
+            r0, a, pixel_valid, _ill_conditioned = _local_affine_map(
+                px, py, pixel_size
+            )
+            qx = dx - 0.5 * pixel_size
+            qy = dy - 0.5 * pixel_size
+            x_ref = (
+                r0[:, 0, None]
+                + a[:, 0, 0, None] * qx[None, :]
+                + a[:, 0, 1, None] * qy[None, :]
+            )
+            y_ref = (
+                r0[:, 1, None]
+                + a[:, 1, 0, None] * qx[None, :]
+                + a[:, 1, 1, None] * qy[None, :]
+            )
+            valid = np.broadcast_to(pixel_valid[:, None], xx.shape).ravel()
+    has_mapping = _worker_mesh is not None or (
+        mapping_mode == "newton" and _worker_deformed_coords is not None
+    )
+    if has_mapping:
         if coverage_first:
             values = np.zeros(xx.size, dtype=np.float64)
             values[valid] = _worker_pattern.evaluate_coverage(
@@ -790,6 +978,7 @@ def render_case(
     method: str,
     param: int,
     active_frames: set[int],
+    mapping_mode: str,
     timer: ScriptTimer | None = None,
 ) -> None:
     from exp1common import parse_case_params
@@ -816,8 +1005,9 @@ def render_case(
 
     pixel_size = roi_size / TARG_PX_X
     samples = 1 if method == "analytic" else param * param
-    chunk_pixels = max(1, MAX_PTS_PER_CHUNK // samples)
-    tasks = [
+    point_cap = max_points_per_chunk(mapping_mode)
+    chunk_pixels = max(1, point_cap // samples)
+    task_prefixes = [
         (
             start,
             min(start + chunk_pixels, TARG_PX_X * TARG_PX_Y),
@@ -825,67 +1015,68 @@ def render_case(
             param,
             pixel_size,
             roi_size,
+            mapping_mode,
         )
         for start in range(0, TARG_PX_X * TARG_PX_Y, chunk_pixels)
     ]
-    for frame in range(disp_x.shape[1]):
-        if frame not in active_frames:
-            continue
-        prefix = (
-            f"targ_px{TARG_PX_X}_int_{method}_param_{param}_frame{frame:02d}"
-        )
-        if not FORCE_RENDER_OVER and image_outputs_complete(output_dir, prefix):
-            print(f"    frame {frame:02d}: outputs exist; skipping.")
-            continue
-        if frame == 0:
-            initargs = (None, None, None, None, pattern)
-        else:
-            initargs = (
-                coords,
-                connect,
-                disp_x[:, frame],
-                disp_y[:, frame],
-                pattern,
+    # Keep worker processes alive across frames.  Each process lazily rebuilds
+    # its mesh only when it first receives work for a new frame.
+    with Pool(
+        NUM_PROCESSES_RUN,
+        initializer=init_worker,
+        initargs=(coords, connect, disp_x, disp_y, pattern),
+    ) as pool:
+        for frame in range(disp_x.shape[1]):
+            if frame not in active_frames:
+                continue
+            prefix = (
+                f"targ_px{TARG_PX_X}_int_{method}_param_{param}_frame{frame:02d}"
             )
-
-        with Pool(
-            NUM_PROCESSES_RUN,
-            initializer=init_worker,
-            initargs=initargs,
-        ) as pool:
+            if not FORCE_RENDER_OVER and image_outputs_complete(output_dir, prefix):
+                print(f"    frame {frame:02d}: outputs exist; skipping.")
+                continue
+            tasks = [(*task, frame) for task in task_prefixes]
+            print(
+                f"    frame {frame:02d}/{disp_x.shape[1] - 1:02d}: rendering "
+                f"{pattern.pattern_type}, {method} param={param}, "
+                f"mapping={mapping_mode} ({len(tasks):,} chunk"
+                f"{'s' if len(tasks) != 1 else ''}; "
+                f"worker point cap={point_cap:,}).",
+                flush=True,
+            )
             results = timed_call(
                 timer,
                 f"{case_dir.name}_int_{method}_param_{param}_frame{frame:02d}",
                 pool.map, process_pixel_chunk, tasks,
             )
-        flat = np.empty(TARG_PX_X * TARG_PX_Y, dtype=np.float64)
-        invalid_pixels = 0
-        ill_conditioned_pixels = 0
-        skipped_pixels = 0
-        for start, end, values, invalid, ill_conditioned, skipped in results:
-            flat[start:end] = values
-            invalid_pixels += invalid
-            ill_conditioned_pixels += ill_conditioned
-            skipped_pixels += skipped
-        if invalid_pixels:
-            print(
-                f"    frame {frame:02d}: {invalid_pixels} invalid affine-map "
-                f"pixels set to BACKGROUND={BACKGROUND:g}."
-            )
-        if ill_conditioned_pixels:
-            print(
-                f"    frame {frame:02d}: {ill_conditioned_pixels} singular or "
-                "ill-conditioned affine maps set to background."
-            )
-        if skipped_pixels:
-            print(
-                f"    frame {frame:02d}: skipped {skipped_pixels} non-rigid "
-                "diskaddsat pixels; affine disk integration is unsupported."
-            )
-        if method == "analytic" and pattern.pattern_type == "diskaddsat" and (
-            skipped_pixels + invalid_pixels == TARG_PX_X * TARG_PX_Y
-        ):
-            print(f"    frame {frame:02d}: no analytic disk output written.")
-            continue
-        image = flat.reshape(TARG_PX_Y, TARG_PX_X)
-        save_image(image, output_dir, prefix)
+            flat = np.empty(TARG_PX_X * TARG_PX_Y, dtype=np.float64)
+            invalid_pixels = 0
+            ill_conditioned_pixels = 0
+            skipped_pixels = 0
+            for start, end, values, invalid, ill_conditioned, skipped in results:
+                flat[start:end] = values
+                invalid_pixels += invalid
+                ill_conditioned_pixels += ill_conditioned
+                skipped_pixels += skipped
+            if invalid_pixels:
+                print(
+                    f"    frame {frame:02d}: {invalid_pixels} invalid affine-map "
+                    f"pixels set to BACKGROUND={BACKGROUND:g}."
+                )
+            if ill_conditioned_pixels:
+                print(
+                    f"    frame {frame:02d}: {ill_conditioned_pixels} singular or "
+                    "ill-conditioned affine maps set to background."
+                )
+            if skipped_pixels:
+                print(
+                    f"    frame {frame:02d}: skipped {skipped_pixels} non-rigid "
+                    "diskaddsat pixels; affine disk integration is unsupported."
+                )
+            if method == "analytic" and pattern.pattern_type == "diskaddsat" and (
+                skipped_pixels + invalid_pixels == TARG_PX_X * TARG_PX_Y
+            ):
+                print(f"    frame {frame:02d}: no analytic disk output written.")
+                continue
+            image = flat.reshape(TARG_PX_Y, TARG_PX_X)
+            save_image(image, output_dir, prefix)
