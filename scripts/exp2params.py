@@ -161,8 +161,8 @@ GAUSSIAN_CONTINUOUS_TAIL_SIGMAS: float = 8.0
 DEFORMATION_CASES: List[str] = [
     "plate260_cam256_quad9_rigid",
     "plate260_cam256_quad9_affine",
+    "plate260_cam256_quad9_quadsaddle",
 ]
 
 # List of frames to generate and analyze (e.g. [0, 5])
 ACTIVE_FRAMES: List[int] = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10]
-

@@ -10,6 +10,7 @@
 from __future__ import annotations
 
 import csv
+import gc
 import os
 import re
 from collections import defaultdict
@@ -254,6 +255,7 @@ def _plot_four_panel(
             axis.legend(loc="lower left", fontsize=6, frameon=True, facecolor="white", edgecolor="none")
     figure.suptitle(title, fontweight="bold")
     figure.savefig(output_path, dpi=150)
+    figure.clear()
     plt.close(figure)
 
 
@@ -297,6 +299,7 @@ def _plot_limit_cuts(
         axis.legend(loc="lower left", fontsize=7, frameon=True, facecolor="white", edgecolor="none")
     figure.suptitle(title, fontweight="bold")
     figure.savefig(output_path, dpi=150)
+    figure.clear()
     plt.close(figure)
 
 
@@ -414,6 +417,8 @@ def _analyse_riley_self_convergence_frame(
                     "delta_b": float(np.mean(digitised_difference != 0.0)),
                     "max_eb": float(np.max(np.abs(digitised_difference))),
                 })
+                del digitised_difference
+            del difference
 
     rectconv_root = Path(f"{RESULTS_DIR}_rectconv") / group_name
     for interpolator, rows in rows_by_interpolator.items():
@@ -426,6 +431,8 @@ def _analyse_riley_self_convergence_frame(
         )
         digitised_rows = digitised_by_interpolator[interpolator]
         _write_analysis_figures(output_dir, frame, rows, digitised_rows, title)
+    del images, rows_by_interpolator, digitised_by_interpolator
+    gc.collect()
 
 
 def analyse_pattern(
@@ -496,8 +503,12 @@ def analyse_pattern(
                     "delta_b": float(np.mean(digitised_difference != 0.0)),
                     "max_eb": float(np.max(np.abs(digitised_difference))),
                 })
+                del digitised_difference
+            del difference, image
         if not frame_rows:
             print(f"    No completed clamped Riley outputs; skipping plots.")
+            del completed_images, reference_image, reference
+            gc.collect()
             continue
         for interpolator in sorted({str(row["Interpolator"]) for row in frame_rows}):
             output_dir = RESULTS_DIR / group_name / interpolator
@@ -526,6 +537,10 @@ def analyse_pattern(
         _analyse_riley_self_convergence_frame(
             runs, frame, group_name, completed_images
         )
+        del completed_images, frame_rows, frame_digitised_rows
+        del reference_image, reference
+        plt.close("all")
+        gc.collect()
     group_dir = RESULTS_DIR / group_name
     group_dir.mkdir(parents=True, exist_ok=True)
     _write_rows(group_dir / "summary.csv", rows)
@@ -568,6 +583,7 @@ def main() -> None:
                             timer, f"{case_name}_{tag}", analyse_pattern,
                             case_name, pattern_type, tag, frames, allowed_interpolators,
                         ))
+                        gc.collect()
     _write_rows(RESULTS_DIR / "summary.csv", all_rows)
     print(f"\nSaved overall summary: {RESULTS_DIR / 'summary.csv'}")
     print("Experiment 2 Riley floating-texture analysis completed.")

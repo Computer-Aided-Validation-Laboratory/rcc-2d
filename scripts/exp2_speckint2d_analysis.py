@@ -10,6 +10,7 @@
 from __future__ import annotations
 
 import csv
+import gc
 import re
 from collections import defaultdict
 from pathlib import Path
@@ -165,8 +166,11 @@ def analyse_group(group_name: str, jobs: dict[tuple[str, int], Path]) -> list[di
                     float_data[method]["e_f64"].append(e_f64)
                     float_data[method]["e_inf"].append(e_inf)
                 rows.append({"Group": group_name, "Frame": frame, "BitDepth": bit_depth, "Method": method, "Param": param, "Samples": samples, "Reference": f"{ref_method}:{ref_param}", "e_f64": e_f64, "e_inf": e_inf, "e_b": e_b, "delta_b": delta_b, "max_eb": max_eb})
+                del image, image_float, image_digitised, float_diff, digitised_diff
         path = plot_bespoke_four_panel(group_name, frame, ref_name, output_dir, float_data, digitised_data, sorted(references))
         print(f"Saved {path}")
+        del references, float_data, digitised_data
+        gc.collect()
     _write_rows(output_dir / "summary.csv", rows)
     return rows
 
@@ -236,6 +240,7 @@ def analyse_rectangular_self_convergence(
                     float_data["rect"]["e_f64"].append(e_f64)
                     float_data["rect"]["e_inf"].append(e_inf)
                 frame_rows.append({"Group": group_name, "Frame": frame, "BitDepth": bit_depth, "Method": "rect", "Param": param, "Samples": samples, "Reference": f"rect:{ref_param}", "e_f64": e_f64, "e_inf": e_inf, "e_b": e_b, "delta_b": delta_b, "max_eb": max_eb})
+                del image, image_float, image_digitised, float_diff, digitised_diff
         if frame_rows:
             plot_bespoke_four_panel(
                 group_name,
@@ -247,6 +252,8 @@ def analyse_rectangular_self_convergence(
                 sorted(references),
             )
             rows.extend(frame_rows)
+        del references, float_data, digitised_data, frame_rows
+        gc.collect()
     _write_rows(output_dir / "summary.csv", rows)
     return rows
 
@@ -262,6 +269,7 @@ def main() -> None:
         print(f"Analysing {group_name}")
         all_rows.extend(timed_call(timer, group_name, analyse_group, group_name, jobs))
         rectconv_rows.extend(timed_call(timer, f"{group_name}_rectconv", analyse_rectangular_self_convergence, group_name, jobs))
+        gc.collect()
     _write_rows(RESULTS_DIR / "summary.csv", all_rows)
     _write_rows(rectconv_dir / "summary.csv", rectconv_rows)
     print("Experiment 2 grid analysis completed.")

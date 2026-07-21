@@ -7,6 +7,7 @@
 # Authors: scepticalrabbit (Lloyd Fletcher)
 # --------------------------------------------------------------------------
 
+import gc
 import os
 import sys
 import shutil
@@ -180,6 +181,7 @@ def _plot_texture_oversample_metrics(
     figure.tight_layout(rect=(0, 0, 1, 0.86))
     suffix = f"_b{bit_depth:02d}" if bit_depth is not None else ""
     figure.savefig(output_dir / f"{case_name}_tex_oversamp_{group_name}{suffix}_metrics_frame{frame:02d}.png", dpi=150)
+    figure.clear()
     plt.close(figure)
 
 
@@ -261,6 +263,7 @@ def _plot_texture_ssaa_metrics(
     figure.tight_layout(rect=(0, 0, 1, 0.86))
     suffix = f"_b{bit_depth:02d}" if bit_depth is not None else ""
     figure.savefig(output_dir / f"{case_name}_tex_ssaa_{group_name}{suffix}_metrics_frame{frame:02d}.png", dpi=150)
+    figure.clear()
     plt.close(figure)
 
 
@@ -339,6 +342,7 @@ def _plot_texture_limit_curves(
         axis.legend(loc="lower left", fontsize=6)
     figure.suptitle(f"Texture Limiting Convergence Curves: {case_name} (Frame {frame:02d})\nReference: analytic renderer", fontweight="bold")
     figure.savefig(output_dir / f"{case_name}_tex_limits_metrics_frame{frame:02d}.png", dpi=150)
+    figure.clear()
     plt.close(figure)
 
 
@@ -481,6 +485,7 @@ def _write_function_analysis_figure(
         fontweight="bold",
     )
     figure.savefig(output_dir / f"{case_name}_func_metrics_frame{frame:02d}.png", dpi=150)
+    figure.clear()
     plt.close(figure)
 
 
@@ -519,6 +524,7 @@ def analyze_riley_case(case_name: str, tex_interp: str) -> None:
             print(
                 f"Warning: Reference not found for Frame {ff:02d}. Skipping."
             )
+            gc.collect()
             continue
 
         # Data structures for Plotting
@@ -549,6 +555,8 @@ def analyze_riley_case(case_name: str, tex_interp: str) -> None:
         gauss_params = [2, 4, 8, 16, 32, 64, 128]
 
         for method, params in [("rect", rect_params), ("gauss", gauss_params)]:
+            if ANALYSIS_MODE not in {"func", "both"}:
+                continue
             for param in params:
                 samples = param * param
                 for bb in BIT_DEPTHS:
@@ -581,6 +589,7 @@ def analyze_riley_case(case_name: str, tex_interp: str) -> None:
                         custom_data[bb][method]["e_inf"].append(e_inf)
                         custom_data[bb][method]["delta_b"].append(delta_b)
                         custom_data[bb][method]["max_eb"].append(max_eb)
+                        del img_float, diff, img_dig, diff_dig
 
         # 2. Riley, Func Data
         riley_func = {
@@ -597,6 +606,8 @@ def analyze_riley_case(case_name: str, tex_interp: str) -> None:
         # Load Riley, Func data
         func_dir_base = RILEY_FUNC_DIR / case_name
         for ss in SSAA_LEVELS:
+            if ANALYSIS_MODE not in {"func", "both"}:
+                continue
             samples = ss * ss
             for bb in BIT_DEPTHS:
                 if bb not in ref_float_by_bb:
@@ -623,6 +634,7 @@ def analyze_riley_case(case_name: str, tex_interp: str) -> None:
                     riley_func[bb]["e_inf"].append(e_inf)
                     riley_func[bb]["delta_b"].append(delta_b)
                     riley_func[bb]["max_eb"].append(max_eb)
+                    del img_float, diff, img_dig, diff_dig
 
         # 3. Riley Texture Shader Data
         riley_tex = {
@@ -642,6 +654,8 @@ def analyze_riley_case(case_name: str, tex_interp: str) -> None:
         # Load Riley Texture Shader data
         riley_texture_sample_count = 0
         for ss in SSAA_LEVELS:
+            if ANALYSIS_MODE not in {"tex", "both"}:
+                continue
             samples = ss * ss
             for bb in BIT_DEPTHS:
                 if bb not in ref_float_by_bb:
@@ -673,6 +687,7 @@ def analyze_riley_case(case_name: str, tex_interp: str) -> None:
                         r_tex["delta_b"].append(delta_b)
                         r_tex["max_eb"].append(max_eb)
                         riley_texture_sample_count += 1
+                        del img_float, diff, img_dig, diff_dig
 
         if ANALYSIS_MODE == "tex" and riley_texture_sample_count == 0:
             print(
@@ -693,6 +708,12 @@ def analyze_riley_case(case_name: str, tex_interp: str) -> None:
                 float_bit_depth,
             )
         if ANALYSIS_MODE in {"tex", "func", "both"}:
+            # Every array loaded for this frame is now represented by scalar
+            # metrics in the written figures.  Release its backing storage
+            # before loading the next frame.
+            del ref_float_by_bb, ref_dig_by_bb, custom_data, riley_func, riley_tex
+            plt.close("all")
+            gc.collect()
             continue
 
         # ------------------------------------------------------------------
@@ -1447,55 +1468,46 @@ def analyse_riley_self_convergence(
         return
     output_dir.mkdir(parents=True, exist_ok=True)
     for frame in ACTIVE_FRAMES:
-        series: dict[str, dict[int, dict[int, tuple[np.ndarray, np.ndarray]]]] = {}
-        if mode == "func":
-            series["Riley, Func"] = {
-                bit_depth: {
-                    ssaa: image
-                    for ssaa in SSAA_LEVELS
-                    if (
-                        image := _load_riley_pair(
-                            RILEY_FUNC_DIR / case_name / f"ss{ssaa}_b{bit_depth}" / f"image_c00_f{frame:02d}.npy",
-                            RILEY_FUNC_DIR / case_name / f"ss{ssaa}_b{bit_depth}" / f"cam0_frame{frame}_field0.tiff",
-                            bit_depth,
-                        )
-                    ) is not None
-                }
-                for bit_depth in BIT_DEPTHS
-            }
-        else:
-            for oversamp in TEX_OVERSAMPLES:
-                series[f"Riley, Tex, OS={oversamp}"] = {
-                    bit_depth: {
-                        ssaa: image
-                        for ssaa in SSAA_LEVELS
-                        if (
-                            image := _load_riley_pair(
-                                RILEY_TEX_DIR
-                                / f"{case_name}_{tex_interp}"
-                                / f"ss{ssaa}_b{bit_depth}_oversamp{oversamp}"
-                                / f"image_c00_f{frame:02d}.npy",
-                                RILEY_TEX_DIR
-                                / f"{case_name}_{tex_interp}"
-                                / f"ss{ssaa}_b{bit_depth}_oversamp{oversamp}"
-                                / f"cam0_frame{frame}_field0.tiff",
-                                bit_depth,
-                            )
-                        ) is not None
-                    }
-                    for bit_depth in BIT_DEPTHS
-                }
-
+        sources = (
+            [("Riley, Func", None)]
+            if mode == "func"
+            else [(f"Riley, Tex, OS={oversamp}", oversamp) for oversamp in TEX_OVERSAMPLES]
+        )
+        labels = [label for label, _ in sources]
         records = []
-        for label, by_bit_depth in series.items():
-            for bit_depth, images in by_bit_depth.items():
-                if len(images) < 2:
+        for label, oversamp in sources:
+            for bit_depth in BIT_DEPTHS:
+                def pair_paths(ssaa: int) -> tuple[Path, Path]:
+                    if oversamp is None:
+                        directory = RILEY_FUNC_DIR / case_name / f"ss{ssaa}_b{bit_depth}"
+                    else:
+                        directory = (
+                            RILEY_TEX_DIR / f"{case_name}_{tex_interp}"
+                            / f"ss{ssaa}_b{bit_depth}_oversamp{oversamp}"
+                        )
+                    return (
+                        directory / f"image_c00_f{frame:02d}.npy",
+                        directory / f"cam0_frame{frame}_field0.tiff",
+                    )
+
+                available_ssaa = [
+                    ssaa for ssaa in SSAA_LEVELS
+                    if all(path.exists() for path in pair_paths(ssaa))
+                ]
+                if len(available_ssaa) < 2:
                     continue
-                ref_ssaa = max(images)
-                ref_float, ref_digitised = images[ref_ssaa]
-                for ssaa, (image_float, image_digitised) in images.items():
+                ref_ssaa = max(available_ssaa)
+                reference = _load_riley_pair(*pair_paths(ref_ssaa), bit_depth)
+                if reference is None:
+                    continue
+                ref_float, ref_digitised = reference
+                for ssaa in available_ssaa:
                     if ssaa == ref_ssaa:
                         continue
+                    image = _load_riley_pair(*pair_paths(ssaa), bit_depth)
+                    if image is None:
+                        continue
+                    image_float, image_digitised = image
                     float_diff = image_float - ref_float
                     digitised_diff = image_digitised - ref_digitised
                     records.append(
@@ -1510,14 +1522,18 @@ def analyse_riley_self_convergence(
                             "max_eb": float(np.max(np.abs(digitised_diff))),
                         }
                     )
+                    del image_float, image_digitised, float_diff, digitised_diff
+                del ref_float, ref_digitised
         if not records:
             print(f"Warning: {case_name}, frame {frame:02d}: insufficient Riley SSAA data for self convergence.")
+            del records, labels
+            gc.collect()
             continue
 
         fig, axes = plt.subplots(2, 2, figsize=(14, 10))
         preferred_bit_depth = 16 if 16 in BIT_DEPTHS else max(BIT_DEPTHS)
         colors = plt.rcParams["axes.prop_cycle"].by_key()["color"]
-        for index, label in enumerate(series):
+        for index, label in enumerate(labels):
             color = colors[index % len(colors)]
             float_records = [
                 record for record in records
@@ -1573,7 +1589,7 @@ def analyse_riley_self_convergence(
             )
             axis.grid(True, which="both", ls="--", alpha=0.4)
         handles = []
-        for index, label in enumerate(series):
+        for index, label in enumerate(labels):
             reference_ssaa = max(
                 record["ref_ssaa"] for record in records if record["label"] == label
             )
@@ -1609,7 +1625,10 @@ def analyse_riley_self_convergence(
         fig.tight_layout(rect=(0, 0, 1, 0.86))
         prefix = "func" if mode == "func" else "tex"
         fig.savefig(output_dir / f"{case_name}_{prefix}_self_convergence_frame{frame:02d}.png", dpi=150)
+        fig.clear()
         plt.close(fig)
+        del records, labels
+        gc.collect()
 
 
 def main() -> None:
@@ -1664,6 +1683,8 @@ def main() -> None:
                 tex_interp,
                 self_convergence_dir,
             )
+            plt.close("all")
+            gc.collect()
 
     print("\nRiley analysis completed successfully.")
 

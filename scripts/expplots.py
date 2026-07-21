@@ -141,5 +141,8 @@ def plot_bespoke_four_panel(
     figure.suptitle(f"{case_name} (Frame {frame:02d}) | Reference: {reference_name}", fontweight="bold")
     path = output_dir / f"{case_name}_metrics_frame{frame:02d}.png"
     figure.savefig(path, dpi=150)
+    # Matplotlib keeps artist/renderer cycles until the figure is cleared.
+    # These analyses create many figures, so break those references promptly.
+    figure.clear()
     plt.close(figure)
     return path
