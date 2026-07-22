@@ -32,6 +32,8 @@ from exp2params import (
     additive_jitter_for,
     RANDOM_SEED,
     RILEY_RASTER_THREADS,
+    PSF_SIGMA_FINAL_PX,
+    PSF_SUPPORT_SIGMAS,
     RILEY_SSAA_LEVLES,
     TEX_OVERSAMPLES,
     TEX_INTERPOLATORS,
@@ -41,8 +43,9 @@ from exp2params import (
     TARG_PX_Y,
     exp2_output_dir,
 )
+from psf_riley_common import camera_kwargs, enabled as psf_enabled
 
-OUTPUT_ROOT = exp2_output_dir("exp2_riley_render_texfloat")
+OUTPUT_ROOT = exp2_output_dir("exp2_riley_render_texfloat_psf" if psf_enabled() else "exp2_riley_render_texfloat")
 
 
 def get_ssaa_levels() -> list[int]:
@@ -204,7 +207,8 @@ def main() -> None:
         roi_pos = tuple(riley.roi_cent_from_coords(roi_coords))
         mesh_type = get_riley_mesh_type(connect.shape[1])
 
-        for pattern_type in ANALYTIC_SPECKLE_TYPES:
+        pattern_types = ["diskaddsat"] if psf_enabled() else ANALYTIC_SPECKLE_TYPES
+        for pattern_type in pattern_types:
             for black_fraction in BLACK_AREA_FRACTIONS:
                 for distribution, fraction in (additive_jitter_for(pattern_type),):
                         tag = pattern_tag(
@@ -267,6 +271,7 @@ def main() -> None:
                                         focal_length=1000.0,
                                         sub_sample=ssaa,
                                         coord_sys=riley.CameraCoordSys.opengl,
+                                        **camera_kwargs(PSF_SIGMA_FINAL_PX, PSF_SUPPORT_SIGMAS),
                                     )
                                     config = riley.create_raster_config(
                                         num_frames=num_frames,

@@ -34,12 +34,19 @@ EXP1_RENDER_SCRIPTS = (
     "exp1_riley_render_func_uvs.py",
     "exp1_riley_render_texfloat_uvs.py",
     "exp1_riley_render_texuint_uvs.py",
+    "exp1_gridint2d_numerical_render_uvs_psf.py",
+    "exp1_riley_render_func_uvs_psf.py",
+    "exp1_riley_render_texfloat_uvs_psf.py",
+    # "exp1_riley_render_texuint_uvs_psf.py",
 )
 EXP2_RENDER_SCRIPTS = (
     "exp2_texgen_speckle_analytic.py",
     "exp2_speckint2d_render_uvs.py",
     "exp2_riley_render_texfloat.py",
     "exp2_riley_render_texuint.py",
+    "exp2_speckint2d_render_uvs_psf.py",
+    "exp2_riley_render_texfloat_psf.py",
+    # "exp2_riley_render_texuint_psf.py",
 )
 
 

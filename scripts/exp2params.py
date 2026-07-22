@@ -107,6 +107,11 @@ FORCE_RENDER_OVER: bool = False
 
 BACKGROUND: float = 0.5
 TEX_PX_PAD: int = 4
+# Image-plane camera PSF, expressed in final rendered-image pixels.  The
+# finite support is explicit so the bespoke raster and Riley use the same
+# sampled, normalised Gaussian kernel.
+PSF_SIGMA_FINAL_PX: float = 1.0
+PSF_SUPPORT_SIGMAS: float = 4.0
 BIT_DEPTHS: List[int] = [8, 12, 16]
 NUM_PROCESSES: int = CORES
 # Limit quadrature points held by each bespoke-renderer worker.  Exp2 keeps

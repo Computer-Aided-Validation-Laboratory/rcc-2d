@@ -23,6 +23,8 @@ from exp1params import (
     DEFORMATION_CASES,
     FORCE_RENDER_OVER,
     RILEY_RASTER_THREADS,
+    PSF_SIGMA_FINAL_PX,
+    PSF_SUPPORT_SIGMAS,
     SSAA_LEVELS,
     TARG_PX_X,
     TARG_PX_Y,
@@ -32,9 +34,9 @@ from exp1params import (
     TEXTURE_OUTPUT_DIR,
     exp1_output_dir,
 )
+from psf_riley_common import camera_kwargs, enabled as psf_enabled
 
-
-OUTPUT_ROOT = exp1_output_dir("exp1_riley_render_texfloat")
+OUTPUT_ROOT = exp1_output_dir("exp1_riley_render_texfloat_psf" if psf_enabled() else "exp1_riley_render_texfloat")
 
 
 def get_ssaa_levels() -> list[int]:
@@ -266,6 +268,7 @@ def main() -> None:
                             focal_length=1000.0,
                             sub_sample=ssaa,
                             coord_sys=riley.CameraCoordSys.opengl,
+                            **camera_kwargs(PSF_SIGMA_FINAL_PX, PSF_SUPPORT_SIGMAS),
                         )
                         config = riley.create_raster_config(
                             num_frames=num_frames,

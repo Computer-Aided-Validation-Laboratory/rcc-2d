@@ -1,0 +1,5 @@
+"""Explicit Exp1 Riley digitised-texture entry point with camera PSF enabled."""
+import os
+os.environ["RCC_ENABLE_PSF"] = "1"
+from exp1_riley_render_texuint_uvs import main
+if __name__ == "__main__": main()

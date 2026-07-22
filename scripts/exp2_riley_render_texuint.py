@@ -32,6 +32,8 @@ from exp2params import (
     DEFORMATION_CASES,
     FORCE_RENDER_OVER,
     RILEY_RASTER_THREADS,
+    PSF_SIGMA_FINAL_PX,
+    PSF_SUPPORT_SIGMAS,
     TEX_INTERPOLATORS,
     TEX_PX_PAD,
     TEXTURE_OUTPUT_DIR,
@@ -39,6 +41,7 @@ from exp2params import (
     TARG_PX_Y,
     exp2_output_dir,
 )
+from psf_riley_common import camera_kwargs, enabled as psf_enabled
 from exp2_riley_render_texfloat import (
     compute_texture_world_uvs,
     get_riley_mesh_type,
@@ -55,7 +58,7 @@ from script_timing import ScriptTimer, timed_call
 # Exp2 deliberately creates large oversampled textures.  They are local,
 # trusted data, so Pillow's decompression-bomb safeguard is not applicable.
 Image.MAX_IMAGE_PIXELS = None
-OUTPUT_ROOT = exp2_output_dir("exp2_riley_render_texuint")
+OUTPUT_ROOT = exp2_output_dir("exp2_riley_render_texuint_psf" if psf_enabled() else "exp2_riley_render_texuint")
 
 
 def get_bit_depths() -> list[int]:
@@ -129,7 +132,8 @@ def main() -> None:
         mesh_type = get_riley_mesh_type(connect.shape[1])
         case_name = output_case_name(case_path.name, TARG_PX_X)
 
-        for pattern_type in ANALYTIC_SPECKLE_TYPES:
+        pattern_types = ["diskaddsat"] if psf_enabled() else ANALYTIC_SPECKLE_TYPES
+        for pattern_type in pattern_types:
             for black_fraction in BLACK_AREA_FRACTIONS:
                 distribution, fraction = additive_jitter_for(pattern_type)
                 tag = pattern_tag(pattern_type, black_fraction, distribution, fraction)
@@ -177,6 +181,7 @@ def main() -> None:
                                     pos_world=camera_pos, rot_world=(0.0, 0.0, 0.0),
                                     roi_cent_world=roi_pos, focal_length=1000.0,
                                     sub_sample=ssaa, coord_sys=riley.CameraCoordSys.opengl,
+                                    **camera_kwargs(PSF_SIGMA_FINAL_PX, PSF_SUPPORT_SIGMAS),
                                 )
                                 config = riley.create_raster_config(
                                     num_frames=num_frames,
