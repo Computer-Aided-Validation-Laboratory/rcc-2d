@@ -35,26 +35,12 @@ def _render_horizontal_band(task: tuple[int, int, int]) -> tuple[int, int, np.nd
     y = c["y"]  # type: ignore[index]
     background = c["background"]  # type: ignore[index]
     xx, yy = np.meshgrid(x, y[row_start:row_stop])
-    # Riley treats its camera-frame halo as unshaded zero/background.
-    in_camera_y = (row_start >= radius and row_stop <= raw_h - radius)
-    if not in_camera_y:
-        values = np.full(xx.size, background, dtype=np.float64)
-        valid_rows = (np.arange(row_start, row_stop) >= radius) & (np.arange(row_start, row_stop) < raw_h - radius)
-        if np.any(valid_rows):
-            yy_in = yy[valid_rows]
-            xx_in = xx[valid_rows]
-            xr, yr, valid = _map_reference(xx_in.ravel(), yy_in.ravel(), c["coords"], c["connect"], c["disp_x"], c["disp_y"], frame, c["mapping_mode"])  # type: ignore[index]
-            sub = np.full(xr.size, c["invalid_value"], dtype=np.float64)  # type: ignore[index]
-            if np.any(valid): sub[valid] = c["evaluate_reference"](xr[valid], yr[valid])  # type: ignore[index,operator]
-            values.reshape(row_stop-row_start, raw_w)[valid_rows] = sub.reshape(np.count_nonzero(valid_rows), raw_w)
-    else:
-        xr, yr, valid = _map_reference(xx.ravel(), yy.ravel(), c["coords"], c["connect"], c["disp_x"], c["disp_y"], frame, c["mapping_mode"])  # type: ignore[index]
-        values = np.full(xr.size, c["invalid_value"], dtype=np.float64)  # type: ignore[index]
-        if np.any(valid): values[valid] = c["evaluate_reference"](xr[valid], yr[valid])  # type: ignore[index,operator]
+    # The scratch raster includes the full PSF support outside the final image.
+    # Map and shade those samples too; only crop after PSF convolution.
+    xr, yr, valid = _map_reference(xx.ravel(), yy.ravel(), c["coords"], c["connect"], c["disp_x"], c["disp_y"], frame, c["mapping_mode"])  # type: ignore[index]
+    values = np.full(xr.size, c["invalid_value"], dtype=np.float64)  # type: ignore[index]
+    if np.any(valid): values[valid] = c["evaluate_reference"](xr[valid], yr[valid])  # type: ignore[index,operator]
     raw = values.reshape(row_stop-row_start, raw_w)
-    if c["camera_frame_halo_background"] and radius:  # type: ignore[index]
-        raw[:, :radius] = background
-        raw[:, -radius:] = background
     filtered = _horizontal_filter(raw, c["kernel"], background)  # type: ignore[index]
     width = c["final_shape"][1]  # type: ignore[index]
     core = filtered[:, radius:radius + width * ssaa]
@@ -133,7 +119,6 @@ def render_psf_frame(
     frame: int,
     mapping_mode: str,
     max_points_per_batch: int = 250_000,
-    camera_frame_halo_background: bool = True,
     processes: int | None = None,
 ) -> np.ndarray:
     """Shade, filter, and pixel-integrate one camera frame.
@@ -163,7 +148,6 @@ def render_psf_frame(
         "kernel": kernel, "final_shape": image_shape, "evaluate_reference": evaluate_reference,
         "coords": coords, "connect": connect, "disp_x": disp_x, "disp_y": disp_y,
         "mapping_mode": mapping_mode,
-        "camera_frame_halo_background": camera_frame_halo_background,
     }
     workers = max(1, int(os.environ.get("ORTHO_PSF_PROCESSES", str(processes or 1))))
     # Linux fork keeps immutable geometry/pattern arrays resident without

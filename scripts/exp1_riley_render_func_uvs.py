@@ -181,7 +181,8 @@ def main() -> None:
                 )
                 case_out = out_base / f"ss{ss}_b{bb}"
                 case_out.mkdir(parents=True, exist_ok=True)
-                if not FORCE_RENDER_OVER and render_exists(case_out, num_frames):
+                force_render = FORCE_RENDER_OVER or os.environ.get("EXP1_FORCE_RENDER_OVER") == "1"
+                if not force_render and render_exists(case_out, num_frames):
                     print("    outputs exist; skipping.")
                     continue
 

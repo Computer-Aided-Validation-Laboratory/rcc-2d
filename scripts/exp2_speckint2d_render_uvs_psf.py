@@ -72,7 +72,6 @@ def main() -> None:
                         evaluate_reference=pattern.evaluate_coverage, invalid_value=0.0,
                         roi_size=roi_size, image_shape=(TARG_PX_Y, TARG_PX_X), ssaa=ssaa,
                         sigma_px=PSF_SIGMA_FINAL_PX, support_radius_px=support_px,
-                        # Match Riley's zero-valued unshaded PSF scratch samples.
                         background=0.0, coords=coords, connect=connect,
                         disp_x=disp_x, disp_y=disp_y, frame=frame, mapping_mode=mapping,
                         processes=NUM_PROCESSES,

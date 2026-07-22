@@ -70,8 +70,6 @@ def main() -> None:
                     evaluate_reference=eggbox, invalid_value=0.0, roi_size=roi_size,
                     image_shape=(TARG_PX_Y, TARG_PX_X), ssaa=ssaa,
                     sigma_px=PSF_SIGMA_FINAL_PX, support_radius_px=support_px,
-                    # Riley leaves unshaded scratch samples at zero before the
-                    # PSF resolver; retain that camera-edge convention exactly.
                     background=0.0, coords=coords, connect=connect, disp_x=disp_x,
                     disp_y=disp_y, frame=frame, mapping_mode=mapping,
                     processes=NUM_PROCESSES,
