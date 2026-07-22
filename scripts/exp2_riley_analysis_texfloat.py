@@ -153,7 +153,10 @@ def _discover_riley_runs(
 
 def _clear_old_metric_images(output_dir: Path, frame: int) -> None:
     """Remove only obsolete pre-direct-plot output names for one frame."""
-    for stem in ("metrics", "float_rmse", "float_max", "bits_delta", "bits_max", "limits_metrics"):
+    for stem in (
+        "metrics", "float_rmse", "float_max", "bits_delta", "bits_max",
+        "limits_metrics", "limit_ssaa", "limit_oversamp",
+    ):
         (output_dir / f"{stem}_frame{frame:02d}.png").unlink(missing_ok=True)
 
 
@@ -269,12 +272,16 @@ def _plot_limit_cuts(
 ) -> None:
     """Write separate limiting cuts for texture OS and raster SSAA."""
     highest_os = max(int(row["Oversamp"]) for row in float_rows)
+    lowest_os = min(int(row["Oversamp"]) for row in float_rows)
     highest_ssaa = max(int(row["SSAA"]) for row in float_rows)
+    lowest_ssaa = min(int(row["SSAA"]) for row in float_rows)
     high_os_float = sorted((row for row in float_rows if int(row["Oversamp"]) == highest_os), key=lambda row: int(row["SSAA"]))
     high_ssaa_float = sorted((row for row in float_rows if int(row["SSAA"]) == highest_ssaa), key=lambda row: int(row["Oversamp"]))
     for suffix, rows_float, x_key, fixed_key, fixed_value, fixed_name, x_label in (
-        ("ssaa", high_os_float, "SSAA", "Oversamp", highest_os, "OS", "Riley Samples Along One Pixel Axis"),
-        ("oversamp", high_ssaa_float, "Oversamp", "SSAA", highest_ssaa, "SSAA", "Texture Oversampling Along One Pixel Axis"),
+        ("max_ssaa", high_os_float, "SSAA", "Oversamp", highest_os, "OS", "Riley Samples Along One Pixel Axis"),
+        ("max_oversamp", high_ssaa_float, "Oversamp", "SSAA", highest_ssaa, "SSAA", "Texture Oversampling Along One Pixel Axis"),
+        ("min_ssaa", sorted((row for row in float_rows if int(row["Oversamp"]) == lowest_os), key=lambda row: int(row["SSAA"])), "SSAA", "Oversamp", lowest_os, "OS", "Riley Samples Along One Pixel Axis"),
+        ("min_oversamp", sorted((row for row in float_rows if int(row["SSAA"]) == lowest_ssaa), key=lambda row: int(row["Oversamp"])), "Oversamp", "SSAA", lowest_ssaa, "SSAA", "Texture Oversampling Along One Pixel Axis"),
     ):
         figure, axes = make_agg_figure(1, 2, figsize=(12, 6), constrained_layout=True)
         axes[0].plot(

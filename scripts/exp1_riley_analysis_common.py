@@ -60,6 +60,17 @@ def _release_figure(figure) -> None:
     release_figure(figure)
 
 
+def _set_explicit_sample_ticks(axis, values) -> None:
+    """Use completed one-axis SSAA/OS levels instead of decade tick labels."""
+    ticks = sorted({int(round(value)) for value in values if value > 0})
+    if not ticks:
+        return
+    axis.set_xscale("log")
+    axis.xaxis.set_major_locator(FixedLocator(ticks))
+    axis.xaxis.set_major_formatter(FixedFormatter([str(tick) for tick in ticks]))
+    axis.set_xlim(0.85 * ticks[0], 1.15 * ticks[-1])
+
+
 def _load_reference_for_frame(case_dir: Path, frame: int):
     """Prefer the closed-form image, otherwise the highest completed Gauss rule."""
     candidates = [("analytic", 0, "Analytic Reference")]
@@ -322,30 +333,36 @@ def _plot_texture_limit_curves(
     if not oversamp_values:
         return
     highest_os = oversamp_values[-1]
+    lowest_os = oversamp_values[0]
     ssaa_values = sorted(int(round(sample)) for sample in riley_tex[float_bit_depth][highest_os]["samples"])
     if not ssaa_values:
         return
     highest_ssaa = ssaa_values[-1]
+    lowest_ssaa = ssaa_values[0]
 
     def series(bit_depth: int, oversamp: int, metric: str):
         values = riley_tex[bit_depth][oversamp]
         return sorted(zip(values["samples"], values[metric]))
 
-    def fixed_ssaa_points(bit_depth: int, metric: str):
+    def fixed_ssaa_points_at(ssaa: int, bit_depth: int, metric: str):
         points = []
         for oversamp in oversamp_values:
             values = riley_tex[bit_depth][oversamp]
             for index, sample in enumerate(values["samples"]):
-                if int(round(sample)) == highest_ssaa:
+                if int(round(sample)) == ssaa:
                     points.append((oversamp, values[metric][index]))
                     break
         return points
 
     cuts = (
-        ("ssaa", highest_os, "OS", "Riley Samples Along One Pixel Axis",
+        ("max_ssaa", highest_os, "OS", "Riley Samples Along One Pixel Axis",
          lambda bit_depth, metric: series(bit_depth, highest_os, metric)),
-        ("oversamp", highest_ssaa, "SSAA", "Texture Oversampling Along One Pixel Axis",
-         fixed_ssaa_points),
+        ("max_oversamp", highest_ssaa, "SSAA", "Texture Oversampling Along One Pixel Axis",
+         lambda bit_depth, metric: fixed_ssaa_points_at(highest_ssaa, bit_depth, metric)),
+        ("min_ssaa", lowest_os, "OS", "Riley Samples Along One Pixel Axis",
+         lambda bit_depth, metric: series(bit_depth, lowest_os, metric)),
+        ("min_oversamp", lowest_ssaa, "SSAA", "Texture Oversampling Along One Pixel Axis",
+         lambda bit_depth, metric: fixed_ssaa_points_at(lowest_ssaa, bit_depth, metric)),
     )
     for suffix, fixed_value, fixed_name, xlabel, point_getter in cuts:
         figure, axes = _make_figure(
@@ -359,6 +376,7 @@ def _plot_texture_limit_curves(
         axes[0].set_title("Floating-Point Maximum Error")
         axes[0].set_ylabel("Max error")
         axes[0].set_xlabel(xlabel)
+        _set_explicit_sample_ticks(axes[0], [point[0] for point in float_points])
         axes[0].grid(True, which="both", ls="--", alpha=0.4)
         axes[0].legend(loc="lower left", fontsize=7)
         for bit_depth in BIT_DEPTHS:
@@ -374,6 +392,10 @@ def _plot_texture_limit_curves(
         axes[1].set_title("Maximum Digitised Mismatch")
         axes[1].set_ylabel("LSB levels")
         axes[1].set_xlabel(xlabel)
+        _set_explicit_sample_ticks(
+            axes[1],
+            [point[0] for bit_depth in BIT_DEPTHS for point in point_getter(bit_depth, "max_eb")],
+        )
         axes[1].grid(True, which="both", ls="--", alpha=0.4)
         axes[1].legend(loc="lower left", fontsize=6)
         figure.suptitle(
@@ -401,7 +423,8 @@ def _write_texture_analysis_figures(
     # Clear obsolete output names left by older versions of this analysis.
     for suffix in (
         "tex_metrics", "tex_oversamp_metrics", "tex_float_rmse", "tex_float_max",
-        "tex_bits", "tex_max_eb", "tex_limits_metrics",
+        "tex_bits", "tex_max_eb", "tex_limits_metrics", "tex_limit_ssaa",
+        "tex_limit_oversamp",
     ):
         (output_dir / f"{case_name}_{suffix}_frame{frame:02d}.png").unlink(
             missing_ok=True
@@ -476,6 +499,18 @@ def _write_function_analysis_figure(
         values = riley_func[bit_depth] if method == "func" else custom_data[bit_depth][method]
         return sorted(zip(values["samples"], values[metric]))
 
+    sample_ticks = sorted(
+        {
+            int(round(sample))
+            for bit_depth in BIT_DEPTHS
+            for method in ("rect", "gauss", "func")
+            for sample in (
+                riley_func[bit_depth]["samples"]
+                if method == "func" else custom_data[bit_depth][method]["samples"]
+            )
+        }
+    )
+
     for method, label, color, marker, linestyle in styles:
         for axis, metric in ((axes[0, 0], "e_f64"), (axes[0, 1], "e_inf")):
             points = series(method, float_bit_depth, metric)
@@ -518,6 +553,7 @@ def _write_function_analysis_figure(
     ):
         axis.set_title(title)
         axis.set_xlabel("Samples Along One Pixel Axis")
+        _set_explicit_sample_ticks(axis, sample_ticks)
         axis.grid(True, which="both", ls="--", alpha=0.4)
         axis.set_ylabel(ylabel)
         handles, _ = axis.get_legend_handles_labels()
