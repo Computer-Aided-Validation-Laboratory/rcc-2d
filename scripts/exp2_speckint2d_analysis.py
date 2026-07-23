@@ -32,13 +32,14 @@ from script_timing import ScriptTimer, timed_call
 
 
 RESULTS_DIR = exp2_output_dir("exp2_speckint2d_analysis")
+RENDER_SUFFIX = ""
 JOB_RE = re.compile(
-    r"^(?P<pattern>.+)_int_(?P<method>analytic|rect|gauss|mc)_param_(?P<param>\d+)$"
+    r"^(?P<pattern>.+)_int_(?P<method>analytic|rect|gauss|mc)_param_(?P<param>\d+)(?P<suffix>_psf)?$"
 )
 
 
 def _image_pair(directory: Path, method: str, param: int, bit_depth: int, frame: int):
-    prefix = f"targ_px{TARG_PX_X}_int_{method}_param_{param}_frame{frame:02d}"
+    prefix = f"targ_px{TARG_PX_X}_int_{method}_param_{param}{RENDER_SUFFIX}_frame{frame:02d}"
     npy_path = directory / f"{prefix}.npy"
     tiff_path = directory / f"{prefix}_b{bit_depth}.tiff"
     if npy_path.exists() and tiff_path.exists():
@@ -73,6 +74,8 @@ def _discover_jobs() -> dict[str, dict[tuple[str, int], Path]]:
                 continue
             match = JOB_RE.match(directory.name[len(prefix):])
             if match is None:
+                continue
+            if match.group("suffix") != RENDER_SUFFIX:
                 continue
             group_name = f"{case_name}_{match.group('pattern')}"
             groups[group_name][(match.group("method"), int(match.group("param")))] = directory

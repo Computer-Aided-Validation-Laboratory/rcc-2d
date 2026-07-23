@@ -45,6 +45,7 @@ RILEY_TEX_DIR = exp1_output_dir("exp1_riley_render_texuint")
 RESULTS_DIR_FUNC = exp1_output_dir("exp1_riley_analysis_func_world")
 RESULTS_DIR_TEX = exp1_output_dir("exp1_riley_analysis_texuint")
 ANALYSIS_MODE = "both"
+CUSTOM_RENDER_SUFFIX = ""
 
 
 def _make_figure(
@@ -73,7 +74,13 @@ def _set_explicit_sample_ticks(axis, values) -> None:
 
 def _load_reference_for_frame(case_dir: Path, frame: int):
     """Prefer the closed-form image, otherwise the highest completed Gauss rule."""
-    candidates = [("analytic", 0, "Analytic Reference")]
+    if CUSTOM_RENDER_SUFFIX:
+        candidates = [
+            ("rect", param, f"Rectangular SSAA Reference ({param}x{param})")
+            for param in sorted((p for method, p in INTEGRATION_METHODS if method == "rect"), reverse=True)
+        ]
+    else:
+        candidates = [("analytic", 0, "Analytic Reference")]
     candidates.extend(
         ("gauss", param, f"Gauss Quadrature Reference ({param}x{param})")
         for param in sorted(
@@ -88,7 +95,7 @@ def _load_reference_for_frame(case_dir: Path, frame: int):
             maximum = float(2**bit_depth - 1)
             prefix = (
                 f"targ_px{TARG_PX_X}_int_{method}_param_{param}"
-                f"_b{bit_depth}_frame{frame:02d}"
+                f"{CUSTOM_RENDER_SUFFIX}_b{bit_depth}_frame{frame:02d}"
             )
             npy_path = case_dir / f"{prefix}.npy"
             tiff_path = case_dir / f"{prefix}.tiff"
@@ -631,7 +638,7 @@ def analyze_riley_case(case_name: str, tex_interp: str) -> None:
                     max_val = float(2**bb - 1)
                     prefix = (
                         f"targ_px{TARG_PX_X}_int_{method}_param_{param}"
-                        f"_b{bb}_frame{ff:02d}"
+                        f"{CUSTOM_RENDER_SUFFIX}_b{bb}_frame{ff:02d}"
                     )
                     npy_path = case_dir / f"{prefix}.npy"
                     tiff_path = case_dir / f"{prefix}.tiff"

@@ -11,9 +11,10 @@ from pathlib import Path
 from typing import List, Tuple
 
 import riley
+from exp0params_common import (
+    CORES, FORCE_RENDER_OVER, NUM_PROCESSES, RILEY_RASTER_THREADS, TEST_RUN,
+)
 
-CORES: int = 8
-TEST_RUN: bool = True
 
 if TEST_RUN:
     TEX_SSAA_LEVELS: List[int] = [1, 2, 4, 8, 16, 32, 64, 128] 
@@ -103,7 +104,6 @@ def exp2_output_dir(name: str) -> Path:
 OUTPUT_DIR: Path = exp2_output_dir("exp2_speckint2d_render_uvs")
 TEXTURE_OUTPUT_DIR: Path = exp2_output_dir("exp2_analytic_speckle_textures")
 # Re-render existing outputs instead of skipping completed render frames.
-FORCE_RENDER_OVER: bool = False
 
 BACKGROUND: float = 0.5
 TEX_PX_PAD: int = 4
@@ -113,7 +113,6 @@ TEX_PX_PAD: int = 4
 PSF_SIGMA_FINAL_PX: float = 1.0
 PSF_SUPPORT_SIGMAS: float = 4.0
 BIT_DEPTHS: List[int] = [8, 12, 16]
-NUM_PROCESSES: int = CORES
 # Limit quadrature points held by each bespoke-renderer worker.  Exp2 keeps
 # additional pattern-coverage temporaries, hence its caps are lower than
 # Exp1's.  Retain the established 2M affine cap and use a lower VTK cap.
@@ -125,7 +124,6 @@ NEWTON_MAX_POINTS_PER_CHUNK: int = 1_000_000
 # 154 * ((tile_px + 2 * halo_px) * SSAA)^2 bytes.  With tile_size_min=1
 # and no halo: SSAA 256/512/1024 uses about 9.6/38.5/154 MiB per worker.
 # `RASTER_CHUNKS_PER_WORKER=4` schedules four work chunks, not four buffers.
-RILEY_RASTER_THREADS: int = CORES
 
 
 # Speckle pattern parameters

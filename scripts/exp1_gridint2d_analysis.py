@@ -29,10 +29,11 @@ from expplots import plot_bespoke_four_panel, samples_for_method
 from script_timing import ScriptTimer, timed_call
 
 RESULTS_DIR = exp1_output_dir("exp1_gridint2d_analysis")
+RENDER_SUFFIX = ""
 
 
 def _paths(directory: Path, method: str, param: int, bit_depth: int, frame: int) -> tuple[Path, Path]:
-    prefix = f"targ_px{TARG_PX_X}_int_{method}_param_{param}_b{bit_depth}_frame{frame:02d}"
+    prefix = f"targ_px{TARG_PX_X}_int_{method}_param_{param}{RENDER_SUFFIX}_b{bit_depth}_frame{frame:02d}"
     return directory / f"{prefix}.npy", directory / f"{prefix}.tiff"
 
 
@@ -55,7 +56,13 @@ def _empty_digitised(methods: list[str]) -> dict[int, dict[str, dict[str, list[f
 
 def _reference_for_frame(case_dir: Path, frame: int):
     """Prefer an analytic image, otherwise use the highest completed Gauss rule."""
-    candidates = [("analytic", 0, "Analytic Reference")]
+    if RENDER_SUFFIX:
+        candidates = [
+            ("rect", param, f"Rectangular SSAA Reference ({param}x{param})")
+            for param in sorted((p for method, p in INTEGRATION_METHODS if method == "rect"), reverse=True)
+        ]
+    else:
+        candidates = [("analytic", 0, "Analytic Reference")]
     candidates.extend(
         ("gauss", param, f"Gauss Quadrature Reference ({param}x{param})")
         for param in sorted(

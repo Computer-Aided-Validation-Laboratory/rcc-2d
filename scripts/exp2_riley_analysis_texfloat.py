@@ -39,6 +39,7 @@ from script_timing import ScriptTimer, timed_call
 RILEY_OUTPUT_DIR = exp2_output_dir("exp2_riley_render_texfloat")
 REFERENCE_OUTPUT_DIR = exp2_output_dir("exp2_speckint2d_render_uvs")
 RESULTS_DIR = exp2_output_dir("exp2_riley_analysis_texfloat")
+REFERENCE_SUFFIX = ""
 RUN_RE = re.compile(r"^ss(?P<ssaa>\d+)_oversamp(?P<oversamp>\d+)$")
 INTERPOLATOR_COLORS = rcParams["axes.prop_cycle"].by_key()["color"]
 OVERSAMP_MARKERS = ("o", "s", "^", "v", "<", ">", "D", "P", "X")
@@ -87,7 +88,7 @@ def pattern_tag(
 
 def _reference_path(directory: Path, method: str, param: int, frame: int) -> Path:
     return directory / (
-        f"targ_px{TARG_PX_X}_int_{method}_param_{param}_frame{frame:02d}.npy"
+        f"targ_px{TARG_PX_X}_int_{method}_param_{param}{REFERENCE_SUFFIX}_frame{frame:02d}.npy"
     )
 
 
