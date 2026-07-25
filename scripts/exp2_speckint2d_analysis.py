@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import csv
 import re
+import shutil
 from collections import defaultdict
 from pathlib import Path
 
@@ -33,6 +34,7 @@ from script_timing import ScriptTimer, timed_call
 
 RESULTS_DIR = exp2_output_dir("exp2_speckint2d_analysis")
 RENDER_SUFFIX = ""
+WRITE_RECTCONV = True
 JOB_RE = re.compile(
     r"^(?P<pattern>.+)_int_(?P<method>analytic|rect|gauss|mc)_param_(?P<param>\d+)(?P<suffix>_psf)?$"
 )
@@ -95,27 +97,19 @@ def _reference_job(
         for bit_depth in BIT_DEPTHS
     ):
         return ("analytic", 0), analytic, "Analytic Reference"
-    fallback_method = "rect" if "_diskaddsat_" in group_name else "gauss"
-    fallback_jobs = sorted(
-        (
-            (param, directory)
-            for (method, param), directory in jobs.items()
-            if method == fallback_method
-        ),
-        reverse=True,
-    )
-    for param, directory in fallback_jobs:
-        if any(
-            _image_pair(directory, fallback_method, param, bit_depth, frame)
-            is not None
-            for bit_depth in BIT_DEPTHS
-        ):
-            label = "Rectangular SSAA" if fallback_method == "rect" else "Gauss Quadrature"
-            return (
-                (fallback_method, param),
-                directory,
-                f"{label} Reference ({param}x{param})",
-            )
+    preferred = "rect" if "_diskaddsat_" in group_name else "gauss"
+    # Smooth fields prefer Gauss; sharp disks prefer rectangular SSAA.  Always
+    # try the highest rectangular SSAA afterwards as a universal fallback.
+    methods = [preferred] + ([] if preferred == "rect" else ["rect"])
+    for fallback_method in methods:
+        fallback_jobs = sorted(
+            ((param, directory) for (method, param), directory in jobs.items() if method == fallback_method),
+            reverse=True,
+        )
+        for param, directory in fallback_jobs:
+            if any(_image_pair(directory, fallback_method, param, bit_depth, frame) is not None for bit_depth in BIT_DEPTHS):
+                label = "Rectangular SSAA" if fallback_method == "rect" else "Gauss Quadrature"
+                return ((fallback_method, param), directory, f"{label} Reference ({param}x{param})")
     return None
 
 
@@ -265,16 +259,21 @@ def main() -> None:
     timer = ScriptTimer(__file__)
     RESULTS_DIR.mkdir(parents=True, exist_ok=True)
     rectconv_dir = Path(f"{RESULTS_DIR}_rectconv")
-    rectconv_dir.mkdir(parents=True, exist_ok=True)
+    if not WRITE_RECTCONV:
+        shutil.rmtree(rectconv_dir, ignore_errors=True)
+    else:
+        rectconv_dir.mkdir(parents=True, exist_ok=True)
     all_rows: list[dict[str, object]] = []
     rectconv_rows: list[dict[str, object]] = []
     for group_name, jobs in sorted(_discover_jobs().items()):
         print(f"Analysing {group_name}")
         all_rows.extend(timed_call(timer, group_name, analyse_group, group_name, jobs))
-        rectconv_rows.extend(timed_call(timer, f"{group_name}_rectconv", analyse_rectangular_self_convergence, group_name, jobs))
+        if WRITE_RECTCONV:
+            rectconv_rows.extend(timed_call(timer, f"{group_name}_rectconv", analyse_rectangular_self_convergence, group_name, jobs))
         release_batch()
     _write_rows(RESULTS_DIR / "summary.csv", all_rows)
-    _write_rows(rectconv_dir / "summary.csv", rectconv_rows)
+    if WRITE_RECTCONV:
+        _write_rows(rectconv_dir / "summary.csv", rectconv_rows)
     print("Experiment 2 grid analysis completed.")
 
 

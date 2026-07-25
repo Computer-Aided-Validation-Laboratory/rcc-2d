@@ -12,6 +12,7 @@ from __future__ import annotations
 import csv
 import os
 import re
+import shutil
 from collections import defaultdict
 from pathlib import Path
 
@@ -40,6 +41,11 @@ RILEY_OUTPUT_DIR = exp2_output_dir("exp2_riley_render_texfloat")
 REFERENCE_OUTPUT_DIR = exp2_output_dir("exp2_speckint2d_render_uvs")
 RESULTS_DIR = exp2_output_dir("exp2_riley_analysis_texfloat")
 REFERENCE_SUFFIX = ""
+WRITE_RECTCONV = True
+# The legacy bespoke Exp2 renderer and Riley share row order.  The bespoke
+# PSF renderer explicitly flips before saving its intensity image, so its
+# Riley comparisons alone need this conversion.
+RILEY_ROWS_FLIPPED = False
 RUN_RE = re.compile(r"^ss(?P<ssaa>\d+)_oversamp(?P<oversamp>\d+)$")
 INTERPOLATOR_COLORS = rcParams["axes.prop_cycle"].by_key()["color"]
 OVERSAMP_MARKERS = ("o", "s", "^", "v", "<", ">", "D", "P", "X")
@@ -105,19 +111,24 @@ def _reference_for_frame(
     if analytic_path.exists():
         return np.load(analytic_path), "Analytic", "analytic", 0
 
-    method = "rect" if pattern_type == "diskaddsat" else "gauss"
-    candidates: list[tuple[int, Path]] = []
-    for directory in REFERENCE_OUTPUT_DIR.glob(f"{base}{method}_param_*"):
-        try:
-            param = int(directory.name.rsplit("_param_", 1)[1])
-        except (IndexError, ValueError):
-            continue
-        candidates.append((param, directory))
-    for param, directory in sorted(candidates, reverse=True):
-        path = _reference_path(directory, method, param, frame)
-        if path.exists():
-            kind = "Rectangular SSAA" if method == "rect" else "Gauss Quadrature"
-            return np.load(path), f"{kind} ({param}x{param})", method, param
+    preferred = "rect" if pattern_type == "diskaddsat" else "gauss"
+    methods = [preferred] + ([] if preferred == "rect" else ["rect"])
+    for method in methods:
+        candidates: list[tuple[int, Path]] = []
+        for directory in REFERENCE_OUTPUT_DIR.glob(f"{base}{method}_param_*"):
+            try:
+                tail = directory.name.rsplit("_param_", 1)[1]
+                if REFERENCE_SUFFIX and tail.endswith(REFERENCE_SUFFIX):
+                    tail = tail[: -len(REFERENCE_SUFFIX)]
+                param = int(tail)
+            except (IndexError, ValueError):
+                continue
+            candidates.append((param, directory))
+        for param, directory in sorted(candidates, reverse=True):
+            path = _reference_path(directory, method, param, frame)
+            if path.exists():
+                kind = "Rectangular SSAA" if method == "rect" else "Gauss Quadrature"
+                return np.load(path), f"{kind} ({param}x{param})", method, param
     return None
 
 
@@ -372,6 +383,12 @@ def _quantize(image: np.ndarray, bit_depth: int) -> np.ndarray:
     return np.clip(np.rint(image * max_value), 0.0, max_value)
 
 
+def _load_riley_image(path: Path) -> np.ndarray:
+    """Load Riley camera rows in the NumPy row convention used by Exp2."""
+    image = np.load(path)
+    return np.flipud(image) if RILEY_ROWS_FLIPPED else image
+
+
 def _analyse_riley_self_convergence_frame(
     runs: list[tuple[str, int, int, Path]],
     frame: int,
@@ -392,11 +409,11 @@ def _analyse_riley_self_convergence_frame(
         if len(by_ssaa) < 2:
             continue
         reference_ssaa = max(by_ssaa)
-        reference = np.load(by_ssaa[reference_ssaa])
+        reference = _load_riley_image(by_ssaa[reference_ssaa])
         for ssaa, image_path in by_ssaa.items():
             if ssaa == reference_ssaa:
                 continue
-            image = np.load(image_path)
+            image = _load_riley_image(image_path)
             if image.shape != reference.shape:
                 print(f"Warning: {image_path} shape {image.shape} does not match self reference.")
                 del image
@@ -481,7 +498,7 @@ def analyse_pattern(
             image_path = run_dir / f"image_c00_f{frame:02d}_clamped.npy"
             if not image_path.exists():
                 continue
-            image = np.load(image_path)
+            image = _load_riley_image(image_path)
             if image.shape != reference_image.shape:
                 print(f"Warning: {image_path} shape {image.shape} does not match reference.")
                 del image
@@ -546,9 +563,8 @@ def analyse_pattern(
             print(f"    Saved {len(interp_rows)} comparisons and figures to {output_dir}")
         rows.extend(frame_rows)
         digitised_rows.extend(frame_digitised_rows)
-        _analyse_riley_self_convergence_frame(
-            runs, frame, group_name
-        )
+        if WRITE_RECTCONV:
+            _analyse_riley_self_convergence_frame(runs, frame, group_name)
         del frame_rows, frame_digitised_rows
         del reference_image, reference
         release_batch()
@@ -570,6 +586,8 @@ def analyse_pattern(
 def main() -> None:
     timer = ScriptTimer(__file__)
     RESULTS_DIR.mkdir(parents=True, exist_ok=True)
+    if not WRITE_RECTCONV:
+        shutil.rmtree(Path(f"{RESULTS_DIR}_rectconv"), ignore_errors=True)
     frames = _selected_frames()
     allowed_interpolators = _selected_interpolators()
     cases = _selected_cases()

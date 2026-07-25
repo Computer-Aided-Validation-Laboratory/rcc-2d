@@ -17,6 +17,7 @@ import sys
 from pathlib import Path
 
 import numpy as np
+from PIL import Image
 import riley
 from script_timing import ScriptTimer, timed_call
 
@@ -148,6 +149,7 @@ def render_exists(case_out: Path, frames: range) -> bool:
     return all(
         (case_out / f"image_c00_f{frame:02d}_raw.npy").exists()
         and (case_out / f"image_c00_f{frame:02d}_clamped.npy").exists()
+        and (case_out / f"image_c00_f{frame:02d}_clamped.tiff").exists()
         for frame in frames
     )
 
@@ -293,9 +295,14 @@ def main() -> None:
                                     for frame in frame_range:
                                         raw = np.asarray(images[0, frame, 0], dtype=np.float64)
                                         np.save(case_out / f"image_c00_f{frame:02d}_raw.npy", raw)
-                                        np.save(
-                                            case_out / f"image_c00_f{frame:02d}_clamped.npy",
-                                            intensity_from_coverage(raw),
+                                        clamped = intensity_from_coverage(raw)
+                                        np.save(case_out / f"image_c00_f{frame:02d}_clamped.npy", clamped)
+                                        # TIFF is a display/export companion to the exact
+                                        # floating-point clamped array.  Flip only for the
+                                        # conventional top-to-bottom image-file row order.
+                                        counts = np.rint(np.flipud(clamped) * 65535.0).astype(np.uint16)
+                                        Image.fromarray(counts).save(
+                                            case_out / f"image_c00_f{frame:02d}_clamped.tiff"
                                         )
 
     print("All raw and clamped Riley coverage renders completed.")

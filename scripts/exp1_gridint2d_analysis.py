@@ -30,6 +30,7 @@ from script_timing import ScriptTimer, timed_call
 
 RESULTS_DIR = exp1_output_dir("exp1_gridint2d_analysis")
 RENDER_SUFFIX = ""
+WRITE_RECTCONV = True
 
 
 def _paths(directory: Path, method: str, param: int, bit_depth: int, frame: int) -> tuple[Path, Path]:
@@ -70,6 +71,13 @@ def _reference_for_frame(case_dir: Path, frame: int):
             reverse=True,
         )
     )
+    # A highest rectangular SSAA image is the universal last resort: it is
+    # required for sharp fields and remains available when Gauss is absent.
+    if not RENDER_SUFFIX:
+        candidates.extend(
+            ("rect", param, f"Rectangular SSAA Reference ({param}x{param})")
+            for param in sorted((p for method, p in INTEGRATION_METHODS if method == "rect"), reverse=True)
+        )
     for method, param, label in candidates:
         references = {
             bit_depth: _load_pair(case_dir, method, param, bit_depth, frame)
@@ -219,9 +227,12 @@ def main() -> None:
         shutil.rmtree(RESULTS_DIR, ignore_errors=True)
     RESULTS_DIR.mkdir(parents=True, exist_ok=True)
     rectconv_dir = Path(f"{RESULTS_DIR}_rectconv")
-    if CLEAR_DIR:
+    if not WRITE_RECTCONV:
         shutil.rmtree(rectconv_dir, ignore_errors=True)
-    rectconv_dir.mkdir(parents=True, exist_ok=True)
+    elif CLEAR_DIR:
+        shutil.rmtree(rectconv_dir, ignore_errors=True)
+    if WRITE_RECTCONV:
+        rectconv_dir.mkdir(parents=True, exist_ok=True)
     all_rows: list[dict[str, object]] = []
     rectconv_rows: list[dict[str, object]] = []
     for case_name in DEFORMATION_CASES:
@@ -231,10 +242,12 @@ def main() -> None:
             print(f"Warning: {case_dir} does not exist. Skipping.")
             continue
         all_rows.extend(timed_call(timer, output_name, analyse_case, case_dir))
-        rectconv_rows.extend(timed_call(timer, f"{output_name}_rectconv", analyse_rectangular_self_convergence, case_dir, rectconv_dir))
+        if WRITE_RECTCONV:
+            rectconv_rows.extend(timed_call(timer, f"{output_name}_rectconv", analyse_rectangular_self_convergence, case_dir, rectconv_dir))
         release_batch()
     _write_rows(RESULTS_DIR / "summary.csv", all_rows)
-    _write_rows(rectconv_dir / "summary.csv", rectconv_rows)
+    if WRITE_RECTCONV:
+        _write_rows(rectconv_dir / "summary.csv", rectconv_rows)
     print("Experiment 1 grid analysis completed.")
 
 

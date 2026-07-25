@@ -6,6 +6,8 @@ analysis.RILEY_OUTPUT_DIR = exp2_output_dir("exp2_riley_render_texuint_psf")
 analysis.REFERENCE_OUTPUT_DIR = exp2_output_dir("exp2_speckint2d_render_uvs_psf")
 analysis.RESULTS_DIR = exp2_output_dir("exp2_riley_analysis_texuint_psf")
 analysis.REFERENCE_SUFFIX = "_psf"
+analysis.WRITE_RECTCONV = False
+analysis.RILEY_ROWS_FLIPPED = True
 # PSF renders are intentionally generated only for additive disks.
 analysis.ANALYTIC_SPECKLE_TYPES = ["diskaddsat"]
 

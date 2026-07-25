@@ -21,6 +21,7 @@ from pathlib import Path
 
 import numpy as np
 from PIL import Image
+from PIL import Image
 import riley
 
 from exp1common import output_case_name, parse_case_params
@@ -85,6 +86,7 @@ def render_exists(case_out: Path, frames: range) -> bool:
     return all(
         (case_out / f"image_c00_f{frame:02d}_raw.npy").exists()
         and (case_out / f"image_c00_f{frame:02d}_clamped.npy").exists()
+        and (case_out / f"image_c00_f{frame:02d}_clamped.tiff").exists()
         for frame in frames
     )
 
@@ -200,7 +202,12 @@ def main() -> None:
                                 for frame in frames:
                                     coverage = np.asarray(images[0, frame, 0], dtype=np.float64) / maximum
                                     np.save(case_out / f"image_c00_f{frame:02d}_raw.npy", coverage)
-                                    np.save(case_out / f"image_c00_f{frame:02d}_clamped.npy", intensity_from_coverage(coverage))
+                                    clamped = intensity_from_coverage(coverage)
+                                    np.save(case_out / f"image_c00_f{frame:02d}_clamped.npy", clamped)
+                                    counts = np.rint(np.flipud(clamped) * 65535.0).astype(np.uint16)
+                                    Image.fromarray(counts).save(
+                                        case_out / f"image_c00_f{frame:02d}_clamped.tiff"
+                                    )
     print("All digitised Riley coverage renders completed.")
 
 

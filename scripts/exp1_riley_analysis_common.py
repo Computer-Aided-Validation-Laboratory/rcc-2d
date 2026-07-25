@@ -46,6 +46,7 @@ RESULTS_DIR_FUNC = exp1_output_dir("exp1_riley_analysis_func_world")
 RESULTS_DIR_TEX = exp1_output_dir("exp1_riley_analysis_texuint")
 ANALYSIS_MODE = "both"
 CUSTOM_RENDER_SUFFIX = ""
+WRITE_RECTCONV = True
 
 
 def _make_figure(
@@ -88,6 +89,11 @@ def _load_reference_for_frame(case_dir: Path, frame: int):
             reverse=True,
         )
     )
+    if not CUSTOM_RENDER_SUFFIX:
+        candidates.extend(
+            ("rect", param, f"Rectangular SSAA Reference ({param}x{param})")
+            for param in sorted((p for method, p in INTEGRATION_METHODS if method == "rect"), reverse=True)
+        )
     for method, param, label in candidates:
         float_by_bit_depth = {}
         digitised_by_bit_depth = {}
@@ -1722,8 +1728,11 @@ def main() -> None:
     if CLEAR_DIR and not is_subset_analysis:
         shutil.rmtree(results_dir, ignore_errors=True)
         shutil.rmtree(rectconv_dir, ignore_errors=True)
+    if not WRITE_RECTCONV:
+        shutil.rmtree(rectconv_dir, ignore_errors=True)
     results_dir.mkdir(parents=True, exist_ok=True)
-    rectconv_dir.mkdir(parents=True, exist_ok=True)
+    if WRITE_RECTCONV:
+        rectconv_dir.mkdir(parents=True, exist_ok=True)
 
     cases = (
         [case.strip() for case in cases_str.split(",") if case.strip()]
@@ -1747,15 +1756,16 @@ def main() -> None:
     for tex_interp in interps:
         for case_name in cases:
             timed_call(timer, f"{case_name}_{tex_interp}", analyze_riley_case, case_name, tex_interp)
-            self_convergence_dir = rectconv_dir if ANALYSIS_MODE == "func" else rectconv_dir / tex_interp
-            timed_call(
-                timer,
-                f"{case_name}_{tex_interp}_rectconv",
-                analyse_riley_self_convergence,
-                case_name,
-                tex_interp,
-                self_convergence_dir,
-            )
+            if WRITE_RECTCONV:
+                self_convergence_dir = rectconv_dir if ANALYSIS_MODE == "func" else rectconv_dir / tex_interp
+                timed_call(
+                    timer,
+                    f"{case_name}_{tex_interp}_rectconv",
+                    analyse_riley_self_convergence,
+                    case_name,
+                    tex_interp,
+                    self_convergence_dir,
+                )
             release_batch()
 
     print("\nRiley analysis completed successfully.")

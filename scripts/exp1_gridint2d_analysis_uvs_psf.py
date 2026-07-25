@@ -5,6 +5,7 @@ from exp1params import exp1_output_dir
 analysis.OUTPUT_DIR = exp1_output_dir("exp1_gridint2d_render_uvs_psf")
 analysis.RESULTS_DIR = exp1_output_dir("exp1_gridint2d_analysis_uvs_psf")
 analysis.RENDER_SUFFIX = "_psf"
+analysis.WRITE_RECTCONV = False
 
 if __name__ == "__main__":
     analysis.main()
