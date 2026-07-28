@@ -21,7 +21,7 @@ from exp1common import build_pv_mesh
 from exp2speckint2d import make_speckle_pattern
 from exp3params import (
     BACKGROUND, BIT_DEPTHS, CASE_CAMERA_PIXELS, CASE_ROI_SIZES,
-    DEFORMATION_CASES, EGGBOX_PX_PERIOD, FORCE_RENDER_OVER, GAMMA, I0,
+    DEFORMATION_CASES, EGGBOX_PERIOD_FINAL_PX, FORCE_RENDER_OVER, GAMMA, I0,
     MAPPING_MODES, PSF_SIGMA_FINAL_PX, PSF_SUPPORT_SIGMAS, RILEY_RASTER_THREADS,
     SSAA_LEVELS, TEX_INTERPOLATORS, TEX_OVERSAMPLES, TEX_PX_PAD,
     additive_jitter_for, BLACK_AREA_FRACTIONS, RANDOM_SEED,
@@ -57,8 +57,23 @@ def selected_frames(case: str, available: int) -> list[int]:
     return list(range(available)) if "chirp" not in case else [0, min(1, available - 1)]
 
 
-def texture_root(pattern: str) -> Path:
-    return Path("out") / f"exp3_texgen_{pattern}"
+def eggbox_pitch_world(case: str) -> tuple[float, float]:
+    """Return the eggbox period in physical world units for one final camera."""
+    width, height = CASE_CAMERA_PIXELS[case]
+    roi_x, roi_y = CASE_ROI_SIZES[case]
+    return (
+        EGGBOX_PERIOD_FINAL_PX * roi_x / width,
+        EGGBOX_PERIOD_FINAL_PX * roi_y / height,
+    )
+
+
+def texture_config_dir(case: str, pattern: str, oversamp: int, storage: str) -> Path:
+    """Two-level texture output location: case then flat configuration."""
+    width, height = CASE_CAMERA_PIXELS[case]
+    return (
+        Path("out") / f"exp3_texgen_{pattern}_im{width}x{height}" / case
+        / f"{_tag(pattern)}_os{oversamp}_{'f' if storage == 'float' else f'b{bit_depths()[0]}'}"
+    )
 
 
 def load_case(case: str) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
@@ -82,6 +97,9 @@ def case_signature(coords: np.ndarray, connect: np.ndarray, ux: np.ndarray, uy: 
         digest.update(str(array.shape).encode())
         digest.update(array.dtype.str.encode())
         digest.update(array.tobytes())
+    # Camera geometry and the final-pixel procedural definition affect every
+    # rendered result even when the FE data have not changed.
+    digest.update(repr((CASE_CAMERA_PIXELS, CASE_ROI_SIZES, EGGBOX_PERIOD_FINAL_PX)).encode())
     return digest.hexdigest()
 
 
@@ -102,15 +120,17 @@ def _tag(pattern: str) -> str:
 
 
 def texture_path(case: str, pattern: str, oversamp: int, storage: str = "float") -> Path:
-    width, height = CASE_CAMERA_PIXELS[case]
-    suffix = "" if storage == "float" else f"_b{bit_depths()[0]}"
-    return texture_root(pattern) / f"{_tag(pattern)}_im{width}x{height}_pad{TEX_PX_PAD}_os{oversamp}{suffix}.npy"
+    suffix = "float" if storage == "float" else f"b{bit_depths()[0]}"
+    return texture_config_dir(case, pattern, oversamp, storage) / f"texture_{suffix}.npy"
 
 
 def generate_texture(case: str, pattern: str, oversamp: int) -> Path:
     """Generate a row-major texture at texel centres including the 4-pixel pad."""
     path = texture_path(case, pattern, oversamp)
-    if path.exists() and not force_render():
+    texture_signature = hashlib.sha256(repr((case, pattern, oversamp, CASE_CAMERA_PIXELS[case], CASE_ROI_SIZES[case], EGGBOX_PERIOD_FINAL_PX, bit_depths())).encode()).hexdigest()
+    marker = path.with_suffix(".sha256")
+    uint_paths = [texture_path(case, pattern, oversamp, "uint") for _bits in bit_depths()]
+    if path.exists() and all(item.exists() for item in uint_paths) and marker.exists() and marker.read_text().strip() == texture_signature and not force_render():
         return path
     width, height = CASE_CAMERA_PIXELS[case]
     roi_x, roi_y = CASE_ROI_SIZES[case]
@@ -123,7 +143,8 @@ def generate_texture(case: str, pattern: str, oversamp: int) -> Path:
     if pattern == "eggbox":
         # This is Riley's built-in eggbox convention, retained verbatim so the
         # function and texture paths have the same continuous source field.
-        texture = I0 + .5 * GAMMA * (1 + np.cos(2 * np.pi * xx / EGGBOX_PX_PERIOD)) * (1 + np.cos(2 * np.pi * yy / EGGBOX_PX_PERIOD)) - GAMMA
+        pitch_x, pitch_y = eggbox_pitch_world(case)
+        texture = I0 + .5 * GAMMA * (1 + np.cos(2 * np.pi * xx / pitch_x)) * (1 + np.cos(2 * np.pi * yy / pitch_y)) - GAMMA
     else:
         distribution, jitter = additive_jitter_for(pattern)
         speckles = make_speckle_pattern(
@@ -140,7 +161,10 @@ def generate_texture(case: str, pattern: str, oversamp: int) -> Path:
         maximum = 2**bits - 1
         quant = np.round(np.clip(texture, 0, 1) * maximum)
         dtype = np.uint8 if bits <= 8 else np.uint16
-        np.save(texture_root(pattern) / f"{_tag(pattern)}_im{width}x{height}_pad{TEX_PX_PAD}_os{oversamp}_b{bits}.npy", quant.astype(dtype))
+        uint_path = texture_path(case, pattern, oversamp, "uint")
+        uint_path.parent.mkdir(parents=True, exist_ok=True)
+        np.save(uint_path, quant.astype(dtype))
+    marker.write_text(f"{texture_signature}\n")
     return path
 
 
@@ -188,11 +212,11 @@ def _sample_texture(texture: np.ndarray, case: str, rx: np.ndarray, ry: np.ndarr
     return map_coordinates(texture, [row, col], order=order, mode="nearest", prefilter=order > 1)
 
 
-def _analytic_eggbox_affine(px: np.ndarray, py: np.ndarray, pixel_x: float, pixel_y: float, a: np.ndarray, b: np.ndarray) -> np.ndarray:
+def _analytic_eggbox_affine(px: np.ndarray, py: np.ndarray, pixel_x: float, pixel_y: float, a: np.ndarray, b: np.ndarray, pitch: tuple[float, float]) -> np.ndarray:
     """Closed-form average of Riley's eggbox over an affine target pixel."""
     centre = np.column_stack((px + .5 * pixel_x, py + .5 * pixel_y))
     reference_centre = centre @ a.T + b
-    k = 2.0 * np.pi / EGGBOX_PX_PERIOD
+    kx, ky = 2.0 * np.pi / pitch[0], 2.0 * np.pi / pitch[1]
 
     def averaged_cos(vector: np.ndarray) -> np.ndarray:
         phase = reference_centre @ vector
@@ -201,9 +225,9 @@ def _analytic_eggbox_affine(px: np.ndarray, py: np.ndarray, pixel_x: float, pixe
         factor_y = np.sinc((vector @ a[:, 1]) * pixel_y / (2.0 * np.pi))
         return np.cos(phase) * factor_x * factor_y
 
-    cx = averaged_cos(np.array((k, 0.0)))
-    cy = averaged_cos(np.array((0.0, k)))
-    cxy = .5 * (averaged_cos(np.array((k, k))) + averaged_cos(np.array((k, -k))))
+    cx = averaged_cos(np.array((kx, 0.0)))
+    cy = averaged_cos(np.array((0.0, ky)))
+    cxy = .5 * (averaged_cos(np.array((kx, ky))) + averaged_cos(np.array((kx, -ky))))
     return I0 - GAMMA + .5 * GAMMA * (1.0 + cx + cy + cxy)
 
 
@@ -224,9 +248,23 @@ def bespoke_render(case: str, pattern: str, method: str, param: int, *, texture_
     signature = case_signature(coords, connect, ux, uy)
     width, height = CASE_CAMERA_PIXELS[case]; roi_x, roi_y = CASE_ROI_SIZES[case]
     root = Path("out") / f"exp3_{'gridint2d' if pattern == 'eggbox' else 'speckint2d'}_render_{method}{'_psf' if psf else ''}_im{width}x{height}" / case
-    prefix_base = f"{_tag(pattern)}_{'ss' + str(param) if method == 'ssaa' else 'analytic'}"
-    if texture_os is not None: prefix_base += f"_os{texture_os}_{interp}"
+    config = f"{_tag(pattern)}_{'ss' + str(param) if method == 'ssaa' else 'analytic'}"
+    if texture_os is not None: config += f"_{interp}_os{texture_os}"
+    config += f"_b{bit_depths()[0]}"
+    root = root / config
     texture = None if texture_os is None else np.load(generate_texture(case, pattern, texture_os), mmap_mode="r")
+    speckles = None
+    if pattern != "eggbox" and texture is None:
+        distribution, jitter = additive_jitter_for(pattern)
+        # The pattern is deterministic for a case.  Construct it once per
+        # render, not once per pixel chunk (the latter dominated TEST_RUN).
+        speckles = make_speckle_pattern(
+            pattern, 5 * roi_x / width, BLACK_AREA_FRACTIONS[0], distribution,
+            jitter, RANDOM_SEED, GAUSSIAN_CUTOFF_SIGMAS,
+            (-roi_x / 2 - 8, roi_x / 2 + 8, -roi_y / 2 - 8, roi_y / 2 + 8),
+            I0, GAMMA, GAUSSIAN_EQUIVALENT_DISK_EDGE_FRACTION,
+            GAUSSIAN_CONTINUOUS_TAIL_SIGMAS,
+        )
     topology = None
     if MAPPING_MODES[case] == "structured_newton":
         from quad9_structured_newton import build_structured_quad9_topology
@@ -240,7 +278,7 @@ def bespoke_render(case: str, pattern: str, method: str, param: int, *, texture_
     weights = 1.0 / (samples * samples)
     chunk = max(1, int(os.environ.get("EXP3_CHUNK_PIXELS", "32768")))
     for frame in selected_frames(case, ux.shape[1]):
-        prefix = f"{prefix_base}_frame{frame:02d}"
+        prefix = f"frame{frame:02d}"
         if (root / f"{prefix}.npy").exists() and outputs_match_case(root, signature) and not force_render():
             print(f"  {case} {prefix}: exists; skipping."); continue
         flat = np.empty(width * height)
@@ -254,15 +292,16 @@ def bespoke_render(case: str, pattern: str, method: str, param: int, *, texture_
             py = -roi_y / 2 + (ids // width) * roi_y / height
             if method == "analytic" and pattern == "eggbox" and texture is None:
                 a, b = _inverse_affine(coords, ux, uy, frame)
-                flat[ids] = _analytic_eggbox_affine(px, py, roi_x / width, roi_y / height, a, b)
+                flat[ids] = _analytic_eggbox_affine(px, py, roi_x / width, roi_y / height, a, b, eggbox_pitch_world(case))
                 continue
             qx = (px[:, None] + dx.ravel()).ravel(); qy = (py[:, None] + dy.ravel()).ravel()
             rx, ry, valid = reference_points(case, coords, connect, ux, uy, frame, qx, qy, topology=topology, deformed=deformed)
             if texture is None:
-                values = I0 + .5 * GAMMA * (1 + np.cos(2*np.pi*rx/EGGBOX_PX_PERIOD)) * (1 + np.cos(2*np.pi*ry/EGGBOX_PX_PERIOD)) - GAMMA if pattern == "eggbox" else BACKGROUND + np.zeros_like(rx)
+                pitch_x, pitch_y = eggbox_pitch_world(case)
+                values = I0 + .5 * GAMMA * (1 + np.cos(2*np.pi*rx/pitch_x)) * (1 + np.cos(2*np.pi*ry/pitch_y)) - GAMMA if pattern == "eggbox" else BACKGROUND + np.zeros_like(rx)
                 if pattern != "eggbox":
-                    distribution, jitter = additive_jitter_for(pattern)
-                    speckles = make_speckle_pattern(pattern, 5*roi_x/width, BLACK_AREA_FRACTIONS[0], distribution, jitter, RANDOM_SEED, GAUSSIAN_CUTOFF_SIGMAS, (-roi_x/2-8,roi_x/2+8,-roi_y/2-8,roi_y/2+8), I0,GAMMA,GAUSSIAN_EQUIVALENT_DISK_EDGE_FRACTION,GAUSSIAN_CONTINUOUS_TAIL_SIGMAS)
+                    if speckles is None:
+                        raise RuntimeError("Speckle pattern was not initialised.")
                     values = speckles.intensity_from_coverage(speckles.evaluate_coverage(rx, ry))
             else:
                 values = _sample_texture(texture, case, rx, ry, texture_os, interp)
@@ -294,7 +333,11 @@ def riley_render(case: str, pattern: str, shader: str, ssaa: int, *, texture_os:
     coords, connect, ux, uy = load_case(case); width,height=CASE_CAMERA_PIXELS[case]; roi_x,roi_y=CASE_ROI_SIZES[case]
     signature = case_signature(coords, connect, ux, uy)
     root=Path("out")/f"exp3_riley_render_{shader}{'_psf' if psf else ''}_im{width}x{height}"/case
-    tag=f"{_tag(pattern)}_ss{ssaa}" + (f"_os{texture_os}_{interp}_{storage}" if texture_os else "")
+    tag = f"{_tag(pattern)}"
+    if texture_os is None:
+        tag += f"_func_ss{ssaa}_b{bit_depths()[0]}"
+    else:
+        tag += f"_{interp}_os{texture_os}_ss{ssaa}_{'f' if storage == 'float' else f'b{bit_depths()[0]}'}"
     root=root/tag; expected=[root/f"image_c00_f{frame:02d}.npy" for frame in selected_frames(case,ux.shape[1])]
     if all(p.exists() for p in expected) and outputs_match_case(root, signature) and not force_render():
         print(f"  {case} {tag}: exists; skipping."); return root
@@ -302,7 +345,7 @@ def riley_render(case: str, pattern: str, shader: str, ssaa: int, *, texture_os:
     kwargs={"mesh_type":_mesh_type(connect.shape[1]),"coords":coords,"connect":connect,"disp":disp,"bits":bit_depths()[0],"scaling_type":riley.ScaleStrategy.fixed,"scaling_min":0.,"scaling_max":1.}
     if shader == "func":
         # Physical-coordinate function avoids any UV aspect-ratio ambiguity.
-        kwargs.update(shader_type=riley.ShaderType.func,uvs=_uvs(coords,case,1),func_shader_builtin=riley.FuncShaderBuiltin.eggbox,func_shader_coord_mode=riley.FuncCoordMode.world_reference,func_shader_params=riley.FuncShaderParams(eggbox_mean=I0,eggbox_contrast=GAMMA,eggbox_pitch=(EGGBOX_PX_PERIOD,EGGBOX_PX_PERIOD),eggbox_phase=(0.,0.)))
+        kwargs.update(shader_type=riley.ShaderType.func,uvs=_uvs(coords,case,1),func_shader_builtin=riley.FuncShaderBuiltin.eggbox,func_shader_coord_mode=riley.FuncCoordMode.world_reference,func_shader_params=riley.FuncShaderParams(eggbox_mean=I0,eggbox_contrast=GAMMA,eggbox_pitch=eggbox_pitch_world(case),eggbox_phase=(0.,0.)))
     else:
         generate_texture(case, pattern, texture_os)
         texture=np.load(texture_path(case, pattern, texture_os, "uint" if storage=="uint" else "float"))

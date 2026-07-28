@@ -14,7 +14,9 @@ TEX_PX_PAD = 4
 BACKGROUND = 0.5
 I0 = 0.5
 GAMMA = 0.4
-EGGBOX_PX_PERIOD = 5.0
+# Always specified in final-camera pixels.  ``eggbox_pitch_world`` converts
+# this independently in X/Y for rectangular or supersampled cameras.
+EGGBOX_PERIOD_FINAL_PX = 5.0
 PX_PER_SPECK = 5.0
 BLACK_AREA_FRACTIONS = [0.6]
 RANDOM_SEED = 3
@@ -27,6 +29,12 @@ GAUSSIAN_EQUIVALENT_DISK_EDGE_FRACTION = 0.4
 GAUSSIAN_CONTINUOUS_TAIL_SIGMAS = 8.0
 PSF_SIGMA_FINAL_PX = 1.0
 PSF_SUPPORT_SIGMAS = 4.0
+
+# DIC analysis controls.  The subset step is deliberately one final camera
+# pixel so interpolation-bias fields and their spatial structure are visible.
+DIC_SUBSET_SIZE_PX = 15
+DIC_SUBSET_STEP_PX = 1
+DIC_SHAPE_FUNCTION = "AFFINE"
 
 if TEST_RUN:
     SSAA_LEVELS = [4, 8, 16]

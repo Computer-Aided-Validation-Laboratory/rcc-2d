@@ -1,27 +1,15 @@
 # Separating the Synthetic from the Systematic, Part 1: Renderer-Converged 2D Digital Image Correlation Uncertainty Quantification
 
-## RUNNING ON WORKSTATION P0288
-**TODO**
-- grid, riley, texture shader
-- grid, riley, function shader, uvs
-- grid, riley, function shader, world coords
-- gridint2d, function shader, uvs
-
-**RUNNING**
-- gridint2d, function shader, world coords
-
-**COMPLETE**
-- gridint2d, analytic texture generation
 
 ## Experiment 1: TODO
-FIX: Riley scripts for riley's new texture shader interface
-- Riley render scripts for floating point textures
+- More complex deformation fields:
+    - Quadratic deformation fields 
 
 ## Experiment 2: TODO
-- Riley render script for floating textures
-- Analysis of riley convergence for floating point textures
-- Riley render script for digitised textures
-- Self convergence of Riley for digitised textures
+- More complex deformation fields:
+    -  
+
+
 
 ## Experiment 3: TODO
 When does renderer convergence matter? How many bits error can we live with?
@@ -44,6 +32,8 @@ When does renderer convergence matter? How many bits error can we live with?
     - Does texture oversampling need to X times SSAA?
 - Need grey level bit depth parity tests:
     - Follow up - once we don't have bit depth parity how does this filter into the DIC UQ?
+
+OUT OF SCOPE?
 - Need to test under different DIC parameters: small subset, large subset, medium subset, different shape functions
 - Need to test under different speckle patterns
 
@@ -124,9 +114,8 @@ I want to
 ## Experiment 4: 2D DIC Strains
 - Use output from experiment 2 
 
---------------------------------------------------------------------------
-**TODO**
 
+## Experiments 1 & 2 Figures
 - How do we analyse texture oversampling, texture interpolation function and texture evaluation mode? As well as pixel box convergence? What do we want to show?
     - 1) As texture oversampling -> inf, we approach the analytic shader
     - 2) As texture oversampling -> inf, all interpolants converge to LSB  
@@ -139,22 +128,22 @@ I want to
         - colour: error metric: max err, rmse err, fraction diff px, 
     - 3) Interpolation kernel collapse: 
         - X axis
-    - 4) 
-    
-## TODO:
-CHECKED:
 
-FIRST: 
-    - check number of processors we can use to set the render going overnight
-    - check RAM limit with Riley SSAA and number of raster threads, release tile size limits
-1) Run render scripts for exp1 custom ortho generator, seems like some uv renders are missing
-    - ONLY NEED: affine case rendered - rigid case is there
-2) Run riley render scripts for higher SSAA up to ortho limit 
+--------------------------------------------------------------------------
+**TODO**
+- Experiment 3: Renders
+    - Rigid body motion
+    - Affine deformation
+    - Finite star
+    - Plate with hole   
+- DIC analysis:
+    - Rigid body motion
+    - Affine deformation
+    - Finite star
+    - Plate with hole
 
+## Instructions
+There is a uv venv in the .venv directory you can use.
 
-I am analysing our comparison of Riley's texture rendering to our custom 2D grid pixel integrator - Riley's function shader matches this perfectly for pixel box integration using world coords or uvs. However, once I start to analyse Riley's texture shader things are wrong and it looks like it is an error with how the texture shader and the function shader interpret the uvs leading to the texture shader deforming the texture. For the first frame there should be no deformation and the grid should appear as a constant P pixels per period but instead I see fringes which are a classic sign of deformed or incorrectly sampled grid. This indicates an issue with how the uvs are setup. Can you please analyse how we are using uvs for the eggbox function shader and the texture shader of riley in our ./scripts/exp1_*.py to see if you can diagnose the issue. The source code of Riley can be found here ~/riley-raster/ if needed. Riley's texture shader should be able to produce an initial undeformed grid image without fringing that matches our expected pixels per period with a 2D fft and is a close match to the function shader with uvs. 
+## To Implement    
 
-Our existing exp1 script for Riley to render textures using digitised textures
-
------------------------------------------------------------------------------------
-Create for scripts in ./scripts/ for exp3. For exp3 we are going to analyse a tiny final image size of 32x32 pixels (with our normal 4 pixel border pad for textures). Create exp3params.py based on exp1params.py and exp2params.py. For exp3 we are going to need exp3_riley_render_eggbox_texf.py and exp3_riley_render_speckle_texf.py and variants based on digitised textures with _texu. For both cases I want to look at extremely high texture oversampling combined with extremely high SSAA in riley. We will also need a decreasing thread scaling to account for the amount of RAM we need for our sub-pixel buffers and massively oversampled textures. Come up with a scaling budget in our exp3params.py based on my currenty laptop with 8 cores and 20GB RAM available for the render. Set the combination of peak texture oversampling and peak SSAA based on these limits and let me know what the limit is - then make sure our Riley scripts dynamically reduce the number of active tiles as we get higher and higher on texture over sampling and SSAA. Any questions calrifying questions based on your analysis of our existing Riley render scripts for exp1 and exp2? 
