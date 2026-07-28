@@ -2,6 +2,9 @@ import os
 import numpy as np
 import pyvista as pv
 
+# Applied after fitting the mesh bounds.  Increase if you want a tighter view.
+VIEW_ZOOM = 1.15
+
 
 def load_case_data(case_dir):
     """Load mesh and displacement data from a case directory."""
@@ -60,7 +63,7 @@ def build_pv_mesh(coords, connect):
     return mesh
 
 
-def save_plot(mesh, title, scalar_name, output_path):
+def save_plot(mesh, title, scalar_name, output_path, *, show_edges):
     """Create and save off-screen PyVista plot."""
     plotter = pv.Plotter(off_screen=True)
     plotter.add_text(title, font_size=12, position="upper_edge")
@@ -70,7 +73,7 @@ def save_plot(mesh, title, scalar_name, output_path):
         plotter.add_mesh(
             mesh,
             scalars=scalar_name,
-            show_edges=True,
+            show_edges=show_edges,
             cmap="viridis",
             edge_color="black",
             line_width=1.5,
@@ -79,14 +82,28 @@ def save_plot(mesh, title, scalar_name, output_path):
         plotter.add_mesh(
             mesh,
             color="lightgray",
-            show_edges=True,
+            show_edges=show_edges,
             edge_color="black",
             line_width=1.5,
         )
 
     plotter.view_xy()
+    plotter.reset_camera()
+    plotter.camera.zoom(VIEW_ZOOM)
     plotter.screenshot(output_path)
     plotter.close()
+
+
+def save_plot_variants(mesh, title, scalar_name, output_stem):
+    """Save matching scalar views with and without element-edge overlays."""
+    save_plot(
+        mesh, title, scalar_name, f"{output_stem}_noedges.png",
+        show_edges=False,
+    )
+    save_plot(
+        mesh, f"{title} (element edges)", scalar_name,
+        f"{output_stem}_edges.png", show_edges=True,
+    )
 
 
 def visualize_case(case_dir, vis_dir):
@@ -112,37 +129,37 @@ def visualize_case(case_dir, vis_dir):
     mesh.point_data["Displacement Magnitude"] = mag_final
 
     # 1. Save Mesh Layout (uncolored)
-    save_plot(
+    save_plot_variants(
         mesh,
         f"Mesh Layout: {case_name}",
         None,
-        os.path.join(vis_dir, f"{case_name}_mesh.png"),
+        os.path.join(vis_dir, f"{case_name}_mesh"),
     )
 
     # 2. Save U Displacement (only if non-trivial or for completeness)
     if np.max(np.abs(u_final)) > 1e-9:
-        save_plot(
+        save_plot_variants(
             mesh,
             f"U Displacement: {case_name}",
             "U Displacement",
-            os.path.join(vis_dir, f"{case_name}_disp_x.png"),
+            os.path.join(vis_dir, f"{case_name}_disp_x"),
         )
 
     # 3. Save V Displacement (only if non-trivial or for completeness)
     if np.max(np.abs(v_final)) > 1e-9:
-        save_plot(
+        save_plot_variants(
             mesh,
             f"V Displacement: {case_name}",
             "V Displacement",
-            os.path.join(vis_dir, f"{case_name}_disp_y.png"),
+            os.path.join(vis_dir, f"{case_name}_disp_y"),
         )
 
     # 4. Save Displacement Magnitude
-    save_plot(
+    save_plot_variants(
         mesh,
         f"Disp Magnitude: {case_name}",
         "Displacement Magnitude",
-        os.path.join(vis_dir, f"{case_name}_disp_mag.png"),
+        os.path.join(vis_dir, f"{case_name}_disp_mag"),
     )
 
 

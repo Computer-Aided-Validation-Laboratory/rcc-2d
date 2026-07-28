@@ -3,22 +3,55 @@ import sys
 import numpy as np
 import gmsh
 
+# -----------------------------------------------------------------------------
 # Configurable constants
-PLATE_SIZE_X = 260
-PLATE_SIZE_Y = 260/4
+# -----------------------------------------------------------------------------
+PLATE_SIZE_X = 260.0
+PLATE_SIZE_Y = 65.0
+# The data mesh is expressed in the original 256 x 64 camera coordinates;
+# Exp3 renders that same 256 x 64 ROI at 1020 x 252 final pixels.
 CAMERA_PIXELS = 256
 ROI_SIZE_X = 256.0
-ROI_SIZE_Y = 256.0/4.0
+ROI_SIZE_Y = 64.0
+FINAL_CAMERA_PIXELS_X = 1020
 
-# Chirp grid configuration
-CHIRP_NX = 20
-CHIRP_NY = 9  # Must be odd
-CHIRP_RX = 1.25
-CHIRP_RY = 1.25
+# Chirp mesh configuration.  These refine the FE representation but do not
+# change the mathematical chirp frequency.
+# Keep horizontal and vertical refinement independent.  The chirp oscillates
+# along Y, so only Y needs the fine, uniform resolution; X keeps a modest
+# graded mesh without numerically collapsing its smallest elements.
+# Gentle X grading preserves the desired graded-mesh case without creating
+# the near-zero left-edge cells that made the inverse map ill-conditioned.
+CHIRP_NX = 24
+CHIRP_RX = 1.05
+CHIRP_RY = 1.0
+
+# Chirp displacement configuration.  ``CHIRP_CYCLES_MULT`` is the direct
+# frequency control: 2 doubles the number of vertical oscillations and halves
+# every effective wavelength.  The shortest effective wavelength determines
+# the mesh-resolution requirement.
+# The shortest wavelength is specified in *final rendered* pixels.  Exp3's
+# 1020-pixel image spans this 256-unit ROI, so 32 final pixels = 8 units.
+CHIRP_LAMBDA_MIN_FINAL_PX = 32.0
+CHIRP_LAMBDA_MAX_PX = PLATE_SIZE_Y/2.0
+CHIRP_CYCLES_MULT = 1.0
 CHIRP_A0 = 0.5  # Peak displacement in pixels
+
+# Quad9 resolution guide: a conservative minimum of eight quadratic nodal
+# intervals (four elements) per shortest effective wavelength.
+MIN_Q2_INTERVALS_PER_WAVELENGTH = 8
 
 # Calculate physical pixel size (based on X direction)
 PIXEL_SIZE = ROI_SIZE_X / CAMERA_PIXELS
+FINAL_PIXEL_SIZE = ROI_SIZE_X / FINAL_CAMERA_PIXELS_X
+CHIRP_LAMBDA_MIN = CHIRP_LAMBDA_MIN_FINAL_PX * FINAL_PIXEL_SIZE
+# A Quad9 element contributes two nodal intervals.  Solve h/2 <= lambda/8
+# for the smallest uniform Y element height, rounding upward only as needed.
+CHIRP_NY = int(np.ceil(
+    PLATE_SIZE_Y * MIN_Q2_INTERVALS_PER_WAVELENGTH
+    / (2.0 * CHIRP_LAMBDA_MIN)
+))
+GENERATE_GMSH = False
 
 
 def save_csv(path, data, is_int=False):
@@ -85,8 +118,8 @@ def apply_chirp_disp(coords, num_nodes, a0_phys):
     disp_y = np.zeros((num_nodes, 2), dtype=np.float64)
     disp_z = np.zeros((num_nodes, 2), dtype=np.float64)
 
-    lambda_min = 10.0 * PIXEL_SIZE
-    lambda_max = 100.0 * PIXEL_SIZE
+    lambda_min = CHIRP_LAMBDA_MIN
+    lambda_max = CHIRP_LAMBDA_MAX_PX * PIXEL_SIZE
     x_min = -PLATE_SIZE_X / 2.0
 
     # Vectorized calculations over all nodes
@@ -95,7 +128,9 @@ def apply_chirp_disp(coords, num_nodes, a0_phys):
     lambda_val = (
         lambda_min + (lambda_max - lambda_min) * (x - x_min) / PLATE_SIZE_X
     )
-    disp_y[:, 1] = a0_phys * np.cos(2.0 * np.pi * y / lambda_val)
+    disp_y[:, 1] = a0_phys * np.cos(
+        2.0 * np.pi * CHIRP_CYCLES_MULT * y / lambda_val
+    )
 
     return disp_x, disp_y, disp_z
 
@@ -107,6 +142,17 @@ def generate_manual_chirp(a0_phys, vis_fn, vis_dir):
 
     w = get_geometric_widths(nx, PLATE_SIZE_X, rx)
     h = get_symmetric_heights(ny, PLATE_SIZE_Y, ry)
+    shortest_wavelength = (
+        CHIRP_LAMBDA_MIN / CHIRP_CYCLES_MULT
+    )
+    q2_interval = np.max(h) / 2.0
+    intervals_per_wavelength = shortest_wavelength / q2_interval
+    if intervals_per_wavelength < MIN_Q2_INTERVALS_PER_WAVELENGTH:
+        print(
+            "Warning: the largest vertical Quad9 nodal interval resolves the "
+            f"shortest chirp wavelength with only {intervals_per_wavelength:.2f} "
+            f"intervals; target at least {MIN_Q2_INTERVALS_PER_WAVELENGTH}."
+        )
 
     x_boundary = np.zeros(nx + 1, dtype=np.float64)
     x_boundary[0] = -PLATE_SIZE_X / 2.0
@@ -268,7 +314,8 @@ def main():
     os.makedirs(vis_dir, exist_ok=True)
 
     generate_manual_chirp(a0_phys, visualize_case, vis_dir)
-    generate_gmsh_chirp(a0_phys, visualize_case, vis_dir)
+    if GENERATE_GMSH:
+        generate_gmsh_chirp(a0_phys, visualize_case, vis_dir)
 
 
 if __name__ == "__main__":
