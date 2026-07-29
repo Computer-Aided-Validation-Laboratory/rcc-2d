@@ -49,11 +49,12 @@ def plot(rows: list[dict[str, object]], path: Path, heading: str, reference_name
     fields = (("e_rms", "Float RMS error"), ("e_max", "Float max error"), ("max_lsb", "Max 8-bit code error [LSB]"), ("fraction_changed", "Changed-pixel fraction"))
     by_os: dict[int, list[dict[str, object]]] = defaultdict(list)
     for row in rows: by_os[int(row["OS"])].append(row)
+    texture_series = any("_os" in str(row["Config"]) for row in rows)
     for axis, (field, ylabel) in zip(axes, fields):
         for osamp, values in sorted(by_os.items()):
             values.sort(key=lambda row: int(row["SSAA"]))
             x = [int(row["SSAA"]) for row in values]; y = [float(row[field]) for row in values]
-            axis.plot(x, y, "o-", label=f"OS={osamp}")
+            axis.plot(x, y, "o-", label=f"OS={osamp}" if texture_series else "SSAA series")
         axis.set_xscale("log", base=2); axis.set_yscale("symlog", linthresh=1e-15)
         axis.set_xticks(sorted({int(row["SSAA"]) for row in rows})); axis.set_xticklabels(sorted({int(row["SSAA"]) for row in rows}))
         axis.set_xlabel("SSAA samples along one pixel axis"); axis.set_ylabel(ylabel); axis.grid(alpha=.3); axis.legend(fontsize=8)
@@ -68,7 +69,10 @@ def analyse_group(payload: tuple[str, str, str, str, list[Render], list[Render]]
     frames = image_frames(reference.directory)
     primary: list[dict[str, object]] = []; self_rows: list[dict[str, object]] = []
     self_reference = max(items, key=lambda item: (item.ssaa, item.oversamp)) if items else None
-    self_label = (f"Highest SSAA/OS: SSAA={self_reference.ssaa}, OS={self_reference.oversamp or 1}" if self_reference else "No self reference")
+    self_label = (
+        (f"Highest SSAA/OS: SSAA={self_reference.ssaa}, OS={self_reference.oversamp}" if self_reference.oversamp else f"Highest SSAA: SSAA={self_reference.ssaa}")
+        if self_reference else "No self reference"
+    )
     for frame, ref_path in frames.items():
         ref_image = load_image(ref_path)
         self_path = image_frames(self_reference.directory).get(frame) if self_reference else None
