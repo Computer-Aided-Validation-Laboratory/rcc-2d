@@ -17,7 +17,7 @@ from typing import Any
 
 import numpy as np
 from PIL import Image
-from script_timing import ScriptTimer, timed_call
+from modules.script_timing import ScriptTimer, timed_call
 
 try:
     from numba import njit
@@ -40,7 +40,7 @@ from exp2params import (
     TARG_PX_Y,
     TEX_PX_PAD,
 )
-from exp_common_render import (
+from modules.exp_common_render import (
     analytic_disk_coverage as _shared_analytic_disk_coverage,
     analytic_gaussian_coverage as _shared_analytic_gaussian_coverage,
 )
@@ -620,7 +620,7 @@ def ensure_worker_frame(frame: int, mapping_mode: str) -> None:
         return
     if any(value is None for value in (_worker_coords, _worker_connect, _worker_disp_x, _worker_disp_y)):
         raise RuntimeError("Speckle worker has no mesh state.")
-    from exp1common import build_pv_mesh
+    from modules.exp1common import build_pv_mesh
 
     coords_def = np.array(_worker_coords, copy=True)
     coords_def[:, 0] += _worker_disp_x[:, frame]
@@ -730,7 +730,7 @@ def process_pixel_chunk(
         "gausscont",
     }
     if mapping_mode == "newton" and _worker_deformed_coords is not None:
-        from quad9_newton import inverse_map_quad9
+        from modules.quad9_newton import inverse_map_quad9
 
         x_ref_flat, y_ref_flat, valid = inverse_map_quad9(
             xx.ravel(), yy.ravel(), _worker_deformed_coords, _worker_coords,
@@ -873,7 +873,7 @@ def render_case(
     mapping_mode: str,
     timer: ScriptTimer | None = None,
 ) -> None:
-    from exp1common import parse_case_params
+    from modules.exp1common import parse_case_params
     timer = timer or ScriptTimer(__file__)
 
     coords = np.loadtxt(case_dir / "coords.csv", delimiter=",")

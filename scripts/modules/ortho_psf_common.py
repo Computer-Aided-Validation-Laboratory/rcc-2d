@@ -9,7 +9,7 @@ import pyvista as pv
 from scipy.ndimage import convolve1d
 from scipy.signal import fftconvolve
 
-from psf_render_common import gaussian_kernel_1d, psf_radius_subpixels
+from modules.psf_render_common import gaussian_kernel_1d, psf_radius_subpixels
 
 _BAND_CONTEXT: dict[str, object] | None = None
 
@@ -82,11 +82,11 @@ def _map_reference(
         )
         return mapped[:, 0], mapped[:, 1], valid
     if mapping_mode == "newton":
-        from quad9_newton import inverse_map_quad9
+        from modules.quad9_newton import inverse_map_quad9
         xr, yr, valid = inverse_map_quad9(x, y, coords_def, coords, connect)
         return xr, yr, valid
     if mapping_mode == "vtk":
-        from exp1common import build_pv_mesh
+        from modules.exp1common import build_pv_mesh
         mesh = build_pv_mesh(coords_def, connect)
         mesh.point_data["x_ref"] = coords[:, 0]
         mesh.point_data["y_ref"] = coords[:, 1]

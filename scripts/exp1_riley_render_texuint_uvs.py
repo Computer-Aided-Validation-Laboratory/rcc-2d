@@ -14,14 +14,14 @@ from pathlib import Path
 import numpy as np
 from PIL import Image
 import riley
-from script_timing import ScriptTimer, timed_call
+from modules.script_timing import ScriptTimer, timed_call
 
 # Experiment 1 deliberately generates very large, oversampled numeric
 # textures.  They are local trusted data, so Pillow's decompression-bomb
 # safeguard is inapplicable here.
 Image.MAX_IMAGE_PIXELS = None
 
-from exp1common import output_case_name, parse_case_params
+from modules.exp1common import output_case_name, parse_case_params
 from exp1params import (
     TARG_PX_X,
     TARG_PX_Y,
@@ -39,7 +39,7 @@ from exp1params import (
     PSF_SUPPORT_SIGMAS,
     exp1_output_dir,
 )
-from psf_riley_common import camera_kwargs, enabled as psf_enabled
+from modules.psf_riley_common import camera_kwargs, enabled as psf_enabled
 
 OUTPUT_ROOT = exp1_output_dir("exp1_riley_render_texuint_psf" if psf_enabled() else "exp1_riley_render_texuint")
 

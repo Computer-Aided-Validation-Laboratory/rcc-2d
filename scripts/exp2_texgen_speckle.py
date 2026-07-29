@@ -29,8 +29,8 @@ from exp2params import (
     TEX_PX_PAD,
     TEXTURE_OUTPUT_DIR,
 )
-from exp2speckint2d import image_outputs_complete, make_speckle_pattern, save_image
-from script_timing import ScriptTimer, timed_call
+from modules.exp2speckint2d import image_outputs_complete, make_speckle_pattern, save_image
+from modules.script_timing import ScriptTimer, timed_call
 
 
 def tag(

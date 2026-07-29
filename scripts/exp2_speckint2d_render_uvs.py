@@ -12,7 +12,7 @@ import os
 import sys
 from pathlib import Path
 
-from exp1common import output_case_name, parse_case_params
+from modules.exp1common import output_case_name, parse_case_params
 from exp2params import (
     ACTIVE_FRAMES,
     ANALYTIC_SPECKLE_TYPES,
@@ -32,8 +32,8 @@ from exp2params import (
     TARG_PX_Y,
     mapping_mode_for_case,
 )
-from exp2speckint2d import make_speckle_pattern, render_case
-from script_timing import ScriptTimer
+from modules.exp2speckint2d import make_speckle_pattern, render_case
+from modules.script_timing import ScriptTimer
 
 
 def get_active_frames() -> set[int]:

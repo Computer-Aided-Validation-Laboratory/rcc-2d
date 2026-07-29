@@ -24,7 +24,7 @@ from PIL import Image
 from PIL import Image
 import riley
 
-from exp1common import output_case_name, parse_case_params
+from modules.exp1common import output_case_name, parse_case_params
 from exp2params import (
     ACTIVE_FRAMES,
     ANALYTIC_SPECKLE_TYPES,
@@ -42,7 +42,7 @@ from exp2params import (
     TARG_PX_Y,
     exp2_output_dir,
 )
-from psf_riley_common import camera_kwargs, enabled as psf_enabled
+from modules.psf_riley_common import camera_kwargs, enabled as psf_enabled
 from exp2_riley_render_texfloat import (
     compute_texture_world_uvs,
     get_riley_mesh_type,
@@ -53,7 +53,7 @@ from exp2_riley_render_texfloat import (
     pattern_tag,
 )
 from exp2params import additive_jitter_for
-from script_timing import ScriptTimer, timed_call
+from modules.script_timing import ScriptTimer, timed_call
 
 
 # Exp2 deliberately creates large oversampled textures.  They are local,

@@ -14,7 +14,7 @@ from typing import Mapping, Sequence
 
 import numpy as np
 
-from exp_common_analysis import (
+from modules.exp_common_analysis import (
     explicit_log_ticks,
     make_agg_figure,
     release_figure,

@@ -10,7 +10,7 @@ from pathlib import Path
 import numpy as np
 from matplotlib.ticker import LogFormatterMathtext, LogLocator, MaxNLocator, ScalarFormatter
 
-from exp_common_analysis import release_batch
+from modules.exp_common_analysis import release_batch
 
 OUT = Path("out")
 CASE_RE = re.compile(r"plate.*?(?:rigid|affine|chirp)$")

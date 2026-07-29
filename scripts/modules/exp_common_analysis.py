@@ -12,7 +12,7 @@ from collections.abc import Sequence
 import numpy as np
 from matplotlib.ticker import FixedFormatter, FixedLocator
 
-from analysis_memory import make_agg_figure, release_batch, release_figure
+from modules.analysis_memory import make_agg_figure, release_batch, release_figure
 
 
 def explicit_log_ticks(axis, values: Sequence[float]) -> None:

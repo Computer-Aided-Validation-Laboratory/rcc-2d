@@ -8,7 +8,7 @@ from pathlib import Path
 
 import numpy as np
 
-from exp1common import output_case_name, parse_case_params
+from modules.exp1common import output_case_name, parse_case_params
 from exp2_speckint2d_render_uvs import pattern_tag
 from exp2params import (
     ACTIVE_FRAMES, ADDITIVE_DISK_JITTER_DISTRIBUTION, ADDITIVE_DISK_JITTER_FRACTION,
@@ -17,8 +17,8 @@ from exp2params import (
     PSF_SUPPORT_SIGMAS, PX_PER_SPECK, RANDOM_SEED, TARG_PX_X, TARG_PX_Y,
     TEX_PX_PAD, exp2_output_dir, mapping_mode_for_case, NUM_PROCESSES,
 )
-from exp2speckint2d import make_speckle_pattern, save_image
-from ortho_psf_common import render_psf_frame
+from modules.exp2speckint2d import make_speckle_pattern, save_image
+from modules.ortho_psf_common import render_psf_frame
 
 OUTPUT_DIR = exp2_output_dir("exp2_speckint2d_render_uvs_psf")
 

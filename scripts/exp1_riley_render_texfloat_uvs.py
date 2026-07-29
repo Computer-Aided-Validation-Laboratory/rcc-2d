@@ -14,9 +14,9 @@ from pathlib import Path
 
 import numpy as np
 import riley
-from script_timing import ScriptTimer, timed_call
+from modules.script_timing import ScriptTimer, timed_call
 
-from exp1common import output_case_name, parse_case_params
+from modules.exp1common import output_case_name, parse_case_params
 from exp1params import (
     BIT_DEPTHS,
     CLEAR_DIR,
@@ -34,7 +34,7 @@ from exp1params import (
     TEXTURE_OUTPUT_DIR,
     exp1_output_dir,
 )
-from psf_riley_common import camera_kwargs, enabled as psf_enabled
+from modules.psf_riley_common import camera_kwargs, enabled as psf_enabled
 
 OUTPUT_ROOT = exp1_output_dir("exp1_riley_render_texfloat_psf" if psf_enabled() else "exp1_riley_render_texfloat")
 

@@ -32,9 +32,9 @@ from exp2params import (
     TARG_PX_X,
     exp2_output_dir,
 )
-from exp1common import output_case_name
-from analysis_memory import make_agg_figure, release_batch, release_figure
-from script_timing import ScriptTimer, timed_call
+from modules.exp1common import output_case_name
+from modules.analysis_memory import make_agg_figure, release_batch, release_figure
+from modules.script_timing import ScriptTimer, timed_call
 
 
 RILEY_OUTPUT_DIR = exp2_output_dir("exp2_riley_render_texfloat")

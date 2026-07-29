@@ -17,9 +17,9 @@ import pyvista as pv
 import riley
 from scipy.ndimage import gaussian_filter, map_coordinates
 
-from exp1common import build_pv_mesh
-from exp2speckint2d import make_speckle_pattern
-from exp_common_render import (
+from modules.exp1common import build_pv_mesh
+from modules.exp2speckint2d import make_speckle_pattern
+from modules.exp_common_render import (
     analytic_disk_coverage,
     analytic_gaussian_coverage,
     is_rigid_inverse,
@@ -195,9 +195,9 @@ def reference_points(case: str, coords: np.ndarray, connect: np.ndarray, ux: np.
         deformed = np.array(coords, copy=True)
         deformed[:, 0] += ux[:, frame]; deformed[:, 1] += uy[:, frame]
     if MAPPING_MODES[case] == "structured_newton":
-        from quad9_structured_newton import inverse_map_structured_quad9
+        from modules.quad9_structured_newton import inverse_map_structured_quad9
         if topology is None:
-            from quad9_structured_newton import build_structured_quad9_topology
+            from modules.quad9_structured_newton import build_structured_quad9_topology
             topology = build_structured_quad9_topology(coords, connect)
         return inverse_map_structured_quad9(qx, qy, deformed, coords, topology)
     mesh = build_pv_mesh(deformed, connect)
@@ -272,7 +272,7 @@ def bespoke_render(case: str, pattern: str, method: str, param: int, *, texture_
         )
     topology = None
     if MAPPING_MODES[case] == "structured_newton":
-        from quad9_structured_newton import build_structured_quad9_topology
+        from modules.quad9_structured_newton import build_structured_quad9_topology
         topology = build_structured_quad9_topology(coords, connect)
     # Analytic is only a function evaluation at pixel centres here.  The
     # closed-form affine eggbox integral is intentionally kept as a separate

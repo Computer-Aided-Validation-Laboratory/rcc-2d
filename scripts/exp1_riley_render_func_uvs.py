@@ -13,9 +13,9 @@ import os
 from pathlib import Path
 import numpy as np
 import riley
-from script_timing import ScriptTimer, timed_call
+from modules.script_timing import ScriptTimer, timed_call
 
-from exp1common import (
+from modules.exp1common import (
     compute_riley_bbox_uvs,
     get_riley_bbox_uv_transform,
     parse_case_params,
@@ -38,7 +38,7 @@ from exp1params import (
     SSAA_LEVELS,
     exp1_output_dir,
 )
-from psf_riley_common import camera_kwargs, enabled as psf_enabled
+from modules.psf_riley_common import camera_kwargs, enabled as psf_enabled
 
 OUTPUT_ROOT = exp1_output_dir("exp1_riley_render_func_uvs_psf" if psf_enabled() else "exp1_riley_render_func_uvs")
 

@@ -9,14 +9,14 @@ from pathlib import Path
 import numpy as np
 from PIL import Image
 
-from exp1common import compute_riley_bbox_uvs, get_riley_bbox_uv_transform, output_case_name, parse_case_params
+from modules.exp1common import compute_riley_bbox_uvs, get_riley_bbox_uv_transform, output_case_name, parse_case_params
 from exp1params import (
     ACTIVE_FRAMES, BACKGROUND, BIT_DEPTHS, DEFORMATION_CASES, FORCE_RENDER_OVER,
     GAMMA, I0, INTEGRATION_METHODS, P_PIXELS, PSF_SIGMA_FINAL_PX,
     PSF_SUPPORT_SIGMAS, TARG_PX_X, TARG_PX_Y, TEX_PX_PAD, exp1_output_dir,
     mapping_mode_for_case, NUM_PROCESSES,
 )
-from ortho_psf_common import render_psf_frame
+from modules.ortho_psf_common import render_psf_frame
 
 OUTPUT_DIR = exp1_output_dir("exp1_gridint2d_render_uvs_psf")
 

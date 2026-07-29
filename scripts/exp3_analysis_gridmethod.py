@@ -15,7 +15,7 @@ from matplotlib.backends.backend_agg import FigureCanvasAgg
 from matplotlib.figure import Figure
 
 from exp0params_common import CORES
-from exp3_analysis_common import OUT, OS_RE, SS_RE, numeric_y_axis, parameter, pattern_of, release, title_lines
+from modules.exp3_analysis_common import OUT, OS_RE, SS_RE, numeric_y_axis, parameter, pattern_of, release, title_lines
 
 RESULTS=OUT/"exp3_analysis_gridmethod"
 

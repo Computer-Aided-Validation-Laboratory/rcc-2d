@@ -15,7 +15,7 @@ from pathlib import Path
 import numpy as np
 from PIL import Image
 
-from exp1common import evaluate_eggbox_analytic_average
+from modules.exp1common import evaluate_eggbox_analytic_average
 from exp1params import (
     TARG_PX_X,
     TARG_PX_Y,
@@ -30,7 +30,7 @@ from exp1params import (
     GAMMA,
     TEXTURE_OUTPUT_DIR,
 )
-from script_timing import ScriptTimer, timed_call
+from modules.script_timing import ScriptTimer, timed_call
 
 # Process bounded horizontal bands, so a high-oversampling texture never needs
 # a full floating point image in RAM.  These can be overridden for a particular

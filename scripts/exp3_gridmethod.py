@@ -31,7 +31,7 @@ if str(HERE) not in sys.path:
     sys.path.insert(0, str(HERE))
 
 from exp3params import EGGBOX_PERIOD_FINAL_PX
-from gridmethod import GridMethodConfig, analyse_sequence
+from modules.gridmethod import GridMethodConfig, analyse_sequence
 
 
 OUT_ROOT = Path("out")

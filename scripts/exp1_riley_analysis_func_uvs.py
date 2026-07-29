@@ -9,9 +9,9 @@
 
 from pathlib import Path
 
-import exp1_riley_analysis_common as riley_analysis
+from modules import exp1_riley_analysis_common as riley_analysis
 from exp1params import exp1_output_dir
-from script_timing import ScriptTimer
+from modules.script_timing import ScriptTimer
 
 riley_analysis.OUTPUT_DIR = exp1_output_dir("exp1_gridint2d_render_uvs")
 riley_analysis.RILEY_FUNC_DIR = exp1_output_dir("exp1_riley_render_func_uvs")

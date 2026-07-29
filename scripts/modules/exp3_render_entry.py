@@ -3,7 +3,7 @@ from __future__ import annotations
 
 import os
 
-from exp3_common import (
+from modules.exp3_common import (
     bespoke_render, bit_depths, oversamples, riley_render, selected_cases,
     ssaa_levels,
 )
@@ -15,12 +15,12 @@ def run(kind: str) -> None:
     kind = kind.removesuffix("_psf")
     cases = selected_cases()
     if kind == "texgen_eggbox":
-        from exp3_common import generate_texture
+        from modules.exp3_common import generate_texture
         for case in cases:
             for osamp in oversamples(): generate_texture(case, "eggbox", osamp)
         return
     if kind == "texgen_speckle":
-        from exp3_common import generate_texture
+        from modules.exp3_common import generate_texture
         for case in cases:
             for pattern in ("diskaddsat", "gausscont"):
                 for osamp in oversamples(): generate_texture(case, pattern, osamp)

@@ -1,5 +1,5 @@
 """Analyse Exp1 Riley function-shader PSF renders against bespoke PSF renders."""
-import exp1_riley_analysis_common as analysis
+from modules import exp1_riley_analysis_common as analysis
 from exp1params import exp1_output_dir
 
 analysis.OUTPUT_DIR = exp1_output_dir("exp1_gridint2d_render_uvs_psf")

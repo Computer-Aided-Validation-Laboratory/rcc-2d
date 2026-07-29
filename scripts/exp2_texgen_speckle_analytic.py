@@ -29,13 +29,13 @@ from exp2params import (
     TEX_PX_PAD,
     TEXTURE_OUTPUT_DIR,
 )
-from exp2speckint2d import (
+from modules.exp2speckint2d import (
     MAX_PIXELS_PER_CHUNK,
     image_outputs_complete,
     make_speckle_pattern,
     save_image,
 )
-from script_timing import ScriptTimer, timed_call
+from modules.script_timing import ScriptTimer, timed_call
 
 NUM_PROCESSES_RUN = max(1, min(
     NUM_PROCESSES,

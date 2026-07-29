@@ -14,9 +14,9 @@ from multiprocessing import Pool
 import numpy as np
 import pyvista as pv
 from PIL import Image
-from script_timing import ScriptTimer, timed_call
+from modules.script_timing import ScriptTimer, timed_call
 
-from exp1common import (
+from modules.exp1common import (
     build_pv_mesh,
     compute_riley_bbox_uvs,
     get_riley_bbox_uv_transform,
@@ -200,7 +200,7 @@ def process_pixel_chunk(args) -> tuple[int, int, np.ndarray]:
     pixel_valid = np.ones(num_pixels, dtype=bool)
     global _worker_mesh, _worker_reference_coords, _worker_deformed_coords, _worker_connect
     if mapping_mode == "newton" and _worker_deformed_coords is not None and method != "analytic":
-        from quad9_newton import inverse_map_quad9
+        from modules.quad9_newton import inverse_map_quad9
 
         x_ref_flat, y_ref_flat, valid = inverse_map_quad9(
             (px_x[:, None] + dx[None, :]).ravel(),

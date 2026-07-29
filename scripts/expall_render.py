@@ -13,7 +13,7 @@ import subprocess
 import sys
 from pathlib import Path
 
-from script_timing import ScriptTimer, timed_call
+from modules.script_timing import ScriptTimer, timed_call
 
 
 SCRIPTS_DIR = Path(__file__).resolve().parent

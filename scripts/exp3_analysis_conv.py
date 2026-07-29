@@ -18,7 +18,7 @@ from matplotlib.backends.backend_agg import FigureCanvasAgg
 from matplotlib.figure import Figure
 
 from exp0params_common import CORES
-from exp3_analysis_common import Render, best_reference, discover_renders, image_frames, load_image, numeric_y_axis, release, title_lines
+from modules.exp3_analysis_common import Render, best_reference, discover_renders, image_frames, load_image, numeric_y_axis, release, title_lines
 
 RESULTS = Path("out/exp3_analysis_conv")
 RECT_RESULTS = Path("out/exp3_analysis_conv_rectconv")

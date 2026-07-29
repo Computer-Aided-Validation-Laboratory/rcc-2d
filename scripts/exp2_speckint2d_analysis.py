@@ -26,10 +26,10 @@ from exp2params import (
     TARG_PX_X,
     exp2_output_dir,
 )
-from exp1common import output_case_name
-from analysis_memory import release_batch
-from expplots import plot_bespoke_four_panel, samples_for_method
-from script_timing import ScriptTimer, timed_call
+from modules.exp1common import output_case_name
+from modules.analysis_memory import release_batch
+from modules.expplots import plot_bespoke_four_panel, samples_for_method
+from modules.script_timing import ScriptTimer, timed_call
 
 
 RESULTS_DIR = exp2_output_dir("exp2_speckint2d_analysis")

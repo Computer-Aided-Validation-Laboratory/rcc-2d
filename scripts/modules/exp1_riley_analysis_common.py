@@ -17,7 +17,7 @@ from matplotlib.ticker import FixedFormatter, FixedLocator
 from matplotlib.lines import Line2D
 from PIL import Image
 
-from exp1common import output_case_name, parse_case_params
+from modules.exp1common import output_case_name, parse_case_params
 from exp1params import (
     TARG_PX_X,
     TARG_PX_Y,
@@ -33,8 +33,8 @@ from exp1params import (
     TEX_OVERSAMPLES,
     exp1_output_dir,
 )
-from script_timing import ScriptTimer, timed_call
-from analysis_memory import make_agg_figure, release_batch, release_figure
+from modules.script_timing import ScriptTimer, timed_call
+from modules.analysis_memory import make_agg_figure, release_batch, release_figure
 
 # Defaults make this base entry point usable directly.  The world, UV, and
 # texture-only wrappers below override these paths for their specific studies.
