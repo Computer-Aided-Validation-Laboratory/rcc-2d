@@ -242,7 +242,7 @@ def _save(image: np.ndarray, root: Path, prefix: str) -> None:
         Image.fromarray(encoded).save(root / f"{prefix}_b{bits}.tiff")
 
 
-def bespoke_render(case: str, pattern: str, method: str, param: int, *, texture_os: int | None = None, interp: str = "nearest", psf: bool = False) -> Path:
+def bespoke_render(case: str, pattern: str, method: str, param: int, *, texture_os: int | None = None, interp: str = "linear", psf: bool = False) -> Path:
     """Chunked custom ortho renderer.  Its frame mapping is independent of Riley."""
     coords, connect, ux, uy = load_case(case)
     signature = case_signature(coords, connect, ux, uy)
@@ -329,7 +329,7 @@ def _uvs(coords: np.ndarray, case: str, oversamp: int) -> np.ndarray:
     return np.ascontiguousarray(result)
 
 
-def riley_render(case: str, pattern: str, shader: str, ssaa: int, *, texture_os: int | None = None, interp: str = "nearest", storage: str = "float", psf: bool = False) -> Path:
+def riley_render(case: str, pattern: str, shader: str, ssaa: int, *, texture_os: int | None = None, interp: str = "linear", storage: str = "float", psf: bool = False) -> Path:
     coords, connect, ux, uy = load_case(case); width,height=CASE_CAMERA_PIXELS[case]; roi_x,roi_y=CASE_ROI_SIZES[case]
     signature = case_signature(coords, connect, ux, uy)
     root=Path("out")/f"exp3_riley_render_{shader}{'_psf' if psf else ''}_im{width}x{height}"/case

@@ -44,7 +44,6 @@ else:
     TEX_OVERSAMPLES = [1, 2, 4, 8, 16, 32, 64, 128]
 
 TEX_INTERPOLATORS = {
-    "nearest": riley.TextureSample.nearest,
     "linear": riley.TextureSample.linear,
     "cubic_catmull_rom": riley.TextureSample.cubic_catmull_rom,
 }

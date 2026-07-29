@@ -58,7 +58,7 @@ def run(kind: str) -> None:
         return
     if kind in {"riley_texfloat_ssaa", "riley_texuint_ssaa"}:
         storage = "uint" if "texuint" in kind else "float"
-        interps = os.environ.get("EXP3_TEX_INTERPOLATORS", "nearest,linear,cubic_catmull_rom").split(",")
+        interps = os.environ.get("EXP3_TEX_INTERPOLATORS", "linear,cubic_catmull_rom").split(",")
         for case in cases:
             for pattern in ("eggbox", "diskaddsat", "gausscont"):
                 for ss in ssaa_levels():
@@ -67,8 +67,11 @@ def run(kind: str) -> None:
         return
     if kind in {"riley_texfloat_disk", "riley_texuint_disk"}:
         storage = "uint" if "texuint" in kind else "float"
+        interps = os.environ.get("EXP3_TEX_INTERPOLATORS", "linear,cubic_catmull_rom").split(",")
         for case in cases:
             for ss in ssaa_levels():
-                for osamp in oversamples(): riley_render(case, "diskaddsat", "tex" + storage, ss, texture_os=osamp, storage=storage, psf=psf)
+                for osamp in oversamples():
+                    for interp in interps:
+                        riley_render(case, "diskaddsat", "tex" + storage, ss, texture_os=osamp, interp=interp.strip(), storage=storage, psf=psf)
         return
     raise ValueError(f"Unknown Exp3 render kind: {kind}")

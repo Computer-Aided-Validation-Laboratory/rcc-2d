@@ -57,8 +57,8 @@ def main() -> None:
             f"{pattern}_blackfrac0.6_"
             f"{'uniform_j0.25' if pattern == 'diskaddsat' else 'gaussian_j0.12'}_seed3"
         )
-        floating = root / "exp3_riley_render_texfloat_im512x512/plate516_cam512_quad9_rigid" / f"{tag}_float_nearest_os4_ss4_b8/image_c00_f00.npy"
-        integer = root / "exp3_riley_render_texuint_im512x512/plate516_cam512_quad9_rigid" / f"{tag}_uint_nearest_os4_ss4_b8/image_c00_f00.npy"
+        floating = root / "exp3_riley_render_texfloat_im512x512/plate516_cam512_quad9_rigid" / f"{tag}_linear_os4_ss4_f/image_c00_f00.npy"
+        integer = root / "exp3_riley_render_texuint_im512x512/plate516_cam512_quad9_rigid" / f"{tag}_linear_os4_ss4_b8/image_c00_f00.npy"
         if floating.exists() and integer.exists():
             maximum, _ = compare(f"{pattern} texfloat/texuint quantisation diagnostic", floating, integer)
             if maximum > 3.0 / 255.0:
