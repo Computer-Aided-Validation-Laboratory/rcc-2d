@@ -40,6 +40,10 @@ from exp2params import (
     TARG_PX_Y,
     TEX_PX_PAD,
 )
+from exp_common_render import (
+    analytic_disk_coverage as _shared_analytic_disk_coverage,
+    analytic_gaussian_coverage as _shared_analytic_gaussian_coverage,
+)
 
 MAX_PIXELS_PER_CHUNK = int(
     os.environ.get("EXP2_MAX_PIXELS_PER_CHUNK", "1000000")
@@ -500,18 +504,6 @@ def integration_rule(
     raise ValueError(f"Unsupported numerical integration method: {method}")
 
 
-def _candidate_reach(pattern: SpecklePattern, a: np.ndarray, h: float) -> int:
-    """Return a conservative lattice-cell search radius for local maps."""
-    mapped_half_diagonal = h * np.max(np.linalg.norm(a, axis=(1, 2)))
-    return int(
-        np.ceil(
-            (pattern.support_radius + pattern.max_jitter + mapped_half_diagonal)
-            / pattern.pitch
-        )
-        + 1
-    )
-
-
 def _analytic_gaussian_coverage(
     r0: np.ndarray,
     a: np.ndarray,
@@ -519,79 +511,8 @@ def _analytic_gaussian_coverage(
     pixel_size: float,
     rigid: bool,
 ) -> np.ndarray:
-    """Return additive Gaussian pixel averages in locally affine pixels."""
-    from scipy.special import erf
-    from scipy.stats import multivariate_normal
-
-    count = len(r0)
-    coverage = np.zeros(count, dtype=np.float64)
-    ny, nx = pattern.grid_shape
-    centres_grid = pattern.centers.reshape(ny, nx, 2)
-    origin_x, origin_y = pattern.lattice_origin
-    base_ix = np.rint((r0[:, 0] - origin_x) / pattern.pitch).astype(np.int64)
-    base_iy = np.rint((r0[:, 1] - origin_y) / pattern.pitch).astype(np.int64)
-    reach = _candidate_reach(pattern, a, 0.5 * pixel_size)
-    factor = pattern.sigma * np.sqrt(np.pi / 2.0)
-    h = 0.5 * pixel_size
-
-    # The supplied affine plate has one constant map. Grouping also supports
-    # piecewise-affine meshes without requiring one CDF setup per pixel.
-    rounded_a = np.round(a.reshape(count, 4), decimals=12)
-    unique_a, group_ids = np.unique(rounded_a, axis=0, return_inverse=True)
-    for group_id, a_values in enumerate(unique_a):
-        group = np.flatnonzero(group_ids == group_id)
-        a_group = a_values.reshape(2, 2)
-        if not rigid:
-            inv_a = np.linalg.inv(a_group)
-            covariance = pattern.sigma**2 * np.linalg.inv(a_group.T @ a_group)
-
-        for oy in range(-reach, reach + 1):
-            iy = base_iy[group] + oy
-            valid_y = (iy >= 0) & (iy < ny)
-            for ox in range(-reach, reach + 1):
-                ix = base_ix[group] + ox
-                valid = valid_y & (ix >= 0) & (ix < nx)
-                if not np.any(valid):
-                    continue
-                indices = group[valid]
-                centres = centres_grid[iy[valid], ix[valid]]
-                # q-coordinate of the blob centre, with r(q) = r0 + A q.
-                mu = (centres - r0[indices]) @ inv_a.T if not rigid else (
-                    (centres - r0[indices]) @ a_group
-                )
-                if rigid:
-                    int_x = factor * (
-                        erf((h - mu[:, 0]) / (np.sqrt(2.0) * pattern.sigma))
-                        - erf((-h - mu[:, 0]) / (np.sqrt(2.0) * pattern.sigma))
-                    )
-                    int_y = factor * (
-                        erf((h - mu[:, 1]) / (np.sqrt(2.0) * pattern.sigma))
-                        - erf((-h - mu[:, 1]) / (np.sqrt(2.0) * pattern.sigma))
-                    )
-                    coverage[indices] += int_x * int_y / pixel_size**2
-                else:
-                    upper = np.full_like(mu, h)
-                    lower = np.full_like(mu, -h)
-                    probability = (
-                        multivariate_normal.cdf(upper - mu, cov=covariance)
-                        - multivariate_normal.cdf(
-                            np.column_stack((lower[:, 0], upper[:, 1])) - mu,
-                            cov=covariance,
-                        )
-                        - multivariate_normal.cdf(
-                            np.column_stack((upper[:, 0], lower[:, 1])) - mu,
-                            cov=covariance,
-                        )
-                        + multivariate_normal.cdf(lower - mu, cov=covariance)
-                    )
-                    coverage[indices] += (
-                        2.0
-                        * np.pi
-                        * pattern.sigma**2
-                        * probability
-                        / (abs(np.linalg.det(a_group)) * pixel_size**2)
-                    )
-    return coverage
+    """Compatibility wrapper for the shared analytic Gaussian integral."""
+    return _shared_analytic_gaussian_coverage(r0, a, pattern, pixel_size)
 
 
 def _analytic_disk_coverage(
@@ -600,37 +521,8 @@ def _analytic_disk_coverage(
     pattern: SpecklePattern,
     pixel_size: float,
 ) -> np.ndarray:
-    """Return exact additive disk averages for locally rigid target pixels."""
-    count = len(r0)
-    coverage = np.zeros(count, dtype=np.float64)
-    ny, nx = pattern.grid_shape
-    centres_grid = pattern.centers.reshape(ny, nx, 2)
-    origin_x, origin_y = pattern.lattice_origin
-    base_ix = np.rint((r0[:, 0] - origin_x) / pattern.pitch).astype(np.int64)
-    base_iy = np.rint((r0[:, 1] - origin_y) / pattern.pitch).astype(np.int64)
-    reach = _candidate_reach(pattern, a, 0.5 * pixel_size)
-    h = 0.5 * pixel_size
-
-    for oy in range(-reach, reach + 1):
-        iy = base_iy + oy
-        valid_y = (iy >= 0) & (iy < ny)
-        for ox in range(-reach, reach + 1):
-            ix = base_ix + ox
-            valid = valid_y & (ix >= 0) & (ix < nx)
-            if not np.any(valid):
-                continue
-            indices = np.flatnonzero(valid)
-            centres = centres_grid[iy[valid], ix[valid]]
-            # For an orthogonal A, rotate the disk centre into the square q box.
-            mu = np.einsum("nij,nj->ni", a[indices].transpose(0, 2, 1), centres - r0[indices])
-            coverage[indices] += _disk_box_area(
-                -h - mu[:, 0],
-                -h - mu[:, 1],
-                pixel_size,
-                pixel_size,
-                pattern.radius,
-            ) / pixel_size**2
-    return coverage
+    """Compatibility wrapper for the shared exact disk integral."""
+    return _shared_analytic_disk_coverage(r0, a, pattern, pixel_size)
 
 
 def _local_affine_map(

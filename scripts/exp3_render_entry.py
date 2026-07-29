@@ -41,7 +41,16 @@ def run(kind: str) -> None:
             if "chirp" in case:
                 print(f"  {case}: closed-form affine speckle integration unavailable; skipping.")
                 continue
-            for pattern in ("diskaddsat", "gausscont"): bespoke_render(case, pattern, "analytic", 1)
+            # Disk--pixel overlap is exact only for rigid maps: affine motion
+            # maps a camera square to a parallelogram.  The general affine
+            # Gaussian CDF integral is mathematically exact but is not a
+            # tractable 512² production reference, so affine/chirp use the
+            # highest SSAA result instead.
+            patterns = ("diskaddsat", "gausscont") if "rigid" in case else ()
+            if "rigid" not in case:
+                print(f"  {case}: analytic speckle integration is unavailable at Exp3 scale; SSAA is the reference path.")
+            for pattern in patterns:
+                bespoke_render(case, pattern, "analytic", 1)
         return
     if kind == "speckint2d_ssaa":
         for case in cases:

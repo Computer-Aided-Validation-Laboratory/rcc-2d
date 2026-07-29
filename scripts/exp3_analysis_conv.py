@@ -18,7 +18,7 @@ from matplotlib.backends.backend_agg import FigureCanvasAgg
 from matplotlib.figure import Figure
 
 from exp0params_common import CORES
-from exp3_analysis_common import Render, best_reference, discover_renders, image_frames, load_image, release, title_lines
+from exp3_analysis_common import Render, best_reference, discover_renders, image_frames, load_image, numeric_y_axis, release, title_lines
 
 RESULTS = Path("out/exp3_analysis_conv")
 RECT_RESULTS = Path("out/exp3_analysis_conv_rectconv")
@@ -51,11 +51,13 @@ def plot(rows: list[dict[str, object]], path: Path, heading: str, reference_name
     for row in rows: by_os[int(row["OS"])].append(row)
     texture_series = any("_os" in str(row["Config"]) for row in rows)
     for axis, (field, ylabel) in zip(axes, fields):
+        plotted: list[float] = []
         for osamp, values in sorted(by_os.items()):
             values.sort(key=lambda row: int(row["SSAA"]))
             x = [int(row["SSAA"]) for row in values]; y = [float(row[field]) for row in values]
             axis.plot(x, y, "o-", label=f"OS={osamp}" if texture_series else "SSAA series")
-        axis.set_xscale("log", base=2); axis.set_yscale("symlog", linthresh=1e-15)
+            plotted.extend(y)
+        axis.set_xscale("log", base=2); numeric_y_axis(axis, plotted)
         axis.set_xticks(sorted({int(row["SSAA"]) for row in rows})); axis.set_xticklabels(sorted({int(row["SSAA"]) for row in rows}))
         axis.set_xlabel("SSAA samples along one pixel axis"); axis.set_ylabel(ylabel); axis.grid(alpha=.3); axis.legend(fontsize=8)
     figure.suptitle(f"{title_lines(heading)}\nReference: {reference_name}", fontsize=11, fontweight="bold")
@@ -107,26 +109,45 @@ def write_csv(path: Path, rows: list[dict[str, object]]) -> None:
 
 
 def comparison_overlays(rows: list[dict[str, object]]) -> None:
-    """Overlay Exp3 rigid/affine curves with Exp1 (eggbox) or Exp2 (speckles)."""
+    """Overlay like-for-like bespoke Exp3 and Exp1/2 SSAA convergence."""
     comparison_dir = RESULTS / "exp1_exp2_comparisons"; comparison_dir.mkdir(parents=True, exist_ok=True)
     for pattern, previous in (("eggbox", Path("out/exp1_gridint2d_analysis_uvs_im32/summary.csv")), ("diskaddsat", Path("out/exp2_speckint2d_analysis_im32/summary.csv")), ("gausscont", Path("out/exp2_speckint2d_analysis_im32/summary.csv"))):
         if not previous.exists(): continue
         old = list(csv.DictReader(previous.open()))
         for case_kind in ("rigid", "affine"):
-            new = [row for row in rows if row["Pattern"] == pattern and case_kind in str(row["Case"]) and int(row["Frame"]) == 0]
+            # These are intentionally bespoke-only comparisons.  Texture and
+            # function-shader rows have independent OS/shader controls and
+            # must never be concatenated into an SSAA curve.
+            exp3_family = "gridint2d" if pattern == "eggbox" else "speckint2d"
+            new = [
+                row for row in rows
+                if row["Pattern"] == pattern
+                and row["Family"] == exp3_family
+                and case_kind in str(row["Case"])
+                and int(row["Frame"]) == 0
+                and int(row["OS"]) == 1
+            ]
             old_rows = [
                 row for row in old
                 if case_kind in row.get("Case", row.get("Group", ""))
                 and (pattern == "eggbox" or pattern in row.get("Group", row.get("Pattern", "")))
                 and int(row.get("Frame", 0)) == 0
+                and row.get("Method", "rect") == "rect"
             ]
             if not new or not old_rows: continue
             figure = Figure(figsize=(7, 4.5), constrained_layout=True); FigureCanvasAgg(figure); axis = figure.subplots()
-            for label, data, xkey, ykey in (("Exp3", new, "SSAA", "e_max"), ("Exp1/2", old_rows, "Samples", "e_inf")):
+            plotted: list[float] = []
+            for label, data, xkey, ykey in ((f"Exp3 {exp3_family}, SSAA", new, "SSAA", "e_max"), ("Exp1 rectangular SSAA" if pattern == "eggbox" else "Exp2 rectangular SSAA", old_rows, "Samples", "e_inf")):
                 values = sorted(data, key=lambda row: float(row[xkey])); axis.plot([float(row[xkey]) for row in values], [float(row[ykey]) for row in values], "o-", label=label)
-            axis.set_xscale("log", base=2); axis.set_yscale("log"); axis.set_xlabel("samples along one pixel axis"); axis.set_ylabel("max floating-point error"); axis.grid(alpha=.3); axis.legend()
-            axis.set_title(f"{pattern}: Exp3 vs Exp1/2 {case_kind} convergence")
-            figure.savefig(comparison_dir / f"{pattern}_{case_kind}_overlay.png", dpi=160); figure.clear(); release()
+                plotted.extend(float(row[ykey]) for row in values)
+            axis.set_xscale("log", base=2); numeric_y_axis(axis, plotted); axis.set_xlabel("SSAA samples along one pixel axis"); axis.set_ylabel("max floating-point error"); axis.grid(alpha=.3); axis.legend(fontsize=8)
+            previous_name = "Exp1" if pattern == "eggbox" else "Exp2"
+            axis.set_title(
+                f"{case_kind.title()}, {pattern}: bespoke Exp3 vs {previous_name}\n"
+                "Frame 00; analytic-reference max error",
+                fontsize=10,
+            )
+            figure.savefig(comparison_dir / f"{pattern}_{case_kind}_bespoke_ssaa_overlay.png", dpi=160); figure.clear(); release()
 
 
 def main() -> None:

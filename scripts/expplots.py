@@ -12,10 +12,14 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Mapping, Sequence
 
-from matplotlib.ticker import FixedFormatter, FixedLocator
 import numpy as np
 
-from analysis_memory import make_agg_figure, release_figure
+from exp_common_analysis import (
+    explicit_log_ticks,
+    make_agg_figure,
+    release_figure,
+    samples_along_axis,
+)
 
 
 METHOD_STYLES = {
@@ -37,7 +41,7 @@ def samples_for_method(method: str, param: int) -> int:
 
 def samples_per_pixel_axis(samples: Sequence[float]) -> np.ndarray:
     """Convert total per-pixel sample counts to their one-axis equivalent."""
-    return np.sqrt(np.asarray(samples, dtype=float))
+    return samples_along_axis(samples)
 
 
 def _style(method: str) -> tuple[str, str, str]:
@@ -51,9 +55,7 @@ def _set_sample_axis(axis, samples: Sequence[float]) -> None:
     if not len(values):
         return
     ticks = np.unique(np.sort(values))
-    axis.xaxis.set_major_locator(FixedLocator(ticks))
-    axis.xaxis.set_major_formatter(FixedFormatter([f"{tick:g}" for tick in ticks]))
-    axis.set_xlim(float(ticks[0]) * 0.85, float(ticks[-1]) * 1.15)
+    explicit_log_ticks(axis, ticks)
 
 
 def plot_bespoke_four_panel(

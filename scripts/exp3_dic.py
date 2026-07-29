@@ -29,7 +29,12 @@ if str(HERE) not in sys.path:
     sys.path.insert(0, str(HERE))
 
 import pyvale.dic as dic
-from exp3params import DIC_SHAPE_FUNCTION, DIC_SUBSET_SIZE_PX, DIC_SUBSET_STEP_PX
+from exp3params import (
+    DIC_CORRELATION_THRESHOLD,
+    DIC_SHAPE_FUNCTION,
+    DIC_SUBSET_SIZE_PX,
+    DIC_SUBSET_STEP_PX,
+)
 
 
 OUT_ROOT = Path("out")
@@ -108,8 +113,8 @@ def physical_expected_rigid(case: str, frames: int) -> tuple[np.ndarray, np.ndar
 
 def save_field(path: Path, result: object, frame: int, label: str) -> None:
     # PyVale reports image-space V (positive down); convert to Exp3 physical Y.
-    ux = result.u[frame]
-    uy = -result.v[frame]
+    ux = result.u_px[frame]
+    uy = -result.v_px[frame]
     x, y = result.ss_x, result.ss_y
     # The finite-star camera is approximately 4:1.  Stacking its two fields
     # preserves useful plot height; square-camera cases remain compact beside
@@ -160,6 +165,7 @@ def run_pair(config_dir: Path, output_dir: Path, index: int) -> None:
         subset_step=DIC_SUBSET_STEP_PX,
         shape_function=DIC_SHAPE_FUNCTION,
         correlation_criteria="ZNSSD",
+        threshold=DIC_CORRELATION_THRESHOLD,
         max_displacement=8,
         method="MULTIWINDOW_RG",
         num_threads=DIC_NUM_THREADS,
@@ -227,8 +233,8 @@ def analyse_sequence(case: str, render_root: str, config_dir: Path) -> None:
         result = dic.import_2d(csv_files[0], delimiter=",", layout="matrix")
         save_field(output_dir / f"displacement_frame{index:02d}.png", result, 0, config_dir.name)
         if expected is not None:
-            mean_x = float(np.nanmean(result.u[0]))
-            mean_y = float(-np.nanmean(result.v[0]))
+            mean_x = float(np.nanmean(result.u_px[0]))
+            mean_y = float(-np.nanmean(result.v_px[0]))
             rows.append({
                 "frame": index,
                 "expected_ux_px": float(expected[0][index]),
@@ -259,7 +265,7 @@ def main() -> None:
         sequences = sequences[:LIMIT]
     if not sequences:
         raise FileNotFoundError("No completed additive Exp3 render sequences matched the requested filter.")
-    print(f"Exp3 DIC: {len(sequences)} completed sequences; subset={DIC_SUBSET_SIZE_PX}, step={DIC_SUBSET_STEP_PX}, shape={DIC_SHAPE_FUNCTION}, threads={DIC_NUM_THREADS}")
+    print(f"Exp3 DIC: {len(sequences)} completed sequences; subset={DIC_SUBSET_SIZE_PX}, step={DIC_SUBSET_STEP_PX}, shape={DIC_SHAPE_FUNCTION}, threshold={DIC_CORRELATION_THRESHOLD}, threads={DIC_NUM_THREADS}")
     for index, (case, root, directory) in enumerate(sequences, start=1):
         print(f"[{index}/{len(sequences)}] {root}/{case}/{directory.name}")
         analyse_sequence(case, root, directory)

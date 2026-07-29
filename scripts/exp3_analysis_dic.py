@@ -15,14 +15,14 @@ from matplotlib.backends.backend_agg import FigureCanvasAgg
 from matplotlib.figure import Figure
 
 from exp0params_common import CORES
-from exp3_analysis_common import OUT, OS_RE, SS_RE, best_reference, parameter, pattern_of, release, title_lines
+from exp3_analysis_common import OUT, OS_RE, SS_RE, interpolator_of, numeric_y_axis, parameter, pattern_of, release, title_lines
 
 RESULTS = OUT / "exp3_analysis_dic"
 
 
 @dataclass(frozen=True)
 class Record:
-    case: str; root: str; config: str; directory: Path; pattern: str; ssaa: int; osamp: int; analytic: bool
+    case: str; root: str; config: str; directory: Path; pattern: str; ssaa: int; osamp: int; interpolator: str; analytic: bool
 
 
 def discover() -> list[Record]:
@@ -30,7 +30,7 @@ def discover() -> list[Record]:
     for directory in (OUT / "exp3_dic").glob("*/*/*"):
         if not directory.is_dir() or not list(directory.glob("dic_frame*_*.csv")): continue
         case, root, config = directory.parent.parent.name, directory.parent.name, directory.name
-        rows.append(Record(case, root, config, directory, pattern_of(config), parameter(config, SS_RE), parameter(config, OS_RE), "_analytic_" in config))
+        rows.append(Record(case, root, config, directory, pattern_of(config), parameter(config, SS_RE), parameter(config, OS_RE), interpolator_of(config), "_analytic_" in config))
     return rows
 
 
@@ -55,6 +55,15 @@ def reference(records: list[Record]) -> tuple[Record | None,str]:
     ref=max(records,key=lambda r:(r.ssaa,r.osamp)); return ref,f"Highest SSAA/OS render DIC reference: SSAA={ref.ssaa}, OS={ref.osamp or 1}"
 
 
+def series_label(record: Record) -> str:
+    """A homogeneous plotting series: renderer/storage, sampler and PSF mode."""
+    psf = "_psf" in record.root or "_psf" in record.config
+    if "riley_render_tex" in record.root:
+        storage = "texuint" if "texuint" in record.root else "texfloat"
+        return f"riley_{storage}_{record.interpolator}{'_psf' if psf else ''}"
+    return f"{record.root.replace('_render_ssaa_im512x512', '').replace('_render_ssaa_im1020x252', '')}{'_psf' if psf and '_psf' not in record.root else ''}"
+
+
 def field_plot(path: Path, rec: Record, frame: int, ref: Record, ref_name: str, arrays: tuple[np.ndarray,...]) -> tuple[float,float]:
     x,y,ru,rv,cu,cv=arrays; du, dv=cu-ru, cv-rv; maximum=float(max(np.max(abs(du)),np.max(abs(dv)))); rms=float(np.sqrt(np.mean(du*du+dv*dv)))
     fig=Figure(figsize=(12,7),constrained_layout=True); FigureCanvasAgg(fig); axes=fig.subplots(2,3)
@@ -76,22 +85,23 @@ def analyse(payload: tuple[Record,list[Record]]) -> list[dict[str,object]]:
         x,y,ru,rv=a; _,_,cu,cv=b
         if ru.shape!=cu.shape: continue
         maximum,rms=field_plot(RESULTS/rec.case/rec.root/rec.config/f"frame{frame:02d}_difference.png",rec,frame,ref,ref_name,(x,y,ru,rv,cu,cv))
-        rows.append({"Case":rec.case,"Root":rec.root,"Config":rec.config,"Pattern":rec.pattern,"Frame":frame,"SSAA":rec.ssaa or 1,"OS":rec.osamp or 1,"Reference":ref_name,"max_difference_px":maximum,"rms_difference_px":rms})
+        rows.append({"Case":rec.case,"Root":rec.root,"Series":series_label(rec),"Config":rec.config,"Pattern":rec.pattern,"Frame":frame,"SSAA":rec.ssaa or 1,"OS":rec.osamp or 1,"Reference":ref_name,"max_difference_px":maximum,"rms_difference_px":rms})
         del a,b,x,y,ru,rv,cu,cv;release()
     return rows
 
 
 def convergence(rows:list[dict[str,object]])->None:
     groups=defaultdict(list)
-    for row in rows: groups[(row["Case"],row["Pattern"],row["Root"],row["Frame"])].append(row)
-    for (case,pattern,root,frame),values in groups.items():
+    for row in rows: groups[(row["Case"],row["Pattern"],row["Series"],row["Frame"])].append(row)
+    for (case,pattern,series_name,frame),values in groups.items():
         fig=Figure(figsize=(7,4.5),constrained_layout=True);FigureCanvasAgg(fig);axis=fig.subplots()
         by_os=defaultdict(list)
         for row in values:by_os[int(row["OS"])].append(row)
+        plotted=[]
         for osamp,series in sorted(by_os.items()):
-            series.sort(key=lambda r:int(r["SSAA"]));axis.plot([r["SSAA"] for r in series],[r["max_difference_px"] for r in series],"o-",label=f"OS={osamp}")
-        axis.set_xscale("log",base=2);axis.set_yscale("symlog",linthresh=1e-12);axis.set_xticks(sorted({int(r["SSAA"]) for r in values}));axis.set_xlabel("SSAA samples along one pixel axis");axis.set_ylabel("max displacement difference [px]");axis.grid(alpha=.3);axis.legend(fontsize=8);axis.set_title(f"{title_lines(case+': '+pattern+' DIC convergence')} | frame {frame:02d}\nReference: {title_lines(str(values[0]['Reference']))}",fontsize=9)
-        path=RESULTS/case/root/f"{pattern}_frame{frame:02d}_convergence.png";path.parent.mkdir(parents=True,exist_ok=True);fig.savefig(path,dpi=150);fig.clear();release()
+            series.sort(key=lambda r:int(r["SSAA"])); y=[r["max_difference_px"] for r in series];axis.plot([r["SSAA"] for r in series],y,"o-",label=f"OS={osamp}" if any(int(r["OS"]) > 1 for r in values) else "SSAA series");plotted.extend(y)
+        axis.set_xscale("log",base=2);numeric_y_axis(axis,plotted);axis.set_xticks(sorted({int(r["SSAA"]) for r in values}));axis.set_xlabel("SSAA samples along one pixel axis");axis.set_ylabel("max displacement difference [px]");axis.grid(alpha=.3);axis.legend(fontsize=8);axis.set_title(f"{title_lines(case+': '+pattern+' DIC convergence')} | frame {frame:02d}\nRender series: {title_lines(series_name)}\nReference: {title_lines(str(values[0]['Reference']))}",fontsize=9)
+        path=RESULTS/case/series_name/f"{pattern}_frame{frame:02d}_convergence.png";path.parent.mkdir(parents=True,exist_ok=True);fig.savefig(path,dpi=150);fig.clear();release()
 
 
 def main()->None:

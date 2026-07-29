@@ -8,8 +8,9 @@ from dataclasses import dataclass
 from pathlib import Path
 
 import numpy as np
+from matplotlib.ticker import LogFormatterMathtext, LogLocator, MaxNLocator, ScalarFormatter
 
-from analysis_memory import release_batch
+from exp_common_analysis import release_batch
 
 OUT = Path("out")
 CASE_RE = re.compile(r"plate.*?(?:rigid|affine|chirp)$")
@@ -57,6 +58,27 @@ def title_lines(text: str, width: int = 54) -> str:
     if len(text) <= width:
         return text
     return "\n".join(textwrap.wrap(text.replace("_", " "), width=width, break_long_words=False))
+
+
+def numeric_y_axis(axis, values: list[float] | np.ndarray, *, log_when_positive: bool = True) -> None:
+    """Use readable numbered vertical ticks, including exact-zero metrics."""
+    data = np.asarray(values, dtype=float)
+    data = data[np.isfinite(data)]
+    positive = data[data > 0.0]
+    if log_when_positive and positive.size and not np.any(data <= 0.0):
+        axis.set_yscale("log")
+        axis.yaxis.set_major_locator(LogLocator(base=10))
+        axis.yaxis.set_major_formatter(LogFormatterMathtext(base=10))
+        return
+    limit = max(1.0, float(np.max(np.abs(data)))) if data.size else 1.0
+    if limit <= 1.0:
+        axis.set_ylim(-0.05, 1.05)
+    else:
+        axis.set_ylim(-0.05 * limit, 1.05 * limit)
+    axis.yaxis.set_major_locator(MaxNLocator(nbins=6))
+    formatter = ScalarFormatter(useMathText=True)
+    formatter.set_powerlimits((-3, 3))
+    axis.yaxis.set_major_formatter(formatter)
 
 
 def image_frames(directory: Path) -> dict[int, Path]:

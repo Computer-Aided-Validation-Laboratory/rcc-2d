@@ -19,6 +19,11 @@ from scipy.ndimage import gaussian_filter, map_coordinates
 
 from exp1common import build_pv_mesh
 from exp2speckint2d import make_speckle_pattern
+from exp_common_render import (
+    analytic_disk_coverage,
+    analytic_gaussian_coverage,
+    is_rigid_inverse,
+)
 from exp3params import (
     BACKGROUND, BIT_DEPTHS, CASE_CAMERA_PIXELS, CASE_ROI_SIZES,
     DEFORMATION_CASES, EGGBOX_PERIOD_FINAL_PX, FORCE_RENDER_OVER, GAMMA, I0,
@@ -277,10 +282,22 @@ def bespoke_render(case: str, pattern: str, method: str, param: int, *, texture_
     dx, dy = np.meshgrid(offsets * roi_x / width, offsets * roi_y / height)
     weights = 1.0 / (samples * samples)
     chunk = max(1, int(os.environ.get("EXP3_CHUNK_PIXELS", "32768")))
+    analytic_speckle = method == "analytic" and pattern in {"diskaddsat", "gausscont"} and texture is None
     for frame in selected_frames(case, ux.shape[1]):
         prefix = f"frame{frame:02d}"
-        if (root / f"{prefix}.npy").exists() and outputs_match_case(root, signature) and not force_render():
+        integral_marker = root / ".exp3_analytic_speckle_integral_v2"
+        if (root / f"{prefix}.npy").exists() and outputs_match_case(root, signature) and (not analytic_speckle or integral_marker.exists()) and not force_render():
             print(f"  {case} {prefix}: exists; skipping."); continue
+        if analytic_speckle and MAPPING_MODES[case] != "affine":
+            raise ValueError(f"{case}: analytic speckle integration is unavailable for {MAPPING_MODES[case]} mapping.")
+        analytic_a = analytic_b = None
+        if analytic_speckle:
+            analytic_a, analytic_b = _inverse_affine(coords, ux, uy, frame)
+            if pattern == "diskaddsat" and not np.all(is_rigid_inverse(analytic_a[None, :, :])):
+                raise ValueError(
+                    f"{case} frame {frame:02d}: exact disk integration requires rigid motion; "
+                    "use SSAA for affine deformation."
+                )
         flat = np.empty(width * height)
         deformed = None
         if frame and MAPPING_MODES[case] == "structured_newton":
@@ -293,6 +310,19 @@ def bespoke_render(case: str, pattern: str, method: str, param: int, *, texture_
             if method == "analytic" and pattern == "eggbox" and texture is None:
                 a, b = _inverse_affine(coords, ux, uy, frame)
                 flat[ids] = _analytic_eggbox_affine(px, py, roi_x / width, roi_y / height, a, b, eggbox_pitch_world(case))
+                continue
+            if analytic_speckle:
+                if speckles is None or analytic_a is None or analytic_b is None:
+                    raise RuntimeError("Analytic speckle state was not initialised.")
+                centres = np.column_stack((px + .5 * roi_x / width, py + .5 * roi_y / height))
+                ref_centres = centres @ analytic_a.T + analytic_b
+                maps = np.broadcast_to(analytic_a, (len(ids), 2, 2))
+                coverage = (
+                    analytic_disk_coverage(ref_centres, maps, speckles, roi_x / width)
+                    if pattern == "diskaddsat" else
+                    analytic_gaussian_coverage(ref_centres, maps, speckles, roi_x / width)
+                )
+                flat[ids] = speckles.intensity_from_coverage(coverage)
                 continue
             qx = (px[:, None] + dx.ravel()).ravel(); qy = (py[:, None] + dy.ravel()).ravel()
             rx, ry, valid = reference_points(case, coords, connect, ux, uy, frame, qx, qy, topology=topology, deformed=deformed)
@@ -313,6 +343,8 @@ def bespoke_render(case: str, pattern: str, method: str, param: int, *, texture_
         _save(image, root, prefix)
         print(f"  {case} {prefix}: rendered.")
     mark_case_outputs(root, signature)
+    if analytic_speckle:
+        (root / ".exp3_analytic_speckle_integral_v2").write_text("true analytic pixel integral\n")
     return root
 
 

@@ -35,11 +35,17 @@ PSF_SUPPORT_SIGMAS = 4.0
 DIC_SUBSET_SIZE_PX = 15
 DIC_SUBSET_STEP_PX = 1
 DIC_SHAPE_FUNCTION = "AFFINE"
+# Reliability-guided DIC requires this minimum ZNCC correlation.  A value of
+# 0.8 tolerates locally weak/sharp speckle subsets while retaining their cost
+# and convergence diagnostics in the saved results.
+DIC_CORRELATION_THRESHOLD = 0.8
 
 if TEST_RUN:
-    SSAA_LEVELS = [4, 8, 16]
-    TEX_OVERSAMPLES = [4, 8, 16]
+    SSAA_LEVELS = [1, 2, 4, 8, 16, 32]
+    TEX_OVERSAMPLES = [1, 2, 4, 8, 16, 32]
 else:
+    # Needed for the 8-bit convergence study; sharp texture cases may need
+    # a higher SSAA reference once their streamed texture path is available.
     SSAA_LEVELS = [1, 2, 4, 8, 16, 32, 64, 128]
     TEX_OVERSAMPLES = [1, 2, 4, 8, 16, 32, 64, 128]
 
