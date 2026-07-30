@@ -13,7 +13,6 @@ import os
 from pathlib import Path
 import numpy as np
 import riley
-from PIL import Image
 from modules.script_timing import ScriptTimer, timed_call
 
 from modules.exp1common import (
@@ -41,6 +40,7 @@ from exp1params import (
 )
 from modules.psf_riley_common import camera_kwargs, enabled as psf_enabled
 from modules.render_selection import riley_enabled
+from modules.render_outputs import save_float_and_depths, float_and_depths_complete
 
 OUTPUT_ROOT = exp1_output_dir("exp1_riley_render_func_uvs_psf" if psf_enabled() else "exp1_riley_render_func_uvs")
 
@@ -59,46 +59,6 @@ def get_bit_depths() -> list[int]:
     return [int(val.strip()) for val in bits_str.split(",") if val.strip()]
 
 
-def fill_existing_depths(out_base: Path, ssaa: int, depths: list[int], num_frames: int) -> None:
-    """Derive requested function-render depths from one completed f64 result.
-
-    Historical Exp1 function outputs are code-scaled and bit-labelled.  This
-    compatibility bridge preserves that layout for its analysis scripts while
-    ensuring a newly added camera depth never launches another Riley raster.
-    """
-    source_dir: Path | None = None
-    source_bits: int | None = None
-    for directory in out_base.glob(f"ss{ssaa}_b*"):
-        try:
-            bits = int(directory.name.rsplit("_b", 1)[1])
-        except (IndexError, ValueError):
-            continue
-        if (directory / "image_c00_f00.npy").exists():
-            source_dir, source_bits = directory, bits
-            break
-    if source_dir is None or source_bits is None:
-        return
-    source_max = float((1 << source_bits) - 1)
-    for bits in depths:
-        target = out_base / f"ss{ssaa}_b{bits}"
-        target.mkdir(parents=True, exist_ok=True)
-        target_max = float((1 << bits) - 1)
-        for frame in range(num_frames):
-            output_npy = target / f"image_c00_f{frame:02d}.npy"
-            output_tiff = target / f"cam0_frame{frame}_field0.tiff"
-            if output_npy.exists() and output_tiff.exists():
-                continue
-            source_npy = source_dir / f"image_c00_f{frame:02d}.npy"
-            if not source_npy.exists():
-                continue
-            normalised = np.asarray(np.load(source_npy, mmap_mode="r"), dtype=np.float64) / source_max
-            if not output_npy.exists():
-                np.save(output_npy, normalised * target_max)
-            if not output_tiff.exists():
-                codes = np.rint(np.clip(normalised, 0.0, 1.0) * target_max)
-                Image.fromarray(codes.astype(np.uint8 if bits <= 8 else np.uint16)).save(output_tiff)
-
-
 def get_riley_mesh_type(nodes_per_elem: int) -> riley.MeshType:
     """Determine Riley MeshType from connectivity width."""
     if nodes_per_elem == 3:
@@ -113,15 +73,6 @@ def get_riley_mesh_type(nodes_per_elem: int) -> riley.MeshType:
         return riley.MeshType.quad9
     raise ValueError(
         f"Unsupported element type with {nodes_per_elem} nodes."
-    )
-
-
-def render_exists(case_out: Path, num_frames: int) -> bool:
-    """Return whether Riley wrote both saved representations for every frame."""
-    return all(
-        (case_out / f"cam0_frame{ff}_field0.tiff").exists()
-        and (case_out / f"image_c00_f{ff:02d}.npy").exists()
-        for ff in range(num_frames)
     )
 
 
@@ -219,16 +170,22 @@ def main() -> None:
         roi_pos = tuple(riley.roi_cent_from_coords(roi_coords))
 
         for ss in get_ssaa_levels():
-            fill_existing_depths(out_base, ss, get_bit_depths(), num_frames)
-            for bb in get_bit_depths():
+            depths = get_bit_depths()
+            canonical = out_base / f"ss{ss}_f"
+            canonical_paths = [canonical / f"image_c00_f{ff:02d}.npy" for ff in range(num_frames)]
+            if (not FORCE_RENDER_OVER and canonical_paths
+                    and all(float_and_depths_complete(path, depths) for path in canonical_paths)):
+                print(f"  SSAA={ss}: canonical float images exist; skipping.")
+                continue
+            for bb in [max(depths)]:
                 print(
                     f"  Running Riley function render: "
                     f"SSAA={ss}, bits={bb}"
                 )
-                case_out = out_base / f"ss{ss}_b{bb}"
+                case_out = canonical
                 case_out.mkdir(parents=True, exist_ok=True)
                 force_render = FORCE_RENDER_OVER or os.environ.get("EXP1_FORCE_RENDER_OVER") == "1"
-                if not force_render and render_exists(case_out, num_frames):
+                if not force_render and all(float_and_depths_complete(path, depths) for path in canonical_paths):
                     print("    outputs exist; skipping.")
                     continue
 
@@ -263,7 +220,7 @@ def main() -> None:
                 config = riley.create_raster_config(
                     num_frames=num_frames,
                     total_threads=RILEY_RASTER_THREADS,
-                    save_strategy=riley.SaveStrategy.both,
+                    save_strategy=riley.SaveStrategy.memory,
                 )
                 # The Python wrapper creates one render group. Keep geometry
                 # serial and give that group's workers to the raster loop.
@@ -272,23 +229,18 @@ def main() -> None:
                 config.max_geom_workers_per_job = 1
                 config.max_raster_workers_per_job = RILEY_RASTER_THREADS
                 config.tile_size_min = 1
-                config.save_format = riley.ImageFormat.tiff
-                config.save_bits = 16 if bb in (12, 16) else 8
-                config.save_scaling = riley.ScaleStrategy.none
-
                 images = timed_call(timer, str(case_out), riley.raster,
                     [mesh],
                     [camera],
                     config,
-                    out_dir=str(case_out),
                 )
 
                 if images is not None:
                     for ff in range(num_frames):
-                        frame_img = images[0, ff, 0]
-                        np.save(
+                        save_float_and_depths(
                             case_out / f"image_c00_f{ff:02d}.npy",
-                            frame_img,
+                            np.asarray(images[0, ff, 0], dtype=np.float64) / float((1 << bb) - 1),
+                            depths,
                         )
 
     print("All renders completed.")

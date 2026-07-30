@@ -34,8 +34,11 @@ WRITE_RECTCONV = True
 
 
 def _paths(directory: Path, method: str, param: int, bit_depth: int, frame: int) -> tuple[Path, Path]:
-    prefix = f"targ_px{TARG_PX_X}_int_{method}_param_{param}{RENDER_SUFFIX}_b{bit_depth}_frame{frame:02d}"
-    return directory / f"{prefix}.npy", directory / f"{prefix}.tiff"
+    canonical = directory / f"targ_px{TARG_PX_X}_int_{method}_param_{param}{RENDER_SUFFIX}_frame{frame:02d}.npy"
+    canonical_tiff = canonical.with_name(f"{canonical.stem}_b{bit_depth}.tiff")
+    if canonical.exists() and canonical_tiff.exists():
+        return canonical, canonical_tiff
+    return canonical, canonical_tiff
 
 
 def _load_pair(directory: Path, method: str, param: int, bit_depth: int, frame: int):
@@ -44,7 +47,10 @@ def _load_pair(directory: Path, method: str, param: int, bit_depth: int, frame: 
         return None
     with Image.open(tiff_path) as image:
         digitised = np.asarray(image, dtype=np.float64)
-    return np.load(npy_path) / float(2**bit_depth - 1), digitised
+    floating = np.asarray(np.load(npy_path), dtype=np.float64)
+    if floating.size and np.nanmax(np.abs(floating)) > 1.0 + 1e-12:
+        floating /= float(2**bit_depth - 1)
+    return floating, digitised
 
 
 def _empty_float(methods: list[str]) -> dict[str, dict[str, list[float]]]:

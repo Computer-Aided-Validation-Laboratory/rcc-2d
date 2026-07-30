@@ -7,7 +7,6 @@ import sys
 from pathlib import Path
 
 import numpy as np
-from PIL import Image
 
 from modules.exp1common import compute_riley_bbox_uvs, get_riley_bbox_uv_transform, output_case_name, parse_case_params
 from exp1params import (
@@ -17,7 +16,7 @@ from exp1params import (
     mapping_mode_for_case, NUM_PROCESSES,
 )
 from modules.ortho_psf_common import render_psf_frame
-from modules.render_outputs import fill_legacy_code_depths
+from modules.render_outputs import save_float_and_depths, write_camera_depths
 from modules.render_selection import custom_enabled
 
 OUTPUT_DIR = exp1_output_dir("exp1_gridint2d_render_uvs_psf")
@@ -64,14 +63,10 @@ def main() -> None:
         for method, ssaa in _methods():
             for frame in range(disp_x.shape[1]):
                 if frame not in _active_frames(): continue
-                expected = [case_out / f"targ_px{TARG_PX_X}_int_{method}_param_{ssaa}_psf_b{bits}_frame{frame:02d}.npy" for bits in BIT_DEPTHS]
-                fill_legacy_code_depths(
-                    case_out,
-                    f"targ_px{TARG_PX_X}_int_{method}_param_{ssaa}_psf",
-                    frame,
-                    BIT_DEPTHS,
-                )
-                if not force_render and all(path.exists() for path in expected):
+                canonical = case_out / f"targ_px{TARG_PX_X}_int_{method}_param_{ssaa}_psf_frame{frame:02d}.npy"
+                if canonical.exists() and not force_render:
+                    write_camera_depths(canonical, BIT_DEPTHS)
+                if not force_render and canonical.exists() and all(canonical.with_name(f"{canonical.stem}_b{bits}.tiff").exists() for bits in BIT_DEPTHS):
                     continue
                 print(f"  {case_out.name}: frame {frame:02d}, SSAA={ssaa}", flush=True)
                 def eggbox(x: np.ndarray, y: np.ndarray) -> np.ndarray:
@@ -86,12 +81,7 @@ def main() -> None:
                     processes=NUM_PROCESSES,
                 )
                 image = np.flipud(image)
-                for bits in BIT_DEPTHS:
-                    max_value = float(2**bits - 1)
-                    prefix = f"targ_px{TARG_PX_X}_int_{method}_param_{ssaa}_psf_b{bits}_frame{frame:02d}"
-                    counts = np.clip(np.round(image * max_value), 0, max_value)
-                    Image.fromarray(counts.astype(np.uint8 if bits == 8 else np.uint16)).save(case_out / f"{prefix}.tiff")
-                    np.save(case_out / f"{prefix}.npy", image * max_value)
+                save_float_and_depths(canonical, image, BIT_DEPTHS)
 
 
 if __name__ == "__main__":

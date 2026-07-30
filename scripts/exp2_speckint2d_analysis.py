@@ -51,14 +51,7 @@ def _image_pair(directory: Path, method: str, param: int, bit_depth: int, frame:
 
     # Support output produced before the f64 texture convention, whose NumPy
     # files held digitised code values separately for every bit depth.
-    legacy_prefix = f"{prefix}_b{bit_depth}"
-    legacy_npy_path = directory / f"{legacy_prefix}.npy"
-    legacy_tiff_path = directory / f"{legacy_prefix}.tiff"
-    if not legacy_npy_path.exists() or not legacy_tiff_path.exists():
-        return None
-    with Image.open(legacy_tiff_path) as image:
-        digitised = np.asarray(image, dtype=np.float64)
-    return np.load(legacy_npy_path) / float(2**bit_depth - 1), digitised
+    return None
 
 
 def _discover_jobs() -> dict[str, dict[tuple[str, int], Path]]:

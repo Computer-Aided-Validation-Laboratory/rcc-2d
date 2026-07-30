@@ -43,7 +43,7 @@ REFERENCE_OUTPUT_DIR = exp2_output_dir("exp2_speckint2d_render_uvs")
 RESULTS_DIR = exp2_output_dir("exp2_riley_analysis_texfloat")
 REFERENCE_SUFFIX = ""
 WRITE_RECTCONV = True
-# The legacy bespoke Exp2 renderer and Riley share row order.  The bespoke
+# The bespoke Exp2 renderer and Riley share row order.  The bespoke
 # PSF renderer explicitly flips before saving its intensity image, so its
 # Riley comparisons alone need this conversion.
 RILEY_ROWS_FLIPPED = False

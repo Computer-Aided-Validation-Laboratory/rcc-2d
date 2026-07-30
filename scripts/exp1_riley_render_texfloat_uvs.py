@@ -36,12 +36,7 @@ from exp1params import (
     exp1_output_dir,
 )
 from modules.psf_riley_common import camera_kwargs, enabled as psf_enabled
-from modules.render_outputs import (
-    float_and_depths_complete,
-    migrate_scaled_legacy_float,
-    save_float_and_depths,
-    write_camera_depths,
-)
+from modules.render_outputs import float_and_depths_complete, save_float_and_depths, write_camera_depths
 from modules.render_selection import float_textures_enabled
 
 OUTPUT_ROOT = exp1_output_dir("exp1_riley_render_texfloat_psf" if psf_enabled() else "exp1_riley_render_texfloat")
@@ -230,11 +225,6 @@ def main() -> None:
                     for oversamp in get_texture_oversamples():
                         case_out = OUTPUT_ROOT / f"{case_name}_{tex_interp}" / f"ss{ssaa}_oversamp{oversamp}_f"
                         float_paths = [case_out / f"image_c00_f{frame:02d}.npy" for frame in range(num_frames)]
-                        # Promote any old bit-labelled float render on demand.
-                        for bits in get_bit_depths():
-                            legacy_dir = OUTPUT_ROOT / f"{case_name}_{tex_interp}" / f"ss{ssaa}_b{bits}_oversamp{oversamp}"
-                            for frame, float_path in enumerate(float_paths):
-                                migrate_scaled_legacy_float(float_path, legacy_dir / f"image_c00_f{frame:02d}.npy", bits)
                         if all(path.exists() for path in float_paths) and not FORCE_RENDER_OVER:
                             for path in float_paths:
                                 write_camera_depths(path, get_bit_depths())

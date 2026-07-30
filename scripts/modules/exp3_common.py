@@ -136,17 +136,27 @@ def generate_texture(case: str, pattern: str, oversamp: int) -> Path:
     path = texture_path(case, pattern, oversamp)
     texture_signature = hashlib.sha256(repr((case, pattern, oversamp, CASE_CAMERA_PIXELS[case], CASE_ROI_SIZES[case], EGGBOX_PERIOD_FINAL_PX)).encode()).hexdigest()
     marker = path.with_suffix(".sha256")
-    if path.exists() and marker.exists() and marker.read_text().strip() == texture_signature and not force_render():
-        texture = np.load(path, mmap_mode="r")
-        for bits in bit_depths() if uint_textures_enabled() else ():
-            uint_path = texture_path(case, pattern, oversamp, "uint", bits)
-            if not uint_path.exists():
-                maximum = 2**bits - 1
-                np.save(uint_path, np.rint(np.clip(texture, 0, 1) * maximum).astype(np.uint8 if bits <= 8 else np.uint16))
-        return path
     width, height = CASE_CAMERA_PIXELS[case]
-    roi_x, roi_y = CASE_ROI_SIZES[case]
     tex_w, tex_h = oversamp * (width + 2 * TEX_PX_PAD), oversamp * (height + 2 * TEX_PX_PAD)
+    marker_value = marker.read_text().strip() if marker.exists() else ""
+    if path.exists() and marker_value == texture_signature and not force_render():
+        try:
+            texture = np.load(path, mmap_mode="r")
+            valid_texture = texture.shape == (tex_h, tex_w) and texture.dtype.kind == "f"
+        except (OSError, ValueError):
+            valid_texture = False
+        if valid_texture:
+            for bits in bit_depths() if uint_textures_enabled() else ():
+                uint_path = texture_path(case, pattern, oversamp, "uint", bits)
+                if not uint_path.exists():
+                    maximum = 2**bits - 1
+                    np.save(uint_path, np.rint(np.clip(texture, 0, 1) * maximum).astype(np.uint8 if bits <= 8 else np.uint16))
+            return path
+    print(
+        f"  {case} {_tag(pattern)} OS={oversamp}: generating texture.",
+        flush=True,
+    )
+    roi_x, roi_y = CASE_ROI_SIZES[case]
     sx, sy = roi_x / width / oversamp, roi_y / height / oversamp
     x = -roi_x / 2 - TEX_PX_PAD * roi_x / width + (np.arange(tex_w) + .5) * sx
     # Image rows are top-to-bottom to match Riley texture memory.
@@ -251,13 +261,6 @@ def _save(image: np.ndarray, root: Path, prefix: str) -> None:
     save_float_and_depths(root / f"{prefix}.npy", image, bit_depths())
 
 
-def _normalise_legacy_riley_float(path: Path, legacy_bits: int) -> None:
-    """Convert an old code-scaled Riley ``.npy`` in place once."""
-    image = np.asarray(np.load(path, mmap_mode="r"), dtype=np.float64)
-    if image.size and np.nanmax(np.abs(image)) > 1.0 + 1e-12:
-        np.save(path, image / float(2**legacy_bits - 1))
-
-
 def bespoke_render(case: str, pattern: str, method: str, param: int, *, texture_os: int | None = None, interp: str = "linear", psf: bool = False) -> Path:
     """Chunked custom ortho renderer.  Its frame mapping is independent of Riley."""
     coords, connect, ux, uy = load_case(case)
@@ -268,14 +271,6 @@ def bespoke_render(case: str, pattern: str, method: str, param: int, *, texture_
     if texture_os is not None: config += f"_{interp}_os{texture_os}"
     config += "_f"
     root = root / config
-    legacy_root = root.parent / config.removesuffix("_f")
-    legacy_root = legacy_root.with_name(f"{legacy_root.name}_b{bit_depths()[0]}")
-    if legacy_root.is_dir() and not root.exists() and not force_render():
-        for frame in selected_frames(case, ux.shape[1]):
-            old = legacy_root / f"frame{frame:02d}.npy"
-            if old.exists():
-                save_float_and_depths(root / old.name, np.asarray(np.load(old), dtype=np.float64), bit_depths())
-        mark_case_outputs(root, signature)
     texture = None if texture_os is None else np.load(generate_texture(case, pattern, texture_os), mmap_mode="r")
     speckles = None
     if pattern != "eggbox" and texture is None:
@@ -310,6 +305,7 @@ def bespoke_render(case: str, pattern: str, method: str, param: int, *, texture_
             write_camera_depths(float_path, bit_depths())
             if float_and_depths_complete(float_path, bit_depths()):
                 print(f"  {case} {prefix}: float image exists; camera depths complete; skipping."); continue
+        print(f"  {case} {config} {prefix}: rendering.", flush=True)
         if analytic_speckle and MAPPING_MODES[case] != "affine":
             raise ValueError(f"{case}: analytic speckle integration is unavailable for {MAPPING_MODES[case]} mapping.")
         analytic_a = analytic_b = None
@@ -392,14 +388,15 @@ def riley_render(case: str, pattern: str, shader: str, ssaa: int, *, texture_os:
         tag += f"_func_ss{ssaa}_f"
     else:
         tag += f"_{interp}_os{texture_os}_ss{ssaa}_{'f' if storage == 'float' else f'b{source_bits}'}"
-    root=root/tag; expected=[root/f"image_c00_f{frame:02d}.npy" for frame in selected_frames(case,ux.shape[1])]
+    root=root/tag
+    frames = selected_frames(case, ux.shape[1])
+    source_bits = source_bits if storage == "uint" else bit_depths()[0]
+    expected=[root/f"image_c00_f{frame:02d}.npy" for frame in frames]
     if all(p.exists() for p in expected) and outputs_match_case(root, signature) and not force_render():
         for path in expected:
-            _normalise_legacy_riley_float(path, bit_depths()[0])
             write_camera_depths(path, bit_depths())
         print(f"  {case} {tag}: float images exist; camera depths complete; skipping."); return root
     disp=np.zeros((ux.shape[1],len(coords),3)); disp[:,:,0]=ux.T; disp[:,:,1]=uy.T
-    source_bits = source_bits if storage == "uint" else bit_depths()[0]
     kwargs={"mesh_type":_mesh_type(connect.shape[1]),"coords":coords,"connect":connect,"disp":disp,"bits":source_bits,"scaling_type":riley.ScaleStrategy.fixed,"scaling_min":0.,"scaling_max":1.}
     if shader == "func":
         # Physical-coordinate function avoids any UV aspect-ratio ambiguity.
@@ -418,10 +415,11 @@ def riley_render(case: str, pattern: str, shader: str, ssaa: int, *, texture_os:
     psf_kwargs = ({"psf_type": riley.PsfType.gaussian, "psf_sigma_x": PSF_SIGMA_FINAL_PX, "psf_sigma_y": PSF_SIGMA_FINAL_PX, "psf_support_rad": PSF_SIGMA_FINAL_PX * PSF_SUPPORT_SIGMAS, "psf_separable": 1} if psf else {})
     camera=riley.Camera(pixels_num=(width,height),pixels_size=(roi_x/width,roi_y/height),pos_world=riley.pos_fill_frame_from_rot(roi,(width,height),(roi_x/width,roi_y/height),1000.,(0,0,0),1.),rot_world=(0,0,0),roi_cent_world=tuple(riley.roi_cent_from_coords(roi)),focal_length=1000.,sub_sample=ssaa,coord_sys=riley.CameraCoordSys.opengl,**psf_kwargs)
     config=riley.create_raster_config(num_frames=ux.shape[1],total_threads=RILEY_RASTER_THREADS,save_strategy=riley.SaveStrategy.memory); config.frame_batch_size_per_group=1;config.max_geom_jobs_in_flight_per_group=1;config.max_geom_workers_per_job=1;config.max_raster_workers_per_job=RILEY_RASTER_THREADS;config.tile_size_min=1
+    print(f"  {case} {tag}: rendering with Riley (SSAA={ssaa}).", flush=True)
     root.mkdir(parents=True,exist_ok=True); images=riley.raster([mesh],[camera],config,out_dir=str(root))
     if images is not None:
         maximum = float(2**source_bits - 1)
-        for frame in selected_frames(case,ux.shape[1]):
+        for frame in frames:
             save_float_and_depths(root/f"image_c00_f{frame:02d}.npy", np.asarray(images[0,frame,0], dtype=np.float64) / maximum, bit_depths())
     mark_case_outputs(root, signature)
     return root

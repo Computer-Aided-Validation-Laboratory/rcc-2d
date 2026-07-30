@@ -122,6 +122,20 @@ def main() -> None:
                                 "EXP2_MAPPING_MODE",
                                 mapping_mode_for_case(case_dir.name),
                             )
+                            # A deformed affine map sends a camera square to
+                            # a parallelogram; the closed-form disk--square
+                            # overlap is exact only for rigid motion.  Do not
+                            # repeatedly launch a known-unavailable job.
+                            if (
+                                method == "analytic"
+                                and pattern_type == "diskaddsat"
+                                and "rigid" not in case_dir.name
+                            ):
+                                print(
+                                    f"  Skipping {case_dir.name} analytic disk integration: "
+                                    "non-rigid deformation requires numerical SSAA."
+                                )
+                                continue
                             # The analytic speckle integral assumes an affine
                             # inverse map.  VTK mapping is required for the
                             # quadratic saddle, so render its numerical rules

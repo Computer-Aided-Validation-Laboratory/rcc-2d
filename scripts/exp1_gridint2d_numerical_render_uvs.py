@@ -13,7 +13,6 @@ from pathlib import Path
 from multiprocessing import Pool
 import numpy as np
 import pyvista as pv
-from PIL import Image
 from modules.script_timing import ScriptTimer, timed_call
 
 from modules.exp1common import (
@@ -23,7 +22,7 @@ from modules.exp1common import (
     parse_case_params,
     output_case_name,
 )
-from modules.render_outputs import fill_legacy_code_depths
+from modules.render_outputs import save_float_and_depths, write_camera_depths
 from modules.render_selection import custom_enabled
 from exp1params import (
     BACKGROUND,
@@ -86,7 +85,7 @@ def max_points_per_chunk(mapping_mode: str) -> int:
         AFFINE_MAX_POINTS_PER_CHUNK
     )
     # The mode-specific override prevents a nonlinear run accidentally inheriting
-    # the large affine cap.  The legacy override remains useful for either
+    # the large affine cap.  The explicit override remains useful for either
     # mode when deliberately set for a controlled benchmark.
     value = os.environ.get(
         f"EXP1_{mapping_mode.upper()}_MAX_PTS_PER_CHUNK",
@@ -458,24 +457,11 @@ def generate_grid_images(case_dir: Path, method: str, param: int) -> None:
             continue
 
         p_val: int = max(TARG_PX_X, TARG_PX_Y)
-        expected_outputs = [
-            (
-                case_out_dir
-                / f"targ_px{p_val}_int_{method}_param_{param}_b{bb}_frame{ff:02d}.tiff",
-                case_out_dir
-                / f"targ_px{p_val}_int_{method}_param_{param}_b{bb}_frame{ff:02d}.npy",
-            )
-            for bb in BIT_DEPTHS
-        ]
-        fill_legacy_code_depths(
-            case_out_dir,
-            f"targ_px{p_val}_int_{method}_param_{param}",
-            ff,
-            BIT_DEPTHS,
-        )
-        if not FORCE_RENDER_OVER and all(
-            tiff_path.exists() and npy_path.exists()
-            for tiff_path, npy_path in expected_outputs
+        canonical = case_out_dir / f"targ_px{p_val}_int_{method}_param_{param}_frame{ff:02d}.npy"
+        if canonical.exists() and not FORCE_RENDER_OVER:
+            write_camera_depths(canonical, BIT_DEPTHS)
+        if not FORCE_RENDER_OVER and canonical.exists() and all(
+            canonical.with_name(f"{canonical.stem}_b{bb}.tiff").exists() for bb in BIT_DEPTHS
         ):
             print(f"    frame {ff:02d}: outputs exist; skipping.")
             continue
@@ -538,31 +524,7 @@ def generate_grid_images(case_dir: Path, method: str, param: int) -> None:
             pixel_raw_flat[start_idx:end_idx] = chunk_raw
         pixel_raw = pixel_raw_flat.reshape(TARG_PX_Y, TARG_PX_X)
 
-        pixel_raw_flipped: np.ndarray = np.flipud(pixel_raw)
-
-        for bb in BIT_DEPTHS:
-            max_val_bb: float = float(2**bb - 1)
-            pixel_bb: np.ndarray = np.round(pixel_raw_flipped * max_val_bb)
-            pixel_bb = np.clip(pixel_bb, 0.0, max_val_bb)
-
-            prefix: str = (
-                f"targ_px{p_val}_int_{method}_param_{param}"
-                f"_b{bb}_frame{ff:02d}"
-            )
-
-            if bb == 8:
-                pixel_8: np.ndarray = pixel_bb.astype(np.uint8)
-                img: Image.Image = Image.fromarray(pixel_8)
-                img.save(case_out_dir / f"{prefix}.tiff")
-            else:
-                pixel_16: np.ndarray = pixel_bb.astype(np.uint16)
-                img = Image.fromarray(pixel_16)
-                img.save(case_out_dir / f"{prefix}.tiff")
-
-            np.save(
-                case_out_dir / f"{prefix}.npy",
-                pixel_raw_flipped * max_val_bb,
-            )
+        save_float_and_depths(canonical, np.flipud(pixel_raw), BIT_DEPTHS)
 
 
 def main() -> None:

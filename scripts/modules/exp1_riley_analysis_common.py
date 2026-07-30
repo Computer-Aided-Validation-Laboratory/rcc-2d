@@ -99,16 +99,15 @@ def _load_reference_for_frame(case_dir: Path, frame: int):
         float_by_bit_depth = {}
         digitised_by_bit_depth = {}
         for bit_depth in BIT_DEPTHS:
-            maximum = float(2**bit_depth - 1)
-            prefix = (
+            npy_path = case_dir / (
                 f"targ_px{TARG_PX_X}_int_{method}_param_{param}"
-                f"{CUSTOM_RENDER_SUFFIX}_b{bit_depth}_frame{frame:02d}"
+                f"{CUSTOM_RENDER_SUFFIX}_frame{frame:02d}.npy"
             )
-            npy_path = case_dir / f"{prefix}.npy"
-            tiff_path = case_dir / f"{prefix}.tiff"
+            tiff_path = npy_path.with_name(f"{npy_path.stem}_b{bit_depth}.tiff")
             if not (npy_path.exists() and tiff_path.exists()):
                 continue
-            float_by_bit_depth[bit_depth] = np.load(npy_path) / maximum
+            floating = np.asarray(np.load(npy_path), dtype=np.float64)
+            float_by_bit_depth[bit_depth] = floating
             with Image.open(tiff_path) as image:
                 digitised_by_bit_depth[bit_depth] = np.asarray(image, dtype=np.float64)
         if float_by_bit_depth:
@@ -642,17 +641,15 @@ def analyze_riley_case(case_name: str, tex_interp: str) -> None:
                 for bb in BIT_DEPTHS:
                     if bb not in ref_float_by_bb:
                         continue
-                    max_val = float(2**bb - 1)
-                    prefix = (
+                    npy_path = case_dir / (
                         f"targ_px{TARG_PX_X}_int_{method}_param_{param}"
-                        f"{CUSTOM_RENDER_SUFFIX}_b{bb}_frame{ff:02d}"
+                        f"{CUSTOM_RENDER_SUFFIX}_frame{ff:02d}.npy"
                     )
-                    npy_path = case_dir / f"{prefix}.npy"
-                    tiff_path = case_dir / f"{prefix}.tiff"
+                    tiff_path = npy_path.with_name(f"{npy_path.stem}_b{bb}.tiff")
 
                     if npy_path.exists() and tiff_path.exists():
                         # Float metrics
-                        img_float = np.load(npy_path) / max_val
+                        img_float = np.asarray(np.load(npy_path), dtype=np.float64)
                         diff = img_float - ref_float_by_bb[bb]
                         e_f64 = np.sqrt(np.mean(diff**2))
                         e_inf = np.max(np.abs(diff))
@@ -693,9 +690,7 @@ def analyze_riley_case(case_name: str, tex_interp: str) -> None:
                 if bb not in ref_float_by_bb:
                     continue
                 max_val = float(2**bb - 1)
-                case_out = func_dir_base / f"ss{ss}_b{bb}"
-                npy_path = case_out / f"image_c00_f{ff:02d}.npy"
-                tiff_path = _riley_legacy_tiff_path(case_out, ff)
+                npy_path, tiff_path = _riley_function_paths(case_name, ss, bb, ff)
 
                 if npy_path.exists() and tiff_path.exists():
                     img_float = np.load(npy_path) / max_val
@@ -1548,26 +1543,26 @@ def _riley_texture_paths(
     bit_depth: int,
     frame: int,
 ) -> tuple[Path, Path]:
-    """Return canonical texfloat paths, falling back to legacy bit-labelled ones."""
+    """Return canonical texfloat image and camera-depth paths."""
     base = RILEY_TEX_DIR / f"{case_name}_{tex_interp}"
     canonical = base / f"ss{ssaa}_oversamp{oversamp}_f"
     canonical_paths = (
         canonical / f"image_c00_f{frame:02d}.npy",
         canonical / f"image_c00_f{frame:02d}_b{bit_depth}.tiff",
     )
-    if all(path.exists() for path in canonical_paths):
-        return canonical_paths
-    legacy = base / f"ss{ssaa}_b{bit_depth}_oversamp{oversamp}"
-    return (
-        legacy / f"image_c00_f{frame:02d}.npy",
-        _riley_legacy_tiff_path(legacy, frame),
+    return canonical_paths
+
+
+def _riley_function_paths(
+    case_name: str, ssaa: int, bit_depth: int, frame: int,
+) -> tuple[Path, Path]:
+    """Return canonical function-shader image and camera-depth paths."""
+    canonical = RILEY_FUNC_DIR / case_name / f"ss{ssaa}_f"
+    paths = (
+        canonical / f"image_c00_f{frame:02d}.npy",
+        canonical / f"image_c00_f{frame:02d}_b{bit_depth}.tiff",
     )
-
-
-def _riley_legacy_tiff_path(directory: Path, frame: int) -> Path:
-    """Accommodate both Riley's historic padded and unpadded frame names."""
-    padded = directory / f"cam0_frame{frame:02d}_field0.tiff"
-    return padded if padded.exists() else directory / f"cam0_frame{frame}_field0.tiff"
+    return paths
 
 
 def analyse_riley_self_convergence(
@@ -1593,11 +1588,7 @@ def analyse_riley_self_convergence(
             for bit_depth in BIT_DEPTHS:
                 def pair_paths(ssaa: int) -> tuple[Path, Path]:
                     if oversamp is None:
-                        directory = RILEY_FUNC_DIR / case_name / f"ss{ssaa}_b{bit_depth}"
-                        return (
-                            directory / f"image_c00_f{frame:02d}.npy",
-                            _riley_legacy_tiff_path(directory, frame),
-                        )
+                        return _riley_function_paths(case_name, ssaa, bit_depth, frame)
                     else:
                         return _riley_texture_paths(
                             case_name, tex_interp, ssaa, oversamp,
