@@ -23,6 +23,8 @@ from modules.exp1common import (
     parse_case_params,
     output_case_name,
 )
+from modules.render_outputs import fill_legacy_code_depths
+from modules.render_selection import custom_enabled
 from exp1params import (
     BACKGROUND,
     TARG_PX_X,
@@ -465,6 +467,12 @@ def generate_grid_images(case_dir: Path, method: str, param: int) -> None:
             )
             for bb in BIT_DEPTHS
         ]
+        fill_legacy_code_depths(
+            case_out_dir,
+            f"targ_px{p_val}_int_{method}_param_{param}",
+            ff,
+            BIT_DEPTHS,
+        )
         if not FORCE_RENDER_OVER and all(
             tiff_path.exists() and npy_path.exists()
             for tiff_path, npy_path in expected_outputs
@@ -558,6 +566,9 @@ def generate_grid_images(case_dir: Path, method: str, param: int) -> None:
 
 
 def main() -> None:
+    if not custom_enabled("eggbox"):
+        print("Experiment 1 eggbox renderer disabled by CUSTOM_RENDER_CASES; skipping.")
+        return
     print(80 * "=")
     print("Experiment 1: Custom Renderer Numerical Integration (UVs)")
     print(80 * "=")

@@ -36,6 +36,8 @@ from modules.exp2speckint2d import (
     save_image,
 )
 from modules.script_timing import ScriptTimer, timed_call
+from modules.render_selection import uint_textures_enabled
+from exp2params import BIT_DEPTHS
 
 NUM_PROCESSES_RUN = max(1, min(
     NUM_PROCESSES,
@@ -131,7 +133,8 @@ def generate_texture(
         f"{tag(pattern_type, black_fraction, distribution, fraction)}"
         f"_pad{TEX_PX_PAD}_oversamp{oversample}_analytic"
     )
-    if not FORCE_RENDER_OVER and image_outputs_complete(TEXTURE_OUTPUT_DIR, prefix):
+    texture_bits = BIT_DEPTHS if uint_textures_enabled() else ()
+    if not FORCE_RENDER_OVER and image_outputs_complete(TEXTURE_OUTPUT_DIR, prefix, texture_bits):
         print("    outputs exist; skipping.")
         return
     roi_size = float(max(TARG_PX_X, TARG_PX_Y))
@@ -179,7 +182,7 @@ def generate_texture(
 
     # Save pixel-integrated coverage as the primary f64 texture.  It is not
     # clamped: overlapping disks/Gaussians can and should exceed one.
-    save_image(image, TEXTURE_OUTPUT_DIR, prefix, float_texture=raw_coverage)
+    save_image(image, TEXTURE_OUTPUT_DIR, prefix, float_texture=raw_coverage, bit_depths=texture_bits)
 
 
 def get_texture_oversamples() -> list[int]:

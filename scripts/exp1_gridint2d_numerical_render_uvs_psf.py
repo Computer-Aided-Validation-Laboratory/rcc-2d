@@ -17,6 +17,8 @@ from exp1params import (
     mapping_mode_for_case, NUM_PROCESSES,
 )
 from modules.ortho_psf_common import render_psf_frame
+from modules.render_outputs import fill_legacy_code_depths
+from modules.render_selection import custom_enabled
 
 OUTPUT_DIR = exp1_output_dir("exp1_gridint2d_render_uvs_psf")
 
@@ -35,6 +37,9 @@ def _methods() -> list[tuple[str, int]]:
 
 
 def main() -> None:
+    if not custom_enabled("eggbox"):
+        print("Experiment 1 eggbox-PSF renderer disabled by CUSTOM_RENDER_CASES; skipping.")
+        return
     print("Experiment 1: bespoke orthographic eggbox render with Gaussian PSF")
     cases = [Path(sys.argv[1])] if len(sys.argv) > 1 else [Path("data") / name for name in DEFORMATION_CASES]
     support_px = PSF_SIGMA_FINAL_PX * PSF_SUPPORT_SIGMAS
@@ -60,6 +65,12 @@ def main() -> None:
             for frame in range(disp_x.shape[1]):
                 if frame not in _active_frames(): continue
                 expected = [case_out / f"targ_px{TARG_PX_X}_int_{method}_param_{ssaa}_psf_b{bits}_frame{frame:02d}.npy" for bits in BIT_DEPTHS]
+                fill_legacy_code_depths(
+                    case_out,
+                    f"targ_px{TARG_PX_X}_int_{method}_param_{ssaa}_psf",
+                    frame,
+                    BIT_DEPTHS,
+                )
                 if not force_render and all(path.exists() for path in expected):
                     continue
                 print(f"  {case_out.name}: frame {frame:02d}, SSAA={ssaa}", flush=True)

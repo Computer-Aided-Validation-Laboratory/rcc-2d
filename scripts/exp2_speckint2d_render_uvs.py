@@ -33,6 +33,7 @@ from exp2params import (
     mapping_mode_for_case,
 )
 from modules.exp2speckint2d import make_speckle_pattern, render_case
+from modules.render_selection import custom_enabled
 from modules.script_timing import ScriptTimer
 
 
@@ -91,7 +92,10 @@ def main() -> None:
             -0.5 * roi_size - TEX_PX_PAD * pixel_size,
             0.5 * roi_size + TEX_PX_PAD * pixel_size,
         )
-        pattern_types = SPECKLE_TYPES + ANALYTIC_SPECKLE_TYPES
+        pattern_types = tuple(
+            pattern_type for pattern_type in (SPECKLE_TYPES + ANALYTIC_SPECKLE_TYPES)
+            if custom_enabled("disk" if pattern_type.startswith("disk") else "gauss")
+        )
         for pattern_type in pattern_types:
             for black_fraction in BLACK_AREA_FRACTIONS:
                 for distribution, fraction in (additive_jitter_for(pattern_type),):

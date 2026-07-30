@@ -30,11 +30,19 @@ from exp1params import (
     TARG_PX_Y,
     TEX_OVERSAMPLES,
     TEX_INTERPOLATORS,
+    RILEY_TEXTURE_SAMPLERS,
     TEX_PX_PAD,
     TEXTURE_OUTPUT_DIR,
     exp1_output_dir,
 )
 from modules.psf_riley_common import camera_kwargs, enabled as psf_enabled
+from modules.render_outputs import (
+    float_and_depths_complete,
+    migrate_scaled_legacy_float,
+    save_float_and_depths,
+    write_camera_depths,
+)
+from modules.render_selection import float_textures_enabled
 
 OUTPUT_ROOT = exp1_output_dir("exp1_riley_render_texfloat_psf" if psf_enabled() else "exp1_riley_render_texfloat")
 
@@ -71,11 +79,11 @@ def get_texture_interpolators() -> list[str]:
         if not interps_str
         else [value.strip() for value in interps_str.split(",") if value.strip()]
     )
-    invalid = [interp for interp in interps if interp not in TEX_INTERPOLATORS]
+    invalid = [interp for interp in interps if interp not in RILEY_TEXTURE_SAMPLERS]
     if invalid:
         raise ValueError(
             f"Unsupported texture interpolator(s): {', '.join(invalid)}. "
-            f"Choose from: {', '.join(TEX_INTERPOLATORS)}"
+            f"Choose from: {', '.join(RILEY_TEXTURE_SAMPLERS)}"
         )
     return interps
 
@@ -144,6 +152,9 @@ def main() -> None:
     print("Riley Floating Texture Shader Render (Experiment 1)")
     print(80 * "=")
     timer = ScriptTimer(__file__)
+    if not float_textures_enabled(psf=psf_enabled()):
+        print("Experiment 1 Riley float textures disabled by RILEY_RENDER_CASES; skipping.")
+        return
 
     if len(sys.argv) > 1:
         cases = [Path(sys.argv[1])]
@@ -214,21 +225,26 @@ def main() -> None:
         mtype = get_riley_mesh_type(connect.shape[1])
 
         for tex_interp in get_texture_interpolators():
-            tex_sample = TEX_INTERPOLATORS[tex_interp]
+            tex_sample = RILEY_TEXTURE_SAMPLERS[tex_interp]
             for ssaa in get_ssaa_levels():
-                for bits in get_bit_depths():
                     for oversamp in get_texture_oversamples():
-                        case_out = OUTPUT_ROOT / f"{case_name}_{tex_interp}" / (
-                            f"ss{ssaa}_b{bits}_oversamp{oversamp}"
-                        )
+                        case_out = OUTPUT_ROOT / f"{case_name}_{tex_interp}" / f"ss{ssaa}_oversamp{oversamp}_f"
+                        float_paths = [case_out / f"image_c00_f{frame:02d}.npy" for frame in range(num_frames)]
+                        # Promote any old bit-labelled float render on demand.
+                        for bits in get_bit_depths():
+                            legacy_dir = OUTPUT_ROOT / f"{case_name}_{tex_interp}" / f"ss{ssaa}_b{bits}_oversamp{oversamp}"
+                            for frame, float_path in enumerate(float_paths):
+                                migrate_scaled_legacy_float(float_path, legacy_dir / f"image_c00_f{frame:02d}.npy", bits)
+                        if all(path.exists() for path in float_paths) and not FORCE_RENDER_OVER:
+                            for path in float_paths:
+                                write_camera_depths(path, get_bit_depths())
+                            if all(float_and_depths_complete(path, get_bit_depths()) for path in float_paths):
+                                print(f"  Riley floating texture: SSAA={ssaa}, oversamp={oversamp}; float images exist; skipping.")
+                                continue
                         print(
                             "  Running Riley floating texture render: "
-                            f"interp={tex_interp}, SSAA={ssaa}, bits={bits}, "
-                            f"oversamp={oversamp}"
+                            f"interp={tex_interp}, SSAA={ssaa}, oversamp={oversamp}"
                         )
-                        if not FORCE_RENDER_OVER and render_exists(case_out, num_frames):
-                            print("    outputs exist; skipping.")
-                            continue
 
                         tex_path = TEXTURE_OUTPUT_DIR / (
                             f"tex_px{p_val}_int_analytic_param_0"
@@ -254,7 +270,7 @@ def main() -> None:
                             texture_storage=riley.TextureStorage.floating,
                             sample=tex_sample,
                             sample_mode=riley.TextureSampleMode.direct,
-                            bits=bits,
+                            bits=16,
                             scaling_type=riley.ScaleStrategy.fixed,
                             scaling_min=0.0,
                             scaling_max=1.0,
@@ -273,24 +289,22 @@ def main() -> None:
                         config = riley.create_raster_config(
                             num_frames=num_frames,
                             total_threads=RILEY_RASTER_THREADS,
-                            save_strategy=riley.SaveStrategy.both,
+                            save_strategy=riley.SaveStrategy.memory,
                         )
                         config.frame_batch_size_per_group = 1
                         config.max_geom_jobs_in_flight_per_group = 1
                         config.max_geom_workers_per_job = 1
                         config.max_raster_workers_per_job = RILEY_RASTER_THREADS
                         config.tile_size_min = 1
-                        config.save_format = riley.ImageFormat.tiff
-                        config.save_bits = 16 if bits in (12, 16) else 8
-                        config.save_scaling = riley.ScaleStrategy.none
                         images = timed_call(timer, str(case_out), riley.raster,
-                            [mesh], [camera], config, out_dir=str(case_out)
+                            [mesh], [camera], config
                         )
                         if images is not None:
                             for frame in range(num_frames):
-                                np.save(
+                                save_float_and_depths(
                                     case_out / f"image_c00_f{frame:02d}.npy",
-                                    images[0, frame, 0],
+                                    np.asarray(images[0, frame, 0], dtype=np.float64) / 65535.0,
+                                    get_bit_depths(),
                                 )
 
     print("All renders completed.")

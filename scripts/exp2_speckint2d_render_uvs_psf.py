@@ -17,8 +17,9 @@ from exp2params import (
     PSF_SUPPORT_SIGMAS, PX_PER_SPECK, RANDOM_SEED, TARG_PX_X, TARG_PX_Y,
     TEX_PX_PAD, exp2_output_dir, mapping_mode_for_case, NUM_PROCESSES,
 )
-from modules.exp2speckint2d import make_speckle_pattern, save_image
+from modules.exp2speckint2d import make_speckle_pattern, save_image, fill_missing_digitised_outputs
 from modules.ortho_psf_common import render_psf_frame
+from modules.render_selection import custom_enabled
 
 OUTPUT_DIR = exp2_output_dir("exp2_speckint2d_render_uvs_psf")
 
@@ -37,6 +38,9 @@ def _methods() -> list[tuple[str, int]]:
 
 
 def main() -> None:
+    if not custom_enabled("disk_psf"):
+        print("Experiment 2 disk-PSF renderer disabled by CUSTOM_RENDER_CASES; skipping.")
+        return
     print("Experiment 2: bespoke orthographic additive-disk render with Gaussian PSF")
     cases = [Path(sys.argv[1])] if len(sys.argv) > 1 else [Path("data") / name for name in DEFORMATION_CASES]
     support_px = PSF_SIGMA_FINAL_PX * PSF_SUPPORT_SIGMAS
@@ -66,6 +70,8 @@ def main() -> None:
                 for frame in range(disp_x.shape[1]):
                     if frame not in _active_frames(): continue
                     prefix = f"targ_px{TARG_PX_X}_int_{method}_param_{ssaa}_psf_frame{frame:02d}"
+                    if not force_render:
+                        fill_missing_digitised_outputs(out_dir, prefix)
                     if not force_render and (out_dir / f"{prefix}.npy").exists(): continue
                     print(f"  {out_dir.name}: frame {frame:02d}, SSAA={ssaa}", flush=True)
                     coverage = render_psf_frame(

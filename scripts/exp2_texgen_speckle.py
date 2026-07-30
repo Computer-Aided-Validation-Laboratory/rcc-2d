@@ -31,6 +31,7 @@ from exp2params import (
 )
 from modules.exp2speckint2d import image_outputs_complete, make_speckle_pattern, save_image
 from modules.script_timing import ScriptTimer, timed_call
+from modules.render_selection import uint_textures_enabled
 
 
 def tag(
@@ -60,7 +61,8 @@ def generate_texture(
         f"{tag(pattern_type, black_fraction, distribution, fraction)}"
         f"_pad{TEX_PX_PAD}_oversamp{oversample}_ssaa{ssaa}"
     )
-    if not FORCE_RENDER_OVER and image_outputs_complete(TEXTURE_OUTPUT_DIR, prefix):
+    texture_bits = BIT_DEPTHS if uint_textures_enabled() else ()
+    if not FORCE_RENDER_OVER and image_outputs_complete(TEXTURE_OUTPUT_DIR, prefix, texture_bits):
         print("    outputs exist; skipping.")
         return
     roi_size = float(max(TARG_PX_X, TARG_PX_Y))
@@ -105,7 +107,7 @@ def generate_texture(
                 coverage_image[start_row:end_row] += pattern.evaluate_coverage(xx, yy)
     coverage_image /= float(ssaa * ssaa)
     image = pattern.intensity_from_coverage(coverage_image)
-    save_image(image, TEXTURE_OUTPUT_DIR, prefix, float_texture=coverage_image)
+    save_image(image, TEXTURE_OUTPUT_DIR, prefix, float_texture=coverage_image, bit_depths=texture_bits)
 
 
 def main() -> None:

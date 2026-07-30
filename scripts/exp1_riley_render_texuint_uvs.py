@@ -31,6 +31,7 @@ from exp1params import (
     FORCE_RENDER_OVER,
     TEX_OVERSAMPLES,
     TEX_INTERPOLATORS,
+    RILEY_TEXTURE_SAMPLERS,
     TEXTURE_OUTPUT_DIR,
     DEFORMATION_CASES,
     RILEY_RASTER_THREADS,
@@ -40,6 +41,7 @@ from exp1params import (
     exp1_output_dir,
 )
 from modules.psf_riley_common import camera_kwargs, enabled as psf_enabled
+from modules.render_selection import riley_enabled
 
 OUTPUT_ROOT = exp1_output_dir("exp1_riley_render_texuint_psf" if psf_enabled() else "exp1_riley_render_texuint")
 
@@ -76,11 +78,11 @@ def get_texture_interpolators() -> list[str]:
         if not interps_str
         else [val.strip() for val in interps_str.split(",") if val.strip()]
     )
-    invalid = [interp for interp in interps if interp not in TEX_INTERPOLATORS]
+    invalid = [interp for interp in interps if interp not in RILEY_TEXTURE_SAMPLERS]
     if invalid:
         raise ValueError(
             f"Unsupported texture interpolator(s): {', '.join(invalid)}. "
-            f"Choose from: {', '.join(TEX_INTERPOLATORS)}"
+            f"Choose from: {', '.join(RILEY_TEXTURE_SAMPLERS)}"
         )
     return interps
 
@@ -142,6 +144,9 @@ def render_exists(case_out: Path, num_frames: int) -> bool:
 
 
 def main() -> None:
+    if not riley_enabled("texuint_psf" if psf_enabled() else "texuint"):
+        print("Experiment 1 Riley uint textures disabled by RILEY_RENDER_CASES; skipping.")
+        return
     print(80 * "=")
     print("Riley Texture Shader Render (Experiment 1)")
     print(80 * "=")
@@ -233,7 +238,7 @@ def main() -> None:
         roi_pos = tuple(riley.roi_cent_from_coords(roi_coords))
 
         for tex_interp in get_texture_interpolators():
-            tex_sample = TEX_INTERPOLATORS[tex_interp]
+            tex_sample = RILEY_TEXTURE_SAMPLERS[tex_interp]
             for ss in get_ssaa_levels():
                 for bb in get_bit_depths():
                     for oversamp in get_texture_oversamples():

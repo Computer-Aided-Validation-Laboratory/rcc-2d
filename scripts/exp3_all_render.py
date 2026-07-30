@@ -5,6 +5,8 @@ import subprocess
 import sys
 from pathlib import Path
 
+from modules.render_selection import custom_enabled, float_textures_enabled, riley_enabled
+
 
 SCRIPTS = (
     "exp3_texgen_eggbox.py",
@@ -26,6 +28,18 @@ SCRIPTS = (
 def main() -> None:
     here = Path(__file__).parent
     for script in SCRIPTS:
+        if "texuint" in script and not riley_enabled("texuint_psf" if "psf" in script else "texuint"):
+            continue
+        if "texfloat" in script and not float_textures_enabled(psf="psf" in script):
+            continue
+        if "riley_render_func" in script and not riley_enabled("func"):
+            continue
+        if "gridint2d" in script and not custom_enabled("eggbox"):
+            continue
+        if "speckint2d_render_ssaa" in script and not any(custom_enabled(name) for name in ("disk", "gauss")):
+            continue
+        if "speckint2d_render_disk_psf" in script and not custom_enabled("disk_psf"):
+            continue
         print(f"\n{'=' * 78}\nExperiment 3: {script}\n{'=' * 78}", flush=True)
         subprocess.run([sys.executable, str(here / script)], check=True)
 

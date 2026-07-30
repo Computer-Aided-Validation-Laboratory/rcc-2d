@@ -810,6 +810,7 @@ def save_image(
     output_dir: Path,
     prefix: str,
     float_texture: np.ndarray | None = None,
+    bit_depths: tuple[int, ...] | list[int] | None = None,
 ) -> None:
     """Save raw f64 texture data and digitised TIFF intensity outputs.
 
@@ -827,7 +828,7 @@ def save_image(
     flipped = np.ascontiguousarray(np.flipud(image), dtype=np.float64)
     raw_flipped = np.ascontiguousarray(np.flipud(float_texture), dtype=np.float64)
     np.save(output_dir / f"{prefix}.npy", raw_flipped)
-    for bits in BIT_DEPTHS:
+    for bits in (BIT_DEPTHS if bit_depths is None else bit_depths):
         max_value = float(2**bits - 1)
         quantized = np.clip(np.round(flipped * max_value), 0.0, max_value)
         image_data = quantized.astype(
@@ -836,12 +837,32 @@ def save_image(
         Image.fromarray(image_data).save(output_dir / f"{prefix}_b{bits}.tiff")
 
 
-def image_outputs_complete(output_dir: Path, prefix: str) -> bool:
+def image_outputs_complete(output_dir: Path, prefix: str, bit_depths: tuple[int, ...] | list[int] | None = None) -> bool:
     """Return whether the f64 image and every digitised image are present."""
     return (output_dir / f"{prefix}.npy").exists() and all(
         (output_dir / f"{prefix}_b{bits}.tiff").exists()
-        for bits in BIT_DEPTHS
+        for bits in (BIT_DEPTHS if bit_depths is None else bit_depths)
     )
+
+
+def fill_missing_digitised_outputs(
+    output_dir: Path,
+    prefix: str,
+    bit_depths: tuple[int, ...] | list[int] | None = None,
+) -> None:
+    """Digitise an existing normalised float render without rerasterising it."""
+    depths = BIT_DEPTHS if bit_depths is None else bit_depths
+    float_path = output_dir / f"{prefix}.npy"
+    if not float_path.exists():
+        return
+    missing = [bits for bits in depths if not (output_dir / f"{prefix}_b{bits}.tiff").exists()]
+    if not missing:
+        return
+    # ``save_image`` flips before writing, therefore reverse that convention
+    # before reusing it for a newly requested camera bit depth.
+    saved_float = np.asarray(np.load(float_path), dtype=np.float64)
+    image = np.ascontiguousarray(np.flipud(saved_float))
+    save_image(image, output_dir, prefix, bit_depths=missing)
 
 
 def save_raw_coverage(
@@ -924,6 +945,8 @@ def render_case(
             prefix = (
                 f"targ_px{TARG_PX_X}_int_{method}_param_{param}_frame{frame:02d}"
             )
+            if not FORCE_RENDER_OVER:
+                fill_missing_digitised_outputs(output_dir, prefix)
             if not FORCE_RENDER_OVER and image_outputs_complete(output_dir, prefix):
                 print(f"    frame {frame:02d}: outputs exist; skipping.")
                 continue

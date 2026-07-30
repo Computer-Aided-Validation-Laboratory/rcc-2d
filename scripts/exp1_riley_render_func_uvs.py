@@ -13,6 +13,7 @@ import os
 from pathlib import Path
 import numpy as np
 import riley
+from PIL import Image
 from modules.script_timing import ScriptTimer, timed_call
 
 from modules.exp1common import (
@@ -39,6 +40,7 @@ from exp1params import (
     exp1_output_dir,
 )
 from modules.psf_riley_common import camera_kwargs, enabled as psf_enabled
+from modules.render_selection import riley_enabled
 
 OUTPUT_ROOT = exp1_output_dir("exp1_riley_render_func_uvs_psf" if psf_enabled() else "exp1_riley_render_func_uvs")
 
@@ -55,6 +57,46 @@ def get_bit_depths() -> list[int]:
     if not bits_str:
         return BIT_DEPTHS
     return [int(val.strip()) for val in bits_str.split(",") if val.strip()]
+
+
+def fill_existing_depths(out_base: Path, ssaa: int, depths: list[int], num_frames: int) -> None:
+    """Derive requested function-render depths from one completed f64 result.
+
+    Historical Exp1 function outputs are code-scaled and bit-labelled.  This
+    compatibility bridge preserves that layout for its analysis scripts while
+    ensuring a newly added camera depth never launches another Riley raster.
+    """
+    source_dir: Path | None = None
+    source_bits: int | None = None
+    for directory in out_base.glob(f"ss{ssaa}_b*"):
+        try:
+            bits = int(directory.name.rsplit("_b", 1)[1])
+        except (IndexError, ValueError):
+            continue
+        if (directory / "image_c00_f00.npy").exists():
+            source_dir, source_bits = directory, bits
+            break
+    if source_dir is None or source_bits is None:
+        return
+    source_max = float((1 << source_bits) - 1)
+    for bits in depths:
+        target = out_base / f"ss{ssaa}_b{bits}"
+        target.mkdir(parents=True, exist_ok=True)
+        target_max = float((1 << bits) - 1)
+        for frame in range(num_frames):
+            output_npy = target / f"image_c00_f{frame:02d}.npy"
+            output_tiff = target / f"cam0_frame{frame}_field0.tiff"
+            if output_npy.exists() and output_tiff.exists():
+                continue
+            source_npy = source_dir / f"image_c00_f{frame:02d}.npy"
+            if not source_npy.exists():
+                continue
+            normalised = np.asarray(np.load(source_npy, mmap_mode="r"), dtype=np.float64) / source_max
+            if not output_npy.exists():
+                np.save(output_npy, normalised * target_max)
+            if not output_tiff.exists():
+                codes = np.rint(np.clip(normalised, 0.0, 1.0) * target_max)
+                Image.fromarray(codes.astype(np.uint8 if bits <= 8 else np.uint16)).save(output_tiff)
 
 
 def get_riley_mesh_type(nodes_per_elem: int) -> riley.MeshType:
@@ -84,6 +126,9 @@ def render_exists(case_out: Path, num_frames: int) -> bool:
 
 
 def main() -> None:
+    if not riley_enabled("func_psf" if psf_enabled() else "func"):
+        print("Experiment 1 Riley function renderer disabled by RILEY_RENDER_CASES; skipping.")
+        return
     print(80 * "=")
     print("Riley Function Shader Render (Experiment 1, UVs)")
     print(80 * "=")
@@ -174,6 +219,7 @@ def main() -> None:
         roi_pos = tuple(riley.roi_cent_from_coords(roi_coords))
 
         for ss in get_ssaa_levels():
+            fill_existing_depths(out_base, ss, get_bit_depths(), num_frames)
             for bb in get_bit_depths():
                 print(
                     f"  Running Riley function render: "

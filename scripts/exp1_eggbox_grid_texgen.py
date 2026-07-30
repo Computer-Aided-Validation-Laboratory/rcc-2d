@@ -31,6 +31,7 @@ from exp1params import (
     TEXTURE_OUTPUT_DIR,
 )
 from modules.script_timing import ScriptTimer, timed_call
+from modules.render_selection import uint_textures_enabled
 
 # Process bounded horizontal bands, so a high-oversampling texture never needs
 # a full floating point image in RAM.  These can be overridden for a particular
@@ -83,6 +84,7 @@ def generate_texture(
     param: int,
     bb: int,
     oversamp: int,
+    write_uint: bool = True,
 ) -> None:
     """Generate and save reference texture image and float files."""
     tex_w: int = oversamp * (TARG_PX_X + 2 * TEX_PX_PAD)
@@ -124,12 +126,16 @@ def generate_texture(
 
     if (
         not FORCE_RENDER_OVER
-        and output_path.exists()
+        and (not write_uint or output_path.exists())
         and float_path.exists()
     ):
-        print(f"    outputs exist; skipping: {output_path.name}")
+        print(f"    float texture exists; skipping: {float_path.name}")
         return
 
+    if not write_uint:
+        # The float texture is the only dependency of texfloat rendering.
+        # Do not create digitised source-texture assets while texuint is off.
+        return
     dtype = np.dtype(np.uint8 if bb == 8 else np.uint16)
     texture_bytes = tex_w * tex_h * dtype.itemsize
     float_bytes = tex_w * tex_h * np.dtype(np.float64).itemsize
@@ -226,13 +232,14 @@ def main() -> None:
         for p in tex_dir_ref.glob("*_int_rect_*"):
             p.unlink()
 
-    for bb in BIT_DEPTHS:
+    texture_bits = BIT_DEPTHS if uint_textures_enabled() else [8]
+    for bb in texture_bits:
         for oversamp in TEX_OVERSAMPLES:
             print(
                 f"  Texture: analytic=0, bb={bb}, "
                 f"oversamp={oversamp}"
             )
-            timed_call(timer, f"analytic_b{bb}_oversamp{oversamp}", generate_texture, "analytic", 0, bb, oversamp)
+            timed_call(timer, f"analytic_b{bb}_oversamp{oversamp}", generate_texture, "analytic", 0, bb, oversamp, uint_textures_enabled())
 
     print("\nAll reference textures generated successfully!")
 

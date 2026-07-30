@@ -29,6 +29,7 @@ from exp2params import (
     additive_jitter_for,
     RANDOM_SEED,
     TEX_INTERPOLATORS,
+    RILEY_TEXTURE_SAMPLERS,
     TARG_PX_X,
     exp2_output_dir,
 )
@@ -70,12 +71,12 @@ def _selected_interpolators() -> set[str]:
     if not value:
         return set(TEX_INTERPOLATORS)
     selected = {item.strip() for item in value.split(",") if item.strip()}
-    invalid = selected.difference(TEX_INTERPOLATORS)
+    invalid = selected.difference(RILEY_TEXTURE_SAMPLERS)
     if invalid:
         raise ValueError(
             "Unsupported texture interpolator(s): "
             f"{', '.join(sorted(invalid))}. Choose from: "
-            f"{', '.join(TEX_INTERPOLATORS)}"
+            f"{', '.join(RILEY_TEXTURE_SAMPLERS)}"
         )
     return selected
 

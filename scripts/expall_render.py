@@ -14,6 +14,7 @@ import sys
 from pathlib import Path
 
 from modules.script_timing import ScriptTimer, timed_call
+from modules.render_selection import custom_enabled, float_textures_enabled, riley_enabled
 
 
 SCRIPTS_DIR = Path(__file__).resolve().parent
@@ -50,6 +51,24 @@ EXP2_RENDER_SCRIPTS = (
 )
 
 
+def selected_scripts(scripts: tuple[str, ...]) -> tuple[str, ...]:
+    """Apply shared render-family controls to the explicit launcher lists."""
+    selected: list[str] = []
+    for script in scripts:
+        if "texuint" in script and not riley_enabled("texuint_psf" if "psf" in script else "texuint"):
+            continue
+        if "texfloat" in script and not float_textures_enabled(psf="psf" in script):
+            continue
+        if "riley_render_func" in script and not riley_enabled("func_psf" if "psf" in script else "func"):
+            continue
+        if "gridint2d" in script and not custom_enabled("eggbox"):
+            continue
+        if "speckint2d" in script and not any(custom_enabled(name) for name in ("disk", "gauss", "disk_psf")):
+            continue
+        selected.append(script)
+    return tuple(selected)
+
+
 def run_suite(name: str, scripts: tuple[str, ...]) -> None:
     """Run one experiment's render scripts serially with this interpreter."""
     timer = ScriptTimer(__file__)
@@ -64,8 +83,8 @@ def run_suite(name: str, scripts: tuple[str, ...]) -> None:
 
 
 def main() -> None:
-    run_suite("Experiment 1 renders", EXP1_RENDER_SCRIPTS)
-    run_suite("Experiment 2 renders", EXP2_RENDER_SCRIPTS)
+    run_suite("Experiment 1 renders", selected_scripts(EXP1_RENDER_SCRIPTS))
+    run_suite("Experiment 2 renders", selected_scripts(EXP2_RENDER_SCRIPTS))
     print("\nAll Experiment 1 and Experiment 2 renders completed.")
 
 

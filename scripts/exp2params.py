@@ -15,6 +15,20 @@ from exp0params_common import (
     CORES, FORCE_RENDER_OVER, NUM_PROCESSES, RILEY_RASTER_THREADS, TEST_RUN,
 )
 
+# All samplers available in the bound Riley build.  ``TEX_INTERPOLATORS`` is
+# retained below as the conservative default matrix, while an environment
+# selection may request any key in this map.
+RILEY_TEXTURE_SAMPLERS: dict[str, riley.TextureSample] = {
+    "nearest": riley.TextureSample.nearest,
+    "linear": riley.TextureSample.linear,
+    "cubic_catmull_rom": riley.TextureSample.cubic_catmull_rom,
+    "cubic_mitchell_netravali": riley.TextureSample.cubic_mitchell_netravali,
+    "cubic_bspline": riley.TextureSample.cubic_bspline,
+    "quintic_bspline": riley.TextureSample.quintic_bspline,
+    "lanczos2": riley.TextureSample.lanczos2,
+    "lanczos3": riley.TextureSample.lanczos3,
+}
+
 
 if TEST_RUN:
     TEX_SSAA_LEVELS: List[int] = [1, 2, 4, 8, 16, 32, 64, 128] 

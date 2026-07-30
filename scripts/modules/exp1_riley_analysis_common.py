@@ -30,6 +30,7 @@ from exp1params import (
     OUTPUT_DIR,
     SSAA_LEVELS,
     TEX_INTERPOLATORS,
+    RILEY_TEXTURE_SAMPLERS,
     TEX_OVERSAMPLES,
     exp1_output_dir,
 )
@@ -694,7 +695,7 @@ def analyze_riley_case(case_name: str, tex_interp: str) -> None:
                 max_val = float(2**bb - 1)
                 case_out = func_dir_base / f"ss{ss}_b{bb}"
                 npy_path = case_out / f"image_c00_f{ff:02d}.npy"
-                tiff_path = case_out / f"cam0_frame{ff}_field0.tiff"
+                tiff_path = _riley_legacy_tiff_path(case_out, ff)
 
                 if npy_path.exists() and tiff_path.exists():
                     img_float = np.load(npy_path) / max_val
@@ -741,11 +742,9 @@ def analyze_riley_case(case_name: str, tex_interp: str) -> None:
                     continue
                 max_val = float(2**bb - 1)
                 for oversamp in TEX_OVERSAMPLES:
-                    case_out = RILEY_TEX_DIR / f"{case_name}_{tex_interp}" / (
-                        f"ss{ss}_b{bb}_oversamp{oversamp}"
+                    npy_path, tiff_path = _riley_texture_paths(
+                        case_name, tex_interp, ss, oversamp, bb, ff
                     )
-                    npy_path = case_out / f"image_c00_f{ff:02d}.npy"
-                    tiff_path = case_out / f"cam0_frame{ff}_field0.tiff"
 
                     if npy_path.exists() and tiff_path.exists():
                         img_float = np.load(npy_path) / max_val
@@ -1533,7 +1532,42 @@ def _load_riley_pair(npy_path: Path, tiff_path: Path, bit_depth: int):
         return None
     with Image.open(tiff_path) as image:
         digitised = np.asarray(image, dtype=np.float64)
-    return np.load(npy_path) / float(2**bit_depth - 1), digitised
+    floating = np.asarray(np.load(npy_path), dtype=np.float64)
+    # Canonical float renders are already normalised; historical bit-labelled
+    # Riley outputs stored code-scaled arrays.
+    if floating.size and np.nanmax(np.abs(floating)) > 1.0 + 1e-12:
+        floating /= float(2**bit_depth - 1)
+    return floating, digitised
+
+
+def _riley_texture_paths(
+    case_name: str,
+    tex_interp: str,
+    ssaa: int,
+    oversamp: int,
+    bit_depth: int,
+    frame: int,
+) -> tuple[Path, Path]:
+    """Return canonical texfloat paths, falling back to legacy bit-labelled ones."""
+    base = RILEY_TEX_DIR / f"{case_name}_{tex_interp}"
+    canonical = base / f"ss{ssaa}_oversamp{oversamp}_f"
+    canonical_paths = (
+        canonical / f"image_c00_f{frame:02d}.npy",
+        canonical / f"image_c00_f{frame:02d}_b{bit_depth}.tiff",
+    )
+    if all(path.exists() for path in canonical_paths):
+        return canonical_paths
+    legacy = base / f"ss{ssaa}_b{bit_depth}_oversamp{oversamp}"
+    return (
+        legacy / f"image_c00_f{frame:02d}.npy",
+        _riley_legacy_tiff_path(legacy, frame),
+    )
+
+
+def _riley_legacy_tiff_path(directory: Path, frame: int) -> Path:
+    """Accommodate both Riley's historic padded and unpadded frame names."""
+    padded = directory / f"cam0_frame{frame:02d}_field0.tiff"
+    return padded if padded.exists() else directory / f"cam0_frame{frame}_field0.tiff"
 
 
 def analyse_riley_self_convergence(
@@ -1560,15 +1594,15 @@ def analyse_riley_self_convergence(
                 def pair_paths(ssaa: int) -> tuple[Path, Path]:
                     if oversamp is None:
                         directory = RILEY_FUNC_DIR / case_name / f"ss{ssaa}_b{bit_depth}"
-                    else:
-                        directory = (
-                            RILEY_TEX_DIR / f"{case_name}_{tex_interp}"
-                            / f"ss{ssaa}_b{bit_depth}_oversamp{oversamp}"
+                        return (
+                            directory / f"image_c00_f{frame:02d}.npy",
+                            _riley_legacy_tiff_path(directory, frame),
                         )
-                    return (
-                        directory / f"image_c00_f{frame:02d}.npy",
-                        directory / f"cam0_frame{frame}_field0.tiff",
-                    )
+                    else:
+                        return _riley_texture_paths(
+                            case_name, tex_interp, ssaa, oversamp,
+                            bit_depth, frame,
+                        )
 
                 available_ssaa = [
                     ssaa for ssaa in SSAA_LEVELS
@@ -1748,7 +1782,7 @@ def main() -> None:
             if interp.strip()
         )
     )
-    invalid = set(interps).difference(TEX_INTERPOLATORS)
+    invalid = set(interps).difference(RILEY_TEXTURE_SAMPLERS)
     if invalid:
         raise ValueError(
             f"Unsupported texture interpolator(s): {', '.join(sorted(invalid))}"

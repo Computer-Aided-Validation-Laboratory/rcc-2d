@@ -49,10 +49,19 @@ else:
     SSAA_LEVELS = [1, 2, 4, 8, 16, 32, 64, 128]
     TEX_OVERSAMPLES = [1, 2, 4, 8, 16, 32, 64, 128]
 
-TEX_INTERPOLATORS = {
+RILEY_TEXTURE_SAMPLERS = {
+    "nearest": riley.TextureSample.nearest,
     "linear": riley.TextureSample.linear,
     "cubic_catmull_rom": riley.TextureSample.cubic_catmull_rom,
+    "cubic_mitchell_netravali": riley.TextureSample.cubic_mitchell_netravali,
+    "cubic_bspline": riley.TextureSample.cubic_bspline,
+    "quintic_bspline": riley.TextureSample.quintic_bspline,
+    "lanczos2": riley.TextureSample.lanczos2,
+    "lanczos3": riley.TextureSample.lanczos3,
 }
+# Conservative default run matrix.  Set EXP3_TEX_INTERPOLATORS to a
+# comma-separated subset of RILEY_TEXTURE_SAMPLERS to enable others.
+TEX_INTERPOLATORS = {name: RILEY_TEXTURE_SAMPLERS[name] for name in ("linear", "cubic_catmull_rom")}
 
 CASE_CAMERA_PIXELS: Final[dict[str, tuple[int, int]]] = {
     "plate516_cam512_quad9_rigid": (512, 512),

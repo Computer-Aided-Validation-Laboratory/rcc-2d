@@ -18,6 +18,7 @@ from matplotlib.backends.backend_agg import FigureCanvasAgg
 from matplotlib.figure import Figure
 
 from exp0params_common import CORES
+from exp3params import BIT_DEPTHS
 from modules.exp3_analysis_common import Render, best_reference, discover_renders, image_frames, load_image, numeric_y_axis, release, title_lines
 
 RESULTS = Path("out/exp3_analysis_conv")
@@ -35,9 +36,10 @@ def family(item: Render) -> str:
     return f"riley_{storage}_{item.interpolator}"
 
 
-def metrics(image: np.ndarray, reference: np.ndarray) -> tuple[float, float, float, float]:
+def metrics(image: np.ndarray, reference: np.ndarray, bit_depth: int) -> tuple[float, float, float, float]:
     delta = image - reference
-    digitised = np.rint(np.clip(image, 0, 1) * 255) - np.rint(np.clip(reference, 0, 1) * 255)
+    maximum = float((1 << bit_depth) - 1)
+    digitised = np.rint(np.clip(image, 0, 1) * maximum) - np.rint(np.clip(reference, 0, 1) * maximum)
     values = (float(np.sqrt(np.mean(delta * delta))), float(np.max(np.abs(delta))), float(np.max(np.abs(digitised))), float(np.mean(digitised != 0)))
     del delta, digitised
     return values
@@ -64,8 +66,8 @@ def plot(rows: list[dict[str, object]], path: Path, heading: str, reference_name
     path.parent.mkdir(parents=True, exist_ok=True); figure.savefig(path, dpi=160); figure.clear(); release()
 
 
-def analyse_group(payload: tuple[str, str, str, str, list[Render], list[Render]]) -> tuple[list[dict[str, object]], list[dict[str, object]]]:
-    case, fam, pattern, output_key, items, reference_candidates = payload
+def analyse_group(payload: tuple[str, str, str, str, list[Render], list[Render], int]) -> tuple[list[dict[str, object]], list[dict[str, object]]]:
+    case, fam, pattern, output_key, items, reference_candidates, bit_depth = payload
     reference, ref_label = best_reference(reference_candidates)
     if reference is None: return [], []
     frames = image_frames(reference.directory)
@@ -86,16 +88,16 @@ def analyse_group(payload: tuple[str, str, str, str, list[Render], list[Render]]
             if path is None: continue
             image = load_image(path)
             if image.shape == ref_image.shape:
-                rms, maximum, lsb, changed = metrics(image, ref_image)
-                primary.append({"Case": case, "Family": fam, "Pattern": pattern, "Config": item.config, "Frame": frame, "SSAA": item.ssaa or 1, "OS": item.oversamp or 1, "Reference": ref_label, "e_rms": rms, "e_max": maximum, "max_lsb": lsb, "fraction_changed": changed})
+                rms, maximum, lsb, changed = metrics(image, ref_image, bit_depth)
+                primary.append({"Case": case, "Family": fam, "Pattern": pattern, "Config": item.config, "Frame": frame, "BitDepth": bit_depth, "SSAA": item.ssaa or 1, "OS": item.oversamp or 1, "Reference": ref_label, "e_rms": rms, "e_max": maximum, "max_lsb": lsb, "fraction_changed": changed})
             if self_image is not None and image.shape == self_image.shape and item != self_reference:
-                rms, maximum, lsb, changed = metrics(image, self_image)
-                self_rows.append({"Case": case, "Family": fam, "Pattern": pattern, "Config": item.config, "Frame": frame, "SSAA": item.ssaa or 1, "OS": item.oversamp or 1, "Reference": self_label, "e_rms": rms, "e_max": maximum, "max_lsb": lsb, "fraction_changed": changed})
+                rms, maximum, lsb, changed = metrics(image, self_image, bit_depth)
+                self_rows.append({"Case": case, "Family": fam, "Pattern": pattern, "Config": item.config, "Frame": frame, "BitDepth": bit_depth, "SSAA": item.ssaa or 1, "OS": item.oversamp or 1, "Reference": self_label, "e_rms": rms, "e_max": maximum, "max_lsb": lsb, "fraction_changed": changed})
             del image
         if primary:
-            plot([row for row in primary if int(row["Frame"]) == frame], RESULTS / case / fam / f"{pattern}_frame{frame:02d}_conv.png", f"{case}: {fam}, {pattern}", ref_label)
+            plot([row for row in primary if int(row["Frame"]) == frame], RESULTS / case / fam / f"{pattern}_b{bit_depth:02d}_frame{frame:02d}_conv.png", f"{case}: {fam}, {pattern}, {bit_depth}-bit", ref_label)
         if reference.analytic and self_rows:
-            plot([row for row in self_rows if int(row["Frame"]) == frame], RECT_RESULTS / case / fam / f"{pattern}_frame{frame:02d}_rectconv.png", f"{case}: {fam}, {pattern} self convergence", self_label)
+            plot([row for row in self_rows if int(row["Frame"]) == frame], RECT_RESULTS / case / fam / f"{pattern}_b{bit_depth:02d}_frame{frame:02d}_rectconv.png", f"{case}: {fam}, {pattern}, {bit_depth}-bit self convergence", self_label)
         del ref_image, self_image
         release()
     return primary, self_rows
@@ -111,6 +113,7 @@ def write_csv(path: Path, rows: list[dict[str, object]]) -> None:
 def comparison_overlays(rows: list[dict[str, object]]) -> None:
     """Overlay like-for-like bespoke Exp3 and Exp1/2 SSAA convergence."""
     comparison_dir = RESULTS / "exp1_exp2_comparisons"; comparison_dir.mkdir(parents=True, exist_ok=True)
+    comparison_bit_depth = 16 if 16 in BIT_DEPTHS else max(BIT_DEPTHS)
     for pattern, previous in (("eggbox", Path("out/exp1_gridint2d_analysis_uvs_im32/summary.csv")), ("diskaddsat", Path("out/exp2_speckint2d_analysis_im32/summary.csv")), ("gausscont", Path("out/exp2_speckint2d_analysis_im32/summary.csv"))):
         if not previous.exists(): continue
         old = list(csv.DictReader(previous.open()))
@@ -126,6 +129,7 @@ def comparison_overlays(rows: list[dict[str, object]]) -> None:
                 and case_kind in str(row["Case"])
                 and int(row["Frame"]) == 0
                 and int(row["OS"]) == 1
+                and int(row["BitDepth"]) == comparison_bit_depth
             ]
             old_rows = [
                 row for row in old
@@ -157,8 +161,9 @@ def main() -> None:
         psf = "_psf" in item.root or "_psf" in item.config
         groups[(item.case, family(item), item.pattern, psf)].append(item); by_case_pattern[(item.case, item.pattern, psf)].append(item)
     tasks = [
-        (case, f"{fam}_psf" if psf else fam, pattern, f"{case}/{fam}/{pattern}", items, by_case_pattern[(case, pattern, psf)])
+        (case, f"{fam}_psf" if psf else fam, pattern, f"{case}/{fam}/{pattern}", items, by_case_pattern[(case, pattern, psf)], bit_depth)
         for (case, fam, pattern, psf), items in groups.items()
+        for bit_depth in BIT_DEPTHS
     ]
     limit = int(os.environ.get("EXP3_ANALYSIS_LIMIT", "0"))
     if limit: tasks = tasks[:limit]

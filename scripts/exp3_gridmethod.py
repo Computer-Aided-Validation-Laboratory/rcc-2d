@@ -17,6 +17,7 @@ import os
 import re
 import sys
 import textwrap
+from concurrent.futures import ProcessPoolExecutor, as_completed
 from dataclasses import replace
 from pathlib import Path
 
@@ -30,6 +31,7 @@ HERE = Path(__file__).resolve().parent
 if str(HERE) not in sys.path:
     sys.path.insert(0, str(HERE))
 
+from exp0params_common import GRIDMETHOD_JOBS
 from exp3params import EGGBOX_PERIOD_FINAL_PX
 from modules.gridmethod import GridMethodConfig, analyse_sequence
 
@@ -38,6 +40,7 @@ OUT_ROOT = Path("out")
 RESULT_ROOT = OUT_ROOT / "exp3_gridmethod"
 CASE_FILTER = os.environ.get("EXP3_GRIDMETHOD_CASE")
 LIMIT = int(os.environ.get("EXP3_GRIDMETHOD_LIMIT", "0"))
+WORKERS = max(1, int(os.environ.get("EXP3_GRIDMETHOD_JOBS", str(GRIDMETHOD_JOBS))))
 
 
 def image_frames(directory: Path) -> list[Path]:
@@ -63,6 +66,39 @@ def sequences() -> list[tuple[str, str, Path]]:
         if len(image_frames(directory)) >= 2:
             found.append((case, root, directory))
     return sorted(found, key=lambda item: tuple(str(x) for x in item))
+
+
+def result_dir(case: str, root: str, directory: Path) -> Path:
+    """Return this render sequence's dedicated Grid Method result directory."""
+    return RESULT_ROOT / case / root / directory.name
+
+
+def sequence_complete(case: str, root: str, directory: Path, frame_count: int) -> bool:
+    """Require all fields and rigid diagnostics before skipping a sequence."""
+    out_dir = result_dir(case, root, directory)
+    fields_complete = all(
+        (out_dir / f"displacement_frame{frame:02d}.png").is_file()
+        and (out_dir / f"displacement_frame{frame:02d}.npz").is_file()
+        for frame in range(frame_count)
+    )
+    if not fields_complete:
+        return False
+    return (
+        "rigid" not in case
+        or ((out_dir / "rigid_motion_summary.csv").is_file()
+            and (out_dir / "rigid_motion_summary.png").is_file())
+    )
+
+
+def clear_generated_artifacts(case: str, root: str, directory: Path) -> None:
+    """Clear only Grid Method artifacts owned by an incomplete sequence."""
+    out_dir = result_dir(case, root, directory)
+    for pattern in (
+        "displacement_frame*.png", "displacement_frame*.npz",
+        "rigid_motion_summary.csv", "rigid_motion_summary.png",
+    ):
+        for path in out_dir.glob(pattern):
+            path.unlink()
 
 
 def expected_motion(case: str, frames: int) -> tuple[np.ndarray, np.ndarray] | None:
@@ -125,7 +161,7 @@ def analyse(case: str, root: str, directory: Path) -> None:
     images = np.stack([np.load(path, mmap_mode="r") for path in files]).astype(np.float64, copy=False)
     config = GridMethodConfig(period_px=EGGBOX_PERIOD_FINAL_PX, window_width_periods=2.0, window="gaussian", displacement_method="iterative", unwrap="reliability")
     result = analyse_sequence(images, config)
-    out_dir = RESULT_ROOT / case / root / directory.name
+    out_dir = result_dir(case, root, directory)
     out_dir.mkdir(parents=True, exist_ok=True)
     expected = expected_motion(case, len(files))
     rows: list[dict[str, float | int]] = []
@@ -153,10 +189,34 @@ def main() -> None:
         jobs = jobs[:LIMIT]
     if not jobs:
         raise FileNotFoundError("No completed Exp3 eggbox sequences matched the requested filter.")
-    print(f"Exp3 grid method: {len(jobs)} sequences")
+    print(f"Exp3 grid method: {len(jobs)} sequences; workers={WORKERS}")
+    pending: list[tuple[str, str, Path]] = []
     for index, (case, root, directory) in enumerate(jobs, start=1):
         print(f"[{index}/{len(jobs)}] {root}/{case}/{directory.name}")
-        analyse(case, root, directory)
+        frame_count = len(image_frames(directory))
+        if sequence_complete(case, root, directory, frame_count):
+            print("  complete: Grid Method fields and diagnostics already exist; skipping")
+            continue
+        print("  incomplete: clearing generated Grid Method artifacts and reprocessing all frames")
+        clear_generated_artifacts(case, root, directory)
+        pending.append((case, root, directory))
+    if not pending:
+        return
+    if WORKERS == 1 or len(pending) == 1:
+        for case, root, directory in pending:
+            analyse(case, root, directory)
+        return
+    # Sequences share no output files, so each process can safely own a full
+    # load/analyse/write/release lifecycle without synchronisation.
+    with ProcessPoolExecutor(max_workers=min(WORKERS, len(pending))) as executor:
+        futures = {
+            executor.submit(analyse, case, root, directory): (case, root, directory)
+            for case, root, directory in pending
+        }
+        for index, future in enumerate(as_completed(futures), start=1):
+            case, root, directory = futures[future]
+            future.result()
+            print(f"  completed [{index}/{len(pending)}] {root}/{case}/{directory.name}", flush=True)
 
 
 if __name__ == "__main__":

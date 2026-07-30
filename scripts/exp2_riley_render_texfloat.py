@@ -38,13 +38,16 @@ from exp2params import (
     RILEY_SSAA_LEVLES,
     TEX_OVERSAMPLES,
     TEX_INTERPOLATORS,
+    RILEY_TEXTURE_SAMPLERS,
     TEX_PX_PAD,
     TEXTURE_OUTPUT_DIR,
     TARG_PX_X,
     TARG_PX_Y,
+    BIT_DEPTHS,
     exp2_output_dir,
 )
 from modules.psf_riley_common import camera_kwargs, enabled as psf_enabled
+from modules.render_selection import float_textures_enabled
 
 OUTPUT_ROOT = exp2_output_dir("exp2_riley_render_texfloat_psf" if psf_enabled() else "exp2_riley_render_texfloat")
 
@@ -68,11 +71,11 @@ def get_texture_interpolators() -> list[str]:
     interps = list(TEX_INTERPOLATORS) if not value else [
         item.strip() for item in value.split(",") if item.strip()
     ]
-    invalid = [interp for interp in interps if interp not in TEX_INTERPOLATORS]
+    invalid = [interp for interp in interps if interp not in RILEY_TEXTURE_SAMPLERS]
     if invalid:
         raise ValueError(
             f"Unsupported texture interpolator(s): {', '.join(invalid)}. "
-            f"Choose from: {', '.join(TEX_INTERPOLATORS)}"
+            f"Choose from: {', '.join(RILEY_TEXTURE_SAMPLERS)}"
         )
     return interps
 
@@ -149,12 +152,30 @@ def render_exists(case_out: Path, frames: range) -> bool:
     return all(
         (case_out / f"image_c00_f{frame:02d}_raw.npy").exists()
         and (case_out / f"image_c00_f{frame:02d}_clamped.npy").exists()
-        and (case_out / f"image_c00_f{frame:02d}_clamped.tiff").exists()
+        and all((case_out / f"image_c00_f{frame:02d}_clamped_b{bits}.tiff").exists() for bits in BIT_DEPTHS)
         for frame in frames
     )
 
 
+def write_missing_camera_depths(case_out: Path, frames: range) -> None:
+    """Derive newly requested camera depths from completed float images only."""
+    for frame in frames:
+        path = case_out / f"image_c00_f{frame:02d}_clamped.npy"
+        if not path.exists():
+            continue
+        image = np.asarray(np.load(path, mmap_mode="r"), dtype=np.float64)
+        for bits in BIT_DEPTHS:
+            output = case_out / f"image_c00_f{frame:02d}_clamped_b{bits}.tiff"
+            if not output.exists():
+                maximum = float((1 << bits) - 1)
+                codes = np.rint(np.clip(np.flipud(image), 0.0, 1.0) * maximum)
+                Image.fromarray(codes.astype(np.uint8 if bits <= 8 else np.uint16)).save(output)
+
+
 def main() -> None:
+    if not float_textures_enabled(psf=psf_enabled()):
+        print("Experiment 2 Riley float-texture renderer disabled by RILEY_RENDER_CASES; skipping.")
+        return
     print("Experiment 2: Riley raw floating coverage texture render")
     timer = ScriptTimer(__file__)
     if len(sys.argv) > 1:
@@ -224,6 +245,8 @@ def main() -> None:
                                         / f"{output_case_name(case_path.name, TARG_PX_X)}_{tag}_{interp_name}"
                                         / f"ss{ssaa}_oversamp{oversamp}"
                                     )
+                                    if not FORCE_RENDER_OVER:
+                                        write_missing_camera_depths(case_out, frame_range)
                                     if not FORCE_RENDER_OVER and render_exists(
                                         case_out, frame_range
                                     ):
@@ -259,7 +282,7 @@ def main() -> None:
                                         ),
                                         texture=texture,
                                         texture_storage=riley.TextureStorage.floating,
-                                        sample=TEX_INTERPOLATORS[interp_name],
+                                        sample=RILEY_TEXTURE_SAMPLERS[interp_name],
                                         sample_mode=riley.TextureSampleMode.direct,
                                         bits=16,
                                         scaling_type=riley.ScaleStrategy.none,
@@ -297,13 +320,7 @@ def main() -> None:
                                         np.save(case_out / f"image_c00_f{frame:02d}_raw.npy", raw)
                                         clamped = intensity_from_coverage(raw)
                                         np.save(case_out / f"image_c00_f{frame:02d}_clamped.npy", clamped)
-                                        # TIFF is a display/export companion to the exact
-                                        # floating-point clamped array.  Flip only for the
-                                        # conventional top-to-bottom image-file row order.
-                                        counts = np.rint(np.flipud(clamped) * 65535.0).astype(np.uint16)
-                                        Image.fromarray(counts).save(
-                                            case_out / f"image_c00_f{frame:02d}_clamped.tiff"
-                                        )
+                                    write_missing_camera_depths(case_out, frame_range)
 
     print("All raw and clamped Riley coverage renders completed.")
 

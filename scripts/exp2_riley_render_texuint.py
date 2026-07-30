@@ -36,6 +36,7 @@ from exp2params import (
     PSF_SIGMA_FINAL_PX,
     PSF_SUPPORT_SIGMAS,
     TEX_INTERPOLATORS,
+    RILEY_TEXTURE_SAMPLERS,
     TEX_PX_PAD,
     TEXTURE_OUTPUT_DIR,
     TARG_PX_X,
@@ -54,6 +55,7 @@ from exp2_riley_render_texfloat import (
 )
 from exp2params import additive_jitter_for
 from modules.script_timing import ScriptTimer, timed_call
+from modules.render_selection import riley_enabled
 
 
 # Exp2 deliberately creates large oversampled textures.  They are local,
@@ -92,6 +94,9 @@ def render_exists(case_out: Path, frames: range) -> bool:
 
 
 def main() -> None:
+    if not riley_enabled("texuint_psf" if psf_enabled() else "texuint"):
+        print("Experiment 2 Riley uint textures disabled by RILEY_RENDER_CASES; skipping.")
+        return
     print("Experiment 2: Riley digitised coverage texture render")
     timer = ScriptTimer(__file__)
     cases = [Path(sys.argv[1])] if len(sys.argv) > 1 else [
@@ -173,7 +178,7 @@ def main() -> None:
                                         coords, roi_size, texture_pixels, TEX_PX_PAD, oversamp
                                     ),
                                     texture=texture, texture_storage=texture_storage,
-                                    sample=TEX_INTERPOLATORS[interp_name],
+                                    sample=RILEY_TEXTURE_SAMPLERS[interp_name],
                                     sample_mode=riley.TextureSampleMode.direct,
                                     bits=bit_depth, scaling_type=riley.ScaleStrategy.fixed,
                                     scaling_min=0.0, scaling_max=maximum,
