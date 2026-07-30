@@ -35,7 +35,7 @@ if TEST_RUN:
     SSAA_LEVELS = [1, 2, 4, 8, 16, 32, 64, 128]
     TEX_OVERSAMPLES: List[int] = [1, 2, 4, 8, 16, 32, 64, 128]
     TEX_INTERPOLATORS: dict[str, riley.TextureSample] = {
-        "nearest": riley.TextureSample.nearest,
+        #"nearest": riley.TextureSample.nearest,
         "linear": riley.TextureSample.linear,
         "cubic_catmull_rom": riley.TextureSample.cubic_catmull_rom,
         # "cubic_mitchell_netravali": riley.TextureSample.cubic_mitchell_netravali,
@@ -67,7 +67,7 @@ else:
     SSAA_LEVELS = [1, 2, 4, 8, 16, 32, 64, 128, 256, 512]    
     TEX_OVERSAMPLES: List[int] = [1, 2, 4, 8, 16, 32, 64, 128, 256, 512]
     TEX_INTERPOLATORS: dict[str, riley.TextureSample] = {
-        "nearest": riley.TextureSample.nearest,
+        #"nearest": riley.TextureSample.nearest,
         "linear": riley.TextureSample.linear,
         "cubic_catmull_rom": riley.TextureSample.cubic_catmull_rom,
         # "cubic_mitchell_netravali": riley.TextureSample.cubic_mitchell_netravali,
@@ -85,7 +85,7 @@ else:
         ("rect", 128),
         ("rect", 256),
         ("rect", 512),
-        ("rect", 1024), # TODO: check we have the RAM for this
+        #("rect", 1024), # TODO: check we have the RAM for this
         # ("mc", 16),
         # ("mc", 64),
         # ("mc", 256),
