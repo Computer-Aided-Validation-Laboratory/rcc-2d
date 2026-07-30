@@ -185,15 +185,28 @@ def _remove_sources(sources: list[Source], stop_at: Path) -> int:
     return removed
 
 
-def migrate(out_root: Path, *, apply: bool, remove_source: bool) -> tuple[int, int, int]:
+def _relocate_targets(
+    targets: dict[Path, Target], source_root: Path, output_root: Path
+) -> dict[Path, Target]:
+    """Map discovered canonical targets from a staged source tree to ``output_root``."""
+    relocated: dict[Path, Target] = {}
+    for target in targets.values():
+        output_path = output_root / target.path.relative_to(source_root)
+        relocated[output_path] = Target(output_path, target.sources)
+    return relocated
+
+
+def migrate(
+    source_root: Path, output_root: Path, *, apply: bool, remove_source: bool
+) -> tuple[int, int, int]:
     collections = [
-        *(_riley_targets(out_root, name) for name in RILEY_DIRS),
-        *(_bespoke_targets(out_root, name) for name in BESPOKE_DIRS),
+        *(_riley_targets(source_root, name) for name in RILEY_DIRS),
+        *(_bespoke_targets(source_root, name) for name in BESPOKE_DIRS),
     ]
-    targets = _merge(*collections)
+    targets = _relocate_targets(_merge(*collections), source_root, output_root)
     migrated = tiffs = removed = 0
     print(f"Historical commit: {HISTORICAL_COMMIT}")
-    print(f"Discovered {len(targets):,} canonical frame targets under {out_root}.")
+    print(f"Discovered {len(targets):,} canonical frame targets from {source_root} into {output_root}.")
 
     for target in sorted(targets.values(), key=lambda item: str(item.path)):
         source = _best_source(target.sources)
@@ -213,7 +226,7 @@ def migrate(out_root: Path, *, apply: bool, remove_source: bool) -> tuple[int, i
             # Re-read the target before destructive cleanup, so a failed disk
             # write can never discard the historical workstation result.
             _verify(target.path, image)
-            removed += _remove_sources(target.sources, out_root)
+            removed += _remove_sources(target.sources, source_root)
         del image
 
     action = "Migrated" if apply else "Would migrate"
@@ -225,13 +238,16 @@ def migrate(out_root: Path, *, apply: bool, remove_source: bool) -> tuple[int, i
 
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--out-root", type=Path, default=Path("out"), help="output root containing the historical Exp1 directories (default: out)")
+    parser.add_argument("--out-root", type=Path, default=Path("out"), help="destination output root for the current Exp1 layout (default: out)")
+    parser.add_argument("--source-root", type=Path, help="root containing historical Exp1 directories (default: --out-root)")
     parser.add_argument("--apply", action="store_true", help="perform the migration; default is a dry-run")
     parser.add_argument("--remove-source", action="store_true", help="after verification, remove historical bit-labelled files (requires --apply)")
     args = parser.parse_args()
     if args.remove_source and not args.apply:
         parser.error("--remove-source requires --apply")
-    migrate(args.out_root.resolve(), apply=args.apply, remove_source=args.remove_source)
+    output_root = args.out_root.resolve()
+    source_root = (args.source_root or args.out_root).resolve()
+    migrate(source_root, output_root, apply=args.apply, remove_source=args.remove_source)
 
 
 if __name__ == "__main__":
