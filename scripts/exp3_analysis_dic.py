@@ -16,6 +16,7 @@ from matplotlib.figure import Figure
 
 from exp0params_common import CORES
 from modules.exp3_analysis_common import OUT, OS_RE, SS_RE, interpolator_of, numeric_y_axis, parameter, pattern_of, release, title_lines
+from modules.exp3_dic_data import load_result, result_path
 
 RESULTS = OUT / "exp3_analysis_dic"
 
@@ -28,20 +29,17 @@ class Record:
 def discover() -> list[Record]:
     rows=[]
     for directory in (OUT / "exp3_dic").glob("*/*/*"):
-        if not directory.is_dir() or not list(directory.glob("dic_frame*_*.csv")): continue
+        if not directory.is_dir() or not list(directory.glob("dic_frame*.npz")): continue
         case, root, config = directory.parent.parent.name, directory.parent.name, directory.name
         rows.append(Record(case, root, config, directory, pattern_of(config), parameter(config, SS_RE), parameter(config, OS_RE), interpolator_of(config), "_analytic_" in config))
     return rows
 
 
 def load(record: Record, frame: int) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray] | None:
-    paths=sorted(record.directory.glob(f"dic_frame{frame:02d}_*.csv"))
-    if len(paths)!=1: return None
-    raw=np.loadtxt(paths[0], delimiter=",", skiprows=1)
-    if raw.ndim != 2 or raw.shape[1] < 4: return None
-    x,y=np.unique(raw[:,0]),np.unique(raw[:,1]); shape=(len(y),len(x))
-    if raw.shape[0] != shape[0]*shape[1]: return None
-    return np.meshgrid(x,y)[0], np.meshgrid(x,y)[1], raw[:,2].reshape(shape), -raw[:,3].reshape(shape)
+    path = result_path(record.directory, frame)
+    if not path.is_file(): return None
+    data = load_result(path)
+    return data["ss_x"], data["ss_y"], data["u_px"][0], -data["v_px"][0]
 
 
 def reference(records: list[Record]) -> tuple[Record | None,str]:

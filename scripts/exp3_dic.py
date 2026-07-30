@@ -9,10 +9,12 @@ renders and all three Exp3 deformation cases.  Results are written below
 Use ``EXP3_DIC_CASE=<case>``, ``EXP3_DIC_MATCH=<text>``, or
 ``EXP3_DIC_LIMIT=<n>`` for a focused run.
 
-Stage 1 calculates only missing per-frame DIC CSVs.  Stage 2 imports only
-CSVs lacking displacement figures in independent spawned processes, then
-writes any missing rigid-bias summaries.  Thus restarting never repeats a
-completed DIC correlation, field figure, or summary.
+Stage 1 calculates only missing per-frame PyVale binary results.  Stage 2
+imports each temporary binary, atomically saves the compact NPZ required by
+downstream analysis, validates it, then removes the binary.  It also writes
+only missing displacement figures and rigid-bias summaries.  Thus restarting
+never repeats a completed DIC correlation, compact conversion, field figure,
+or summary.
 """
 from __future__ import annotations
 
@@ -35,7 +37,7 @@ HERE = Path(__file__).resolve().parent
 if str(HERE) not in sys.path:
     sys.path.insert(0, str(HERE))
 
-import pyvale.dic as dic
+from modules.exp3_dic_data import load_result, read_pyvale_binary, result_path, save_arrays
 from exp3params import (
     DIC_CORRELATION_THRESHOLD,
     DIC_POSTPROCESS_JOBS,
@@ -119,11 +121,9 @@ def physical_expected_rigid(case: str, frames: int) -> tuple[np.ndarray, np.ndar
     return ux[:, :frames].mean(axis=0), uy[:, :frames].mean(axis=0)
 
 
-def save_field(path: Path, result: object, frame: int, label: str) -> None:
+def save_field_arrays(path: Path, ux: np.ndarray, uy: np.ndarray, x: np.ndarray, y: np.ndarray, frame: int, label: str) -> None:
     # PyVale reports image-space V (positive down); convert to Exp3 physical Y.
-    ux = result.u_px[frame]
-    uy = -result.v_px[frame]
-    x, y = result.ss_x, result.ss_y
+    uy = -uy
     # The finite-star camera is approximately 4:1.  Stacking its two fields
     # preserves useful plot height; square-camera cases remain compact beside
     # one another.
@@ -141,6 +141,10 @@ def save_field(path: Path, result: object, frame: int, label: str) -> None:
         fig.colorbar(im, ax=ax, label="displacement [px]")
     fig.savefig(path, dpi=160)
     plt.close(fig)
+
+
+def save_field(path: Path, result: object, frame: int, label: str) -> None:
+    save_field_arrays(path, result.u_px[frame], result.v_px[frame], result.ss_x, result.ss_y, frame, label)
 
 
 def save_rigid_bias(path: Path, rows: list[dict[str, float | int]], title: str) -> None:
@@ -161,6 +165,9 @@ def save_rigid_bias(path: Path, rows: list[dict[str, float | int]], title: str) 
 
 def run_pair(config_dir: Path, output_dir: Path, index: int) -> None:
     """Run one native-engine call; intended to execute in a fresh process."""
+    # Keep the optional PyVale/Blender import out of spawned postprocess
+    # workers.  Those workers only read the documented ``.dic2d`` format.
+    import pyvale.dic as dic
     frames = image_frames(config_dir)
     reference = read_uint8(frames[0])
     prefix = f"dic_frame{index:02d}_"
@@ -179,6 +186,7 @@ def run_pair(config_dir: Path, output_dir: Path, index: int) -> None:
         num_threads=DIC_NUM_THREADS,
         output_basepath=output_dir,
         output_prefix=prefix,
+        output_binary=True,
         output_delimiter=",",
         output_below_threshold=True,
         debug_level=0,
@@ -190,24 +198,51 @@ def frame_csv(output_dir: Path, index: int) -> list[Path]:
     return sorted(output_dir.glob(f"dic_frame{index:02d}_*.csv"))
 
 
+def frame_binary(output_dir: Path, index: int) -> list[Path]:
+    return sorted(output_dir.glob(f"dic_frame{index:02d}_*.dic2d"))
+
+
+def raw_result(output_dir: Path, index: int) -> Path | None:
+    """Return one temporary PyVale result, accepting legacy CSVs too."""
+    candidates = frame_binary(output_dir, index) + frame_csv(output_dir, index)
+    if len(candidates) > 1:
+        raise RuntimeError(f"Expected at most one raw DIC result for frame {index:02d} in {output_dir}")
+    return candidates[0] if candidates else None
+
+
+def import_raw(path: Path) -> dict[str, np.ndarray]:
+    if path.suffix == ".dic2d":
+        return read_pyvale_binary(path)
+    raw = np.loadtxt(path, delimiter=",", skiprows=1, usecols=(0, 1, 2, 3, 5, 6))
+    x_values, y_values = np.unique(raw[:, 0]), np.unique(raw[:, 1])
+    shape = (len(y_values), len(x_values))
+    if raw.shape[0] != shape[0] * shape[1]:
+        raise ValueError(f"DIC CSV does not describe a rectangular subset grid: {path}")
+    return {
+        "ss_x": np.meshgrid(x_values, y_values)[0], "ss_y": np.meshgrid(x_values, y_values)[1],
+        "u_px": raw[:, 2].reshape((1, *shape)), "v_px": raw[:, 3].reshape((1, *shape)),
+        "converged": raw[:, 4].astype(bool).reshape((1, *shape)), "cost_zncc": raw[:, 5].reshape((1, *shape)),
+    }
+
+
 def output_dir_for(case: str, render_root: str, config_dir: Path) -> Path:
     return RESULT_ROOT / case / render_root / config_dir.name
 
 
 def run_dic_stage(case: str, render_root: str, config_dir: Path) -> Path:
-    """Stage 1: calculate only missing DIC CSVs, serially and resumably."""
+    """Stage 1: calculate only missing temporary PyVale binary results."""
     frames = image_frames(config_dir)
     output_dir = output_dir_for(case, render_root, config_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
     for index in range(1, len(frames)):
-        csv_files = frame_csv(output_dir, index)
-        if len(csv_files) == 1:
-            print(f"  DIC frame {index:02d}: CSV exists; skipping")
+        compact = result_path(output_dir, index)
+        raw = raw_result(output_dir, index)
+        if compact.is_file():
+            print(f"  DIC frame {index:02d}: compact NPZ exists; skipping")
             continue
-        if len(csv_files) > 1:
-            raise RuntimeError(
-                f"Expected at most one DIC CSV for frame {index:02d} in {output_dir}; found {len(csv_files)}."
-            )
+        if raw is not None:
+            print(f"  DIC frame {index:02d}: temporary {raw.suffix} exists; awaiting postprocess")
+            continue
         # PyVale's native engine retains process-global buffers across calls in
         # the installed branch.  A child per frame gives deterministic memory
         # release and makes an interrupted batch naturally resumable.
@@ -222,11 +257,21 @@ def run_dic_stage(case: str, render_root: str, config_dir: Path) -> Path:
     return output_dir
 
 
-def postprocess_frame(csv_path: str, image_path: str, label: str, index: int) -> tuple[str, int]:
-    """Stage-2 worker: import one CSV and write only its missing field figure."""
-    result = dic.import_2d(Path(csv_path), delimiter=",", layout="matrix")
-    save_field(Path(image_path), result, 0, label)
-    del result
+def postprocess_frame(raw_path: str | None, compact_path: str, image_path: str, label: str, index: int) -> tuple[str, int]:
+    """Stage-2 worker: compact one temporary PyVale result and plot if needed."""
+    compact = Path(compact_path)
+    if not compact.exists():
+        if raw_path is None:
+            raise RuntimeError(f"No raw DIC result available to create {compact}")
+        raw = Path(raw_path)
+        result = import_raw(raw)
+        save_arrays(compact, **result)
+        del result
+        # ``save_result`` atomically reopens and validates before this removal.
+        raw.unlink()
+    if not Path(image_path).is_file():
+        data = load_result(compact)
+        save_field_arrays(Path(image_path), data["u_px"][0], data["v_px"][0], data["ss_x"], data["ss_y"], 0, label)
     return image_path, index
 
 
@@ -237,12 +282,12 @@ def rigid_rows(case: str, output_dir: Path, frame_count: int) -> list[dict[str, 
         return []
     rows: list[dict[str, float | int]] = []
     for index in range(1, frame_count):
-        csv_files = frame_csv(output_dir, index)
-        if len(csv_files) != 1:
-            raise RuntimeError(f"Expected exactly one DIC CSV for frame {index:02d} in {output_dir}")
-        result = dic.import_2d(csv_files[0], delimiter=",", layout="matrix")
-        mean_x = float(np.nanmean(result.u_px[0]))
-        mean_y = float(-np.nanmean(result.v_px[0]))
+        compact = result_path(output_dir, index)
+        if not compact.is_file():
+            raise RuntimeError(f"Expected compact DIC NPZ for frame {index:02d} in {output_dir}")
+        result = load_result(compact)
+        mean_x = float(np.nanmean(result["u_px"][0]))
+        mean_y = float(-np.nanmean(result["v_px"][0]))
         rows.append({
             "frame": index,
             "expected_ux_px": float(expected[0][index]),
@@ -252,24 +297,24 @@ def rigid_rows(case: str, output_dir: Path, frame_count: int) -> list[dict[str, 
             "bias_ux_px": mean_x - float(expected[0][index]),
             "bias_uy_px": mean_y - float(expected[1][index]),
         })
-        del result
     return rows
 
 
 def run_postprocess_stage(sequences: list[tuple[str, str, Path]]) -> None:
-    """Stage 2: parallel CSV import/field figures, then compact summaries."""
-    tasks: list[tuple[str, str, str, int]] = []
+    """Stage 2: compact raw results in parallel, then write figures/summaries."""
+    tasks: list[tuple[str | None, str, str, str, int]] = []
     summaries: list[tuple[str, Path, int, str]] = []
     for case, render_root, config_dir in sequences:
         frames = image_frames(config_dir)
         output_dir = output_dir_for(case, render_root, config_dir)
         for index in range(1, len(frames)):
-            csv_files = frame_csv(output_dir, index)
-            if len(csv_files) != 1:
-                raise RuntimeError(f"Stage 1 did not produce one CSV for frame {index:02d} in {output_dir}")
+            compact = result_path(output_dir, index)
+            raw = raw_result(output_dir, index)
+            if not compact.is_file() and raw is None:
+                raise RuntimeError(f"Stage 1 did not produce a DIC result for frame {index:02d} in {output_dir}")
             image_path = output_dir / f"displacement_frame{index:02d}.png"
-            if not image_path.is_file():
-                tasks.append((str(csv_files[0]), str(image_path), config_dir.name, index))
+            if not compact.is_file() or not image_path.is_file():
+                tasks.append((str(raw) if raw is not None else None, str(compact), str(image_path), config_dir.name, index))
         if "rigid" in case:
             summaries.append((case, output_dir, len(frames), config_dir.name))
 
