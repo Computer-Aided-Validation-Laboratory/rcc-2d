@@ -24,6 +24,7 @@ from modules.exp1common import (
 )
 from modules.render_outputs import save_float_and_depths, write_camera_depths
 from modules.render_selection import custom_enabled
+from modules.render_logging import case_label, render_log
 from exp1params import (
     BACKGROUND,
     TARG_PX_X,
@@ -496,13 +497,8 @@ def generate_grid_images(case_dir: Path, method: str, param: int) -> None:
                 )
             )
 
-        print(
-            f"    frame {ff:02d}/{num_frames - 1:02d}: rendering "
-            f"{method} param={param} ({len(tasks):,} chunk"
-            f"{'s' if len(tasks) != 1 else ''}; "
-            f"worker point cap={point_cap:,}).",
-            flush=True,
-        )
+        render_log("EXP1", "gridint2d", case_label(case_name),
+                   f"frame={ff:02d}; {method}={param}; mapping={mapping_mode}; chunks={len(tasks):,}")
 
         if ff == 0:
             init_args = (None, None, None, None, mapping_mode)

@@ -1,4 +1,4 @@
-"""Run independent Exp1/Exp2 analysis scripts in bounded parallel batches."""
+"""Run the complete analysis suites for Experiments 1--3."""
 
 from __future__ import annotations
 
@@ -64,7 +64,16 @@ def main() -> None:
     if failures:
         failed = ", ".join(script for script, _ in failures)
         raise RuntimeError(f"Analysis suite failed: {failed}") from failures[0][1]
-    print("All analysis scripts completed.")
+    # Exp3 analysis contains its own sequential orchestration for DIC and Grid
+    # Method workloads.  Run it after the independent Exp1/2 batch to avoid
+    # oversubscribing the machine.
+    print("--- starting exp3_all_analysis.py ---", flush=True)
+    subprocess.run(
+        [sys.executable, str(SCRIPTS_DIR / "exp3_all_analysis.py")],
+        check=True, cwd=SCRIPTS_DIR.parent, env=_child_environment(),
+    )
+    print("--- finished exp3_all_analysis.py ---", flush=True)
+    print("All Experiment 1--3 analysis scripts completed.")
 
 
 if __name__ == "__main__":

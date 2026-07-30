@@ -18,6 +18,7 @@ from exp1params import (
 from modules.ortho_psf_common import render_psf_frame
 from modules.render_outputs import save_float_and_depths, write_camera_depths
 from modules.render_selection import custom_enabled
+from modules.render_logging import case_label, render_log
 
 OUTPUT_DIR = exp1_output_dir("exp1_gridint2d_render_uvs_psf")
 
@@ -68,7 +69,8 @@ def main() -> None:
                     write_camera_depths(canonical, BIT_DEPTHS)
                 if not force_render and canonical.exists() and all(canonical.with_name(f"{canonical.stem}_b{bits}.tiff").exists() for bits in BIT_DEPTHS):
                     continue
-                print(f"  {case_out.name}: frame {frame:02d}, SSAA={ssaa}", flush=True)
+                render_log("EXP1", "gridint2d-psf", case_label(case_out.name),
+                           f"frame={frame:02d}; SSAA={ssaa}; mapping={mapping}")
                 def eggbox(x: np.ndarray, y: np.ndarray) -> np.ndarray:
                     u, v = uv_scale * x, -uv_scale * y
                     return I0 + 0.5 * GAMMA * (1.0 + np.cos(2.0 * np.pi * u / pitch_uv)) * (1.0 + np.cos(2.0 * np.pi * v / pitch_uv)) - GAMMA

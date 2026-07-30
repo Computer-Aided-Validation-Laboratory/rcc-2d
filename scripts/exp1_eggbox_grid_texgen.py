@@ -32,6 +32,7 @@ from exp1params import (
 )
 from modules.script_timing import ScriptTimer, timed_call
 from modules.render_selection import uint_textures_enabled
+from modules.render_logging import render_log
 
 # Process bounded horizontal bands, so a high-oversampling texture never needs
 # a full floating point image in RAM.  These can be overridden for a particular
@@ -235,10 +236,7 @@ def main() -> None:
     texture_bits = BIT_DEPTHS if uint_textures_enabled() else [8]
     for bb in texture_bits:
         for oversamp in TEX_OVERSAMPLES:
-            print(
-                f"  Texture: analytic=0, bb={bb}, "
-                f"oversamp={oversamp}"
-            )
+            render_log("EXP1", "texgen", "eggbox", f"starting analytic; OS={oversamp}; texture-bits={bb}")
             timed_call(timer, f"analytic_b{bb}_oversamp{oversamp}", generate_texture, "analytic", 0, bb, oversamp, uint_textures_enabled())
 
     print("\nAll reference textures generated successfully!")

@@ -34,6 +34,7 @@ from exp2params import (
 )
 from modules.exp2speckint2d import make_speckle_pattern, render_case
 from modules.render_selection import custom_enabled
+from modules.render_logging import case_label, render_log
 from modules.script_timing import ScriptTimer
 
 
@@ -151,7 +152,8 @@ def main() -> None:
                                 f"{output_case_name(case_dir.name, TARG_PX_X)}_{tag}_int_"
                                 f"{method}_param_{param}"
                             )
-                            print(f"  {out_dir.name}")
+                            render_log("EXP2", "speckint2d", case_label(case_dir.name),
+                                       f"starting {pattern_type}; {method}={param}; mapping={mapping_mode}")
                             render_case(
                                 case_dir,
                                 out_dir,

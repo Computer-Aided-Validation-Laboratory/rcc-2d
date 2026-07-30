@@ -56,6 +56,7 @@ from exp2_riley_render_texfloat import (
 from exp2params import additive_jitter_for
 from modules.script_timing import ScriptTimer, timed_call
 from modules.render_selection import riley_enabled
+from modules.render_logging import case_label, render_log
 
 
 # Exp2 deliberately creates large oversampled textures.  They are local,
@@ -167,10 +168,8 @@ def main() -> None:
                                 texture, texture_storage = load_uint_texture(
                                     texture_path, (tex_size, tex_size)
                                 )
-                                print(
-                                    f"  {tag}, interp={interp_name}, SSAA={ssaa}, "
-                                    f"bits={bit_depth}, oversamp={oversamp}"
-                                )
+                                render_log("EXP2", "riley-texuint", case_label(case_name),
+                                           f"starting {pattern_type}; interp={interp_name}; SSAA={ssaa}; OS={oversamp}; texture-bits={bit_depth}")
                                 mesh = riley.Mesh(
                                     mesh_type=mesh_type, coords=coords, connect=connect, disp=disp,
                                     shader_type=riley.ShaderType.tex,

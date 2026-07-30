@@ -41,6 +41,7 @@ from exp1params import (
 from modules.psf_riley_common import camera_kwargs, enabled as psf_enabled
 from modules.render_selection import riley_enabled
 from modules.render_outputs import save_float_and_depths, float_and_depths_complete
+from modules.render_logging import case_label, render_log
 
 OUTPUT_ROOT = exp1_output_dir("exp1_riley_render_func_uvs_psf" if psf_enabled() else "exp1_riley_render_func_uvs")
 
@@ -178,10 +179,8 @@ def main() -> None:
                 print(f"  SSAA={ss}: canonical float images exist; skipping.")
                 continue
             for bb in [max(depths)]:
-                print(
-                    f"  Running Riley function render: "
-                    f"SSAA={ss}, bits={bb}"
-                )
+                render_log("EXP1", "riley-func", case_label(case_name),
+                           f"starting SSAA={ss}; source-bits={bb}")
                 case_out = canonical
                 case_out.mkdir(parents=True, exist_ok=True)
                 force_render = FORCE_RENDER_OVER or os.environ.get("EXP1_FORCE_RENDER_OVER") == "1"

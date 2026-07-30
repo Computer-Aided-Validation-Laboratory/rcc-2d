@@ -48,6 +48,7 @@ from exp2params import (
 )
 from modules.psf_riley_common import camera_kwargs, enabled as psf_enabled
 from modules.render_selection import float_textures_enabled
+from modules.render_logging import case_label, render_log
 
 OUTPUT_ROOT = exp2_output_dir("exp2_riley_render_texfloat_psf" if psf_enabled() else "exp2_riley_render_texfloat")
 
@@ -263,10 +264,8 @@ def main() -> None:
                                     texture = load_raw_texture(
                                         texture_path, (tex_size, tex_size)
                                     )
-                                    print(
-                                        f"  {tag}, interp={interp_name}, "
-                                        f"SSAA={ssaa}, oversamp={oversamp}"
-                                    )
+                                    render_log("EXP2", "riley-texfloat", case_label(case_path.name),
+                                               f"starting {pattern_type}; interp={interp_name}; SSAA={ssaa}; OS={oversamp}")
                                     mesh = riley.Mesh(
                                         mesh_type=mesh_type,
                                         coords=coords,

@@ -42,6 +42,7 @@ from exp1params import (
 )
 from modules.psf_riley_common import camera_kwargs, enabled as psf_enabled
 from modules.render_selection import riley_enabled
+from modules.render_logging import case_label, render_log
 
 OUTPUT_ROOT = exp1_output_dir("exp1_riley_render_texuint_psf" if psf_enabled() else "exp1_riley_render_texuint")
 
@@ -242,11 +243,8 @@ def main() -> None:
             for ss in get_ssaa_levels():
                 for bb in get_bit_depths():
                     for oversamp in get_texture_oversamples():
-                        print(
-                            "  Running Riley texture render: "
-                            f"interp={tex_interp}, SSAA={ss}, bits={bb}, "
-                            f"oversamp={oversamp}"
-                        )
+                        render_log("EXP1", "riley-texuint", case_label(case_name),
+                                   f"starting interp={tex_interp}; SSAA={ss}; OS={oversamp}; texture-bits={bb}")
                         case_out = OUTPUT_ROOT / f"{case_name}_{tex_interp}" / (
                             f"ss{ss}_b{bb}_oversamp{oversamp}"
                         )

@@ -20,6 +20,7 @@ from exp2params import (
 from modules.exp2speckint2d import make_speckle_pattern, save_image, fill_missing_digitised_outputs
 from modules.ortho_psf_common import render_psf_frame
 from modules.render_selection import custom_enabled
+from modules.render_logging import case_label, render_log
 
 OUTPUT_DIR = exp2_output_dir("exp2_speckint2d_render_uvs_psf")
 
@@ -73,7 +74,8 @@ def main() -> None:
                     if not force_render:
                         fill_missing_digitised_outputs(out_dir, prefix)
                     if not force_render and (out_dir / f"{prefix}.npy").exists(): continue
-                    print(f"  {out_dir.name}: frame {frame:02d}, SSAA={ssaa}", flush=True)
+                    render_log("EXP2", "speckint2d-psf", case_label(case_path.name),
+                               f"frame={frame:02d}; disk; SSAA={ssaa}; mapping={mapping}")
                     coverage = render_psf_frame(
                         evaluate_reference=pattern.evaluate_coverage, invalid_value=0.0,
                         roi_size=roi_size, image_shape=(TARG_PX_Y, TARG_PX_X), ssaa=ssaa,

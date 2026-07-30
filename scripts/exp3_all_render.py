@@ -6,6 +6,7 @@ import sys
 from pathlib import Path
 
 from modules.render_selection import custom_enabled, float_textures_enabled, riley_enabled
+from modules.render_logging import render_log
 
 
 SCRIPTS = (
@@ -40,8 +41,10 @@ def main() -> None:
             continue
         if "speckint2d_render_disk_psf" in script and not custom_enabled("disk_psf"):
             continue
+        render_log("EXP3", "launcher", script, "starting")
         print(f"\n{'=' * 78}\nExperiment 3: {script}\n{'=' * 78}", flush=True)
         subprocess.run([sys.executable, str(here / script)], check=True)
+        render_log("EXP3", "launcher", script, "completed")
 
 
 if __name__ == "__main__":

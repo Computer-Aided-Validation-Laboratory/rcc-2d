@@ -37,6 +37,7 @@ from modules.exp2speckint2d import (
 )
 from modules.script_timing import ScriptTimer, timed_call
 from modules.render_selection import uint_textures_enabled
+from modules.render_logging import render_log
 from exp2params import BIT_DEPTHS
 
 NUM_PROCESSES_RUN = max(1, min(
@@ -209,7 +210,8 @@ def main() -> None:
                             distribution,
                             fraction,
                         )
-                        print(f"  {pattern_name}, oversamp={oversample}")
+                        render_log("EXP2", "texgen", pattern_type,
+                                   f"starting OS={oversample}")
                         timed_call(
                             timer, f"{pattern_name}_oversamp{oversample}",
                             generate_texture, pattern_type, black_fraction,

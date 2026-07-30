@@ -5,7 +5,7 @@
 # Licensed under the MIT License (see LICENSE file for details)
 # --------------------------------------------------------------------------
 
-"""Run the complete Experiment 1 render suite followed by Experiment 2."""
+"""Run the complete resumable render suites for Experiments 1--3."""
 
 from __future__ import annotations
 
@@ -15,6 +15,7 @@ from pathlib import Path
 
 from modules.script_timing import ScriptTimer, timed_call
 from modules.render_selection import custom_enabled, float_textures_enabled, riley_enabled
+from modules.render_logging import render_log
 
 
 SCRIPTS_DIR = Path(__file__).resolve().parent
@@ -73,19 +74,23 @@ def run_suite(name: str, scripts: tuple[str, ...]) -> None:
     """Run one experiment's render scripts serially with this interpreter."""
     timer = ScriptTimer(__file__)
     print(f"\n{'=' * 80}\n{name}\n{'=' * 80}")
+    experiment = f"EXP{name.split()[1]}"
     for script in scripts:
+        render_log(experiment, "launcher", script, "starting")
         print(f"\n--- {script} ---", flush=True)
         timed_call(
             timer, script, subprocess.run,
             [sys.executable, str(SCRIPTS_DIR / script)],
             check=True, cwd=SCRIPTS_DIR.parent,
         )
+        render_log(experiment, "launcher", script, "completed")
 
 
 def main() -> None:
     run_suite("Experiment 1 renders", selected_scripts(EXP1_RENDER_SCRIPTS))
     run_suite("Experiment 2 renders", selected_scripts(EXP2_RENDER_SCRIPTS))
-    print("\nAll Experiment 1 and Experiment 2 renders completed.")
+    run_suite("Experiment 3 renders", ("exp3_all_render.py",))
+    print("\nAll Experiment 1--3 renders completed.")
 
 
 if __name__ == "__main__":

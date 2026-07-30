@@ -38,6 +38,7 @@ from exp1params import (
 from modules.psf_riley_common import camera_kwargs, enabled as psf_enabled
 from modules.render_outputs import float_and_depths_complete, save_float_and_depths, write_camera_depths
 from modules.render_selection import float_textures_enabled
+from modules.render_logging import case_label, render_log
 
 OUTPUT_ROOT = exp1_output_dir("exp1_riley_render_texfloat_psf" if psf_enabled() else "exp1_riley_render_texfloat")
 
@@ -231,10 +232,8 @@ def main() -> None:
                             if all(float_and_depths_complete(path, get_bit_depths()) for path in float_paths):
                                 print(f"  Riley floating texture: SSAA={ssaa}, oversamp={oversamp}; float images exist; skipping.")
                                 continue
-                        print(
-                            "  Running Riley floating texture render: "
-                            f"interp={tex_interp}, SSAA={ssaa}, oversamp={oversamp}"
-                        )
+                        render_log("EXP1", "riley-texfloat", case_label(case_name),
+                                   f"starting interp={tex_interp}; SSAA={ssaa}; OS={oversamp}")
 
                         tex_path = TEXTURE_OUTPUT_DIR / (
                             f"tex_px{p_val}_int_analytic_param_0"
