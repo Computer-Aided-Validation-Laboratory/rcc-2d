@@ -7,7 +7,7 @@ from typing import Final
 
 import riley
 
-from exp0params_common import FORCE_RENDER_OVER, NUM_PROCESSES, RILEY_RASTER_THREADS, TEST_RUN
+from exp0params_common import CORES, FORCE_RENDER_OVER, NUM_PROCESSES, RILEY_RASTER_THREADS, TEST_RUN
 
 BIT_DEPTHS = [8]
 TEX_PX_PAD = 4
@@ -39,6 +39,9 @@ DIC_SHAPE_FUNCTION = "AFFINE"
 # 0.8 tolerates locally weak/sharp speckle subsets while retaining their cost
 # and convergence diagnostics in the saved results.
 DIC_CORRELATION_THRESHOLD = 0.8
+# DIC itself owns the physical cores.  Once CSV results exist, this many
+# independent processes import them and generate displacement figures.
+DIC_POSTPROCESS_JOBS = CORES
 
 if TEST_RUN:
     SSAA_LEVELS = [1, 2, 4, 8, 16, 32]
