@@ -31,9 +31,10 @@ HERE = Path(__file__).resolve().parent
 if str(HERE) not in sys.path:
     sys.path.insert(0, str(HERE))
 
-from exp0params_common import GRIDMETHOD_JOBS
+from exp0params_common import GRIDMETHOD_CASES, GRIDMETHOD_JOBS
 from exp3params import EGGBOX_PERIOD_FINAL_PX
 from modules.gridmethod import GridMethodConfig, analyse_sequence
+from modules.render_selection import measurement_enabled
 
 
 OUT_ROOT = Path("out")
@@ -61,6 +62,8 @@ def sequences() -> list[tuple[str, str, Path]]:
         if not directory.is_dir() or not directory.name.startswith("eggbox_"):
             continue
         case, root = directory.parent.name, directory.parent.parent.name
+        if not measurement_enabled(root, GRIDMETHOD_CASES):
+            continue
         if CASE_FILTER and case != CASE_FILTER:
             continue
         if len(image_frames(directory)) >= 2:
@@ -189,7 +192,7 @@ def main() -> None:
         jobs = jobs[:LIMIT]
     if not jobs:
         raise FileNotFoundError("No completed Exp3 eggbox sequences matched the requested filter.")
-    print(f"Exp3 grid method: {len(jobs)} sequences; workers={WORKERS}")
+    print(f"Exp3 grid method: {len(jobs)} sequences; families={','.join(GRIDMETHOD_CASES)}; workers={WORKERS}")
     pending: list[tuple[str, str, Path]] = []
     for index, (case, root, directory) in enumerate(jobs, start=1):
         print(f"[{index}/{len(jobs)}] {root}/{case}/{directory.name}")

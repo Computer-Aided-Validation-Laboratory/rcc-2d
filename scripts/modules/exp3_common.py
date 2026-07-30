@@ -133,9 +133,18 @@ def texture_path(case: str, pattern: str, oversamp: int, storage: str = "float",
 
 
 def generate_texture(case: str, pattern: str, oversamp: int) -> Path:
-    """Generate a row-major texture at texel centres including the 4-pixel pad."""
+    """Generate a row-major texture of analytic texel averages.
+
+    Disk and Gaussian source textures represent each texel's pixel-area
+    average, rather than a value sampled at its centre.  This makes OS=1 a
+    legitimate camera-resolution texture with grey edge texels, consistent
+    with Exp2's analytic texture generator and Exp3's analytic references.
+    """
     path = texture_path(case, pattern, oversamp)
-    texture_signature = hashlib.sha256(repr((case, pattern, oversamp, CASE_CAMERA_PIXELS[case], CASE_ROI_SIZES[case], EGGBOX_PERIOD_FINAL_PX)).encode()).hexdigest()
+    texture_signature = hashlib.sha256(repr((
+        "analytic_texel_integral_v1", case, pattern, oversamp,
+        CASE_CAMERA_PIXELS[case], CASE_ROI_SIZES[case], EGGBOX_PERIOD_FINAL_PX,
+    )).encode()).hexdigest()
     marker = path.with_suffix(".sha256")
     width, height = CASE_CAMERA_PIXELS[case]
     tex_w, tex_h = oversamp * (width + 2 * TEX_PX_PAD), oversamp * (height + 2 * TEX_PX_PAD)
@@ -159,12 +168,26 @@ def generate_texture(case: str, pattern: str, oversamp: int) -> Path:
     x = -roi_x / 2 - TEX_PX_PAD * roi_x / width + (np.arange(tex_w) + .5) * sx
     # Image rows are top-to-bottom to match Riley texture memory.
     y = roi_y / 2 + TEX_PX_PAD * roi_y / height - (np.arange(tex_h) + .5) * sy
-    xx, yy = np.meshgrid(x, y)
     if pattern == "eggbox":
-        # This is Riley's built-in eggbox convention, retained verbatim so the
-        # function and texture paths have the same continuous source field.
+        # Exact separable box average of Riley's eggbox convention.  A texture
+        # texel is a finite area, so retain the sinc attenuation rather than a
+        # centre sample of the continuous function.
         pitch_x, pitch_y = eggbox_pitch_world(case)
-        texture = I0 + .5 * GAMMA * (1 + np.cos(2 * np.pi * xx / pitch_x)) * (1 + np.cos(2 * np.pi * yy / pitch_y)) - GAMMA
+        x_average = np.cos(2 * np.pi * x / pitch_x) * np.sinc(sx / pitch_x)
+        y_average = np.cos(2 * np.pi * y / pitch_y) * np.sinc(sy / pitch_y)
+        path.parent.mkdir(parents=True, exist_ok=True)
+        temporary = path.with_suffix(".tmp.npy")
+        texture = np.lib.format.open_memmap(temporary, mode="w+", dtype=np.float64, shape=(tex_h, tex_w))
+        rows_per_batch = max(1, int(os.environ.get("EXP3_TEXGEN_CHUNK_PIXELS", "1000000")) // tex_w)
+        for start_row in range(0, tex_h, rows_per_batch):
+            end_row = min(start_row + rows_per_batch, tex_h)
+            texture[start_row:end_row] = (
+                I0 + .5 * GAMMA * (1 + x_average[None, :])
+                * (1 + y_average[start_row:end_row, None]) - GAMMA
+            )
+        texture.flush()
+        del texture
+        temporary.replace(path)
     else:
         distribution, jitter = additive_jitter_for(pattern)
         speckles = make_speckle_pattern(
@@ -173,10 +196,30 @@ def generate_texture(case: str, pattern: str, oversamp: int) -> Path:
             (x[0], x[-1], y[-1], y[0]), I0, GAMMA,
             GAUSSIAN_EQUIVALENT_DISK_EDGE_FRACTION, GAUSSIAN_CONTINUOUS_TAIL_SIGMAS,
         )
-        coverage = speckles.evaluate_coverage(xx, yy)
-        texture = speckles.intensity_from_coverage(coverage)
-    path.parent.mkdir(parents=True, exist_ok=True)
-    np.save(path, np.asarray(texture, dtype=np.float64))
+        # A full OS=32 finite-star texture is several GiB.  Write one bounded
+        # row batch at a time, so analytic integration does not require a
+        # second full texture-sized coordinate/coverage allocation.
+        rows_per_batch = max(1, int(os.environ.get("EXP3_TEXGEN_CHUNK_PIXELS", "1000000")) // tex_w)
+        temporary = path.with_suffix(".tmp.npy")
+        path.parent.mkdir(parents=True, exist_ok=True)
+        texture = np.lib.format.open_memmap(temporary, mode="w+", dtype=np.float64, shape=(tex_h, tex_w))
+        x_start = x - 0.5 * sx
+        for start_row in range(0, tex_h, rows_per_batch):
+            end_row = min(start_row + rows_per_batch, tex_h)
+            # Texture rows descend in world Y, hence the lower edge is centre
+            # minus half a texel even though row zero is at the image top.
+            y_start = y[start_row:end_row] - 0.5 * sy
+            xx, yy = np.meshgrid(x_start, y_start)
+            coverage = (
+                speckles.evaluate_diskaddsat_box_average(xx, yy, sx, sy)
+                if pattern == "diskaddsat" else
+                speckles.evaluate_gausscont_box_average(xx, yy, sx, sy)
+            )
+            texture[start_row:end_row] = speckles.intensity_from_coverage(coverage)
+        texture.flush()
+        del texture
+        temporary.replace(path)
+    texture = np.load(path, mmap_mode="r")
     for bits in bit_depths() if uint_textures_enabled() else ():
         maximum = 2**bits - 1
         quant = np.round(np.clip(texture, 0, 1) * maximum)
@@ -384,6 +427,13 @@ def _uvs(coords: np.ndarray, case: str, oversamp: int) -> np.ndarray:
 def riley_render(case: str, pattern: str, shader: str, ssaa: int, *, texture_os: int | None = None, interp: str = "linear", storage: str = "float", source_bits: int | None = None, psf: bool = False) -> Path:
     coords, connect, ux, uy = load_case(case); width,height=CASE_CAMERA_PIXELS[case]; roi_x,roi_y=CASE_ROI_SIZES[case]
     signature = case_signature(coords, connect, ux, uy)
+    if texture_os is not None:
+        # Include the texel-integration convention in the render signature.
+        # Otherwise a corrected source texture could leave stale Riley images
+        # looking complete and silently bypass the rerender.
+        generated_texture = generate_texture(case, pattern, texture_os)
+        texture_marker = generated_texture.with_suffix(".sha256").read_text().strip()
+        signature = hashlib.sha256(f"{signature}:{texture_marker}".encode()).hexdigest()
     root=Path("out")/f"exp3_riley_render_{shader}{'_psf' if psf else ''}_im{width}x{height}"/case
     tag = f"{_tag(pattern)}"
     if texture_os is None:
@@ -404,7 +454,6 @@ def riley_render(case: str, pattern: str, shader: str, ssaa: int, *, texture_os:
         # Physical-coordinate function avoids any UV aspect-ratio ambiguity.
         kwargs.update(shader_type=riley.ShaderType.func,uvs=_uvs(coords,case,1),func_shader_builtin=riley.FuncShaderBuiltin.eggbox,func_shader_coord_mode=riley.FuncCoordMode.world_reference,func_shader_params=riley.FuncShaderParams(eggbox_mean=I0,eggbox_contrast=GAMMA,eggbox_pitch=eggbox_pitch_world(case),eggbox_phase=(0.,0.)))
     else:
-        generate_texture(case, pattern, texture_os)
         texture=np.load(texture_path(case, pattern, texture_os, "uint" if storage=="uint" else "float", source_bits))
         texture_storage = riley.TextureStorage.floating if storage == "float" else (riley.TextureStorage.u8 if texture.dtype == np.uint8 else riley.TextureStorage.u16)
         if storage == "uint":

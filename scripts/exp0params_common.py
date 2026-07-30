@@ -31,3 +31,21 @@ RILEY_RENDER_CASES: tuple[str, ...] = (
     # "texuint",       # Re-enable digitised texture source studies here.
     # "texuint_psf",   # Re-enable digitised PSF texture source studies here.
 )
+
+# Analysis-family selection for Exp3 image-measurement workflows.  These use
+# the renderer/storage family, not the deformation case name: ``custom``
+# covers gridint2d/speckint2d, while the remaining names identify Riley shader
+# or texture paths.  Leave texuint disabled while its large source-texture
+# render campaign is still running; add ``"texuint"`` later to process its
+# already-rendered sequences.
+DIC_CASES: tuple[str, ...] = (
+    "custom",
+    "texfloat",
+    # "texuint",
+)
+GRIDMETHOD_CASES: tuple[str, ...] = (
+    "custom",
+    "func",
+    "texfloat",
+    # "texuint",
+)

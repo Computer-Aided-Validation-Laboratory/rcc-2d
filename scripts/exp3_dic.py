@@ -38,6 +38,8 @@ if str(HERE) not in sys.path:
     sys.path.insert(0, str(HERE))
 
 from modules.exp3_dic_data import load_result, read_pyvale_binary, result_path, save_arrays
+from modules.render_selection import measurement_enabled
+from exp0params_common import DIC_CASES
 from exp3params import (
     DIC_CORRELATION_THRESHOLD,
     DIC_POSTPROCESS_JOBS,
@@ -66,6 +68,8 @@ def render_sequences() -> list[tuple[str, str, Path]]:
         case_dir = config_dir.parent
         render_root = case_dir.parent
         case, config = case_dir.name, config_dir.name
+        if not measurement_enabled(render_root.name, DIC_CASES):
+            continue
         if CASE_FILTER and case != CASE_FILTER:
             continue
         if not (config.startswith("diskaddsat_") or config.startswith("gausscont_")):
@@ -357,7 +361,7 @@ def main() -> None:
         sequences = sequences[:LIMIT]
     if not sequences:
         raise FileNotFoundError("No completed additive Exp3 render sequences matched the requested filter.")
-    print(f"Exp3 DIC stage 1: {len(sequences)} completed sequences; subset={DIC_SUBSET_SIZE_PX}, step={DIC_SUBSET_STEP_PX}, shape={DIC_SHAPE_FUNCTION}, threshold={DIC_CORRELATION_THRESHOLD}, threads={DIC_NUM_THREADS}")
+    print(f"Exp3 DIC stage 1: {len(sequences)} completed sequences; families={','.join(DIC_CASES)}; subset={DIC_SUBSET_SIZE_PX}, step={DIC_SUBSET_STEP_PX}, shape={DIC_SHAPE_FUNCTION}, threshold={DIC_CORRELATION_THRESHOLD}, threads={DIC_NUM_THREADS}")
     for index, (case, root, directory) in enumerate(sequences, start=1):
         print(f"[{index}/{len(sequences)}] {root}/{case}/{directory.name}")
         run_dic_stage(case, root, directory)

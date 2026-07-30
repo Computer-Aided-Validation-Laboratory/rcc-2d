@@ -18,3 +18,21 @@ def uint_textures_enabled(*, psf: bool = False) -> bool:
 
 def float_textures_enabled(*, psf: bool = False) -> bool:
     return riley_enabled("texfloat_psf" if psf else "texfloat")
+
+
+def measurement_family(render_root: str) -> str:
+    """Classify an Exp3 render root for DIC/Grid Method selection."""
+    name = render_root.lower()
+    if "texuint" in name:
+        return "texuint"
+    if "texfloat" in name:
+        return "texfloat"
+    if "riley_render_func" in name:
+        return "func"
+    if "gridint2d" in name or "speckint2d" in name:
+        return "custom"
+    raise ValueError(f"Cannot classify measurement render family: {render_root}")
+
+
+def measurement_enabled(render_root: str, enabled_cases: tuple[str, ...]) -> bool:
+    return measurement_family(render_root) in enabled_cases
