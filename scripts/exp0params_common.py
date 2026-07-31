@@ -23,6 +23,7 @@ RILEY_RASTER_THREADS: int = CORES
 # studies, add ``"texuint"`` (and, if wanted, ``"texuint_psf"``) below.
 CUSTOM_RENDER_CASES: tuple[str, ...] = (
     "eggbox",
+    # "eggbox_psf",
     "disk",
     "gauss",
     "disk_psf",

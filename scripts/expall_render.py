@@ -62,7 +62,7 @@ def selected_scripts(scripts: tuple[str, ...]) -> tuple[str, ...]:
             continue
         if "riley_render_func" in script and not riley_enabled("func_psf" if "psf" in script else "func"):
             continue
-        if "gridint2d" in script and not custom_enabled("eggbox"):
+        if "gridint2d" in script and not custom_enabled("eggbox_psf" if "psf" in script else "eggbox"):
             continue
         if "speckint2d" in script and not any(custom_enabled(name) for name in ("disk", "gauss", "disk_psf")):
             continue

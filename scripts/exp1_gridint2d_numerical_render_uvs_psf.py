@@ -37,7 +37,7 @@ def _methods() -> list[tuple[str, int]]:
 
 
 def main() -> None:
-    if not custom_enabled("eggbox"):
+    if not custom_enabled("eggbox_psf"):
         print("Experiment 1 eggbox-PSF renderer disabled by CUSTOM_RENDER_CASES; skipping.")
         return
     print("Experiment 1: bespoke orthographic eggbox render with Gaussian PSF")
