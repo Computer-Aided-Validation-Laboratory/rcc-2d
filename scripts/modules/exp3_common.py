@@ -58,6 +58,8 @@ _texgen_pattern_type: str | None = None
 _texgen_x_start: np.ndarray | None = None
 _texgen_y_top: float | None = None
 _texgen_texel_size: tuple[float, float] | None = None
+_eggbox_x_average: np.ndarray | None = None
+_eggbox_y_average: np.ndarray | None = None
 
 
 def _init_speckle_texgen_worker(
@@ -105,6 +107,28 @@ def _integrate_speckle_texgen_rows(task: tuple[int, int]) -> tuple[int, int, np.
         _texgen_pattern.evaluate_gausscont_box_average(xx, yy, sx, sy)
     )
     return start_row, end_row, _texgen_pattern.intensity_from_coverage(coverage)
+
+
+def _init_eggbox_texgen_worker(
+    x_average: np.ndarray,
+    y_average: np.ndarray,
+) -> None:
+    """Share immutable 1-D exact box averages with one eggbox worker."""
+    global _eggbox_x_average, _eggbox_y_average
+    _eggbox_x_average = x_average
+    _eggbox_y_average = y_average
+
+
+def _integrate_eggbox_texgen_rows(task: tuple[int, int]) -> tuple[int, int, np.ndarray]:
+    """Evaluate an exact separable eggbox average for one row batch."""
+    if _eggbox_x_average is None or _eggbox_y_average is None:
+        raise RuntimeError("Exp3 eggbox texture worker was not initialised.")
+    start_row, end_row = task
+    values = (
+        I0 + 0.5 * GAMMA * (1.0 + _eggbox_x_average[None, :])
+        * (1.0 + _eggbox_y_average[start_row:end_row, None]) - GAMMA
+    )
+    return start_row, end_row, values
 
 
 def selected_cases() -> list[str]:
@@ -244,12 +268,31 @@ def generate_texture(case: str, pattern: str, oversamp: int) -> Path:
         temporary = path.with_suffix(".tmp.npy")
         texture = np.lib.format.open_memmap(temporary, mode="w+", dtype=np.float64, shape=(tex_h, tex_w))
         rows_per_batch = max(1, int(os.environ.get("EXP3_TEXGEN_CHUNK_PIXELS", "1000000")) // tex_w)
-        for start_row in range(0, tex_h, rows_per_batch):
-            end_row = min(start_row + rows_per_batch, tex_h)
-            texture[start_row:end_row] = (
-                I0 + .5 * GAMMA * (1 + x_average[None, :])
-                * (1 + y_average[start_row:end_row, None]) - GAMMA
-            )
+        tasks = [
+            (start_row, min(start_row + rows_per_batch, tex_h))
+            for start_row in range(0, tex_h, rows_per_batch)
+        ]
+        workers = min(TEXGEN_WORKERS, len(tasks))
+        print(
+            f"  exact eggbox texgen: {len(tasks)} row batches, {workers} workers, "
+            f"up to {rows_per_batch} rows/batch"
+        )
+        if workers == 1:
+            _init_eggbox_texgen_worker(x_average, y_average)
+            for task in tasks:
+                start_row, end_row, values = _integrate_eggbox_texgen_rows(task)
+                texture[start_row:end_row] = values
+        else:
+            with multiprocessing.Pool(
+                workers,
+                initializer=_init_eggbox_texgen_worker,
+                initargs=(x_average, y_average),
+            ) as pool:
+                for start_row, end_row, values in pool.imap_unordered(
+                    _integrate_eggbox_texgen_rows, tasks,
+                ):
+                    # The parent is the sole memmap writer, avoiding races.
+                    texture[start_row:end_row] = values
         texture.flush()
         del texture
         temporary.replace(path)
