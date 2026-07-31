@@ -29,6 +29,7 @@ from modules.render_outputs import float_and_depths_complete, save_float_and_dep
 from modules.render_logging import case_label, render_log
 from modules.render_selection import uint_textures_enabled
 from modules.texture_preview import write_preview_b8
+from modules.output_naming import case_name, config_name, output_root
 from exp0params_common import TEXGEN_JOBS
 from exp3params import (
     BACKGROUND, BIT_DEPTHS, CASE_CAMERA_PIXELS, CASE_ROI_SIZES,
@@ -135,10 +136,8 @@ def eggbox_pitch_world(case: str) -> tuple[float, float]:
 
 def texture_config_dir(case: str, pattern: str, oversamp: int, storage: str) -> Path:
     """Two-level texture output location: case then flat configuration."""
-    width, height = CASE_CAMERA_PIXELS[case]
-    return (
-        Path("out") / f"exp3_texgen_{pattern}_im{width}x{height}" / case
-        / f"{_tag(pattern)}_os{oversamp}_{'f' if storage == 'float' else f'b{bit_depths()[0]}'}"
+    return output_root(f"exp3_texgen_{pattern}") / case_name(case) / config_name(
+        f"{_tag(pattern)}_os{oversamp}_{'f' if storage == 'float' else f'b{bit_depths()[0]}'}"
     )
 
 
@@ -379,11 +378,13 @@ def bespoke_render(case: str, pattern: str, method: str, param: int, *, texture_
     coords, connect, ux, uy = load_case(case)
     signature = case_signature(coords, connect, ux, uy)
     width, height = CASE_CAMERA_PIXELS[case]; roi_x, roi_y = CASE_ROI_SIZES[case]
-    root = Path("out") / f"exp3_{'gridint2d' if pattern == 'eggbox' else 'speckint2d'}_render_{method}{'_psf' if psf else ''}_im{width}x{height}" / case
+    root = output_root(
+        f"exp3_{'gridint2d' if pattern == 'eggbox' else 'speckint2d'}_render_{method}{'_psf' if psf else ''}"
+    ) / case_name(case)
     config = f"{_tag(pattern)}_{'ss' + str(param) if method == 'ssaa' else 'analytic'}"
     if texture_os is not None: config += f"_{interp}_os{texture_os}"
     config += "_f"
-    root = root / config
+    root = root / config_name(config)
     texture = None if texture_os is None else np.load(generate_texture(case, pattern, texture_os), mmap_mode="r")
     speckles = None
     if pattern != "eggbox" and texture is None:
@@ -506,13 +507,13 @@ def riley_render(case: str, pattern: str, shader: str, ssaa: int, *, texture_os:
         generated_texture = generate_texture(case, pattern, texture_os)
         texture_marker = generated_texture.with_suffix(".sha256").read_text().strip()
         signature = hashlib.sha256(f"{signature}:{texture_marker}".encode()).hexdigest()
-    root=Path("out")/f"exp3_riley_render_{shader}{'_psf' if psf else ''}_im{width}x{height}"/case
+    root = output_root(f"exp3_riley_render_{shader}{'_psf' if psf else ''}") / case_name(case)
     tag = f"{_tag(pattern)}"
     if texture_os is None:
         tag += f"_func_ss{ssaa}_f"
     else:
         tag += f"_{interp}_os{texture_os}_ss{ssaa}_{'f' if storage == 'float' else f'b{source_bits}'}"
-    root=root/tag
+    root = root / config_name(tag)
     frames = selected_frames(case, ux.shape[1])
     source_bits = source_bits if storage == "uint" else bit_depths()[0]
     expected=[root/f"image_c00_f{frame:02d}.npy" for frame in frames]

@@ -13,6 +13,7 @@ from typing import Tuple
 
 import numpy as np
 import pyvista as pv
+from modules.output_naming import case_name as output_case_label
 
 
 def get_pv_cell_type(nodes_per_elem: int) -> pv.CellType:
@@ -67,7 +68,8 @@ def parse_case_params(case_dir: Path) -> Tuple[int, float]:
 
 def output_case_name(case_name: str, target_pixels: int) -> str:
     """Label generated output with its configured camera resolution."""
-    return re.sub(r"_cam\d+(?=_|$)", f"_cam{target_pixels}", case_name)
+    expanded = re.sub(r"_cam\d+(?=_|$)", f"_cam{target_pixels}", case_name)
+    return output_case_label(expanded)
 
 
 def compute_padded_uvs(

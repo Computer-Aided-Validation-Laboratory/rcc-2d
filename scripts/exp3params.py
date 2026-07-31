@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+from modules.output_naming import output_root, case_name
 from typing import Final
 
 import riley
@@ -92,11 +93,9 @@ MAPPING_MODES = {
 
 
 def output_dir(name: str, case: str | None = None) -> Path:
-    """Return an Exp3 output root, optionally size-qualified per case."""
-    if case is None:
-        return Path("out") / name
-    width, height = CASE_CAMERA_PIXELS[case]
-    return Path("out") / f"{name}_im{width}x{height}"
+    """Return a canonical Exp3 output path; camera size lives in ``case``."""
+    root = output_root(name)
+    return root if case is None else root / case_name(case)
 
 
 def additive_jitter_for(pattern: str) -> tuple[str, float]:

@@ -36,6 +36,7 @@ from exp2params import (
 from modules.exp1common import output_case_name
 from modules.analysis_memory import make_agg_figure, release_batch, release_figure
 from modules.script_timing import ScriptTimer, timed_call
+from modules.output_naming import config_name
 
 
 RILEY_OUTPUT_DIR = exp2_output_dir("exp2_riley_render_texfloat")
@@ -47,7 +48,7 @@ WRITE_RECTCONV = True
 # PSF renderer explicitly flips before saving its intensity image, so its
 # Riley comparisons alone need this conversion.
 RILEY_ROWS_FLIPPED = False
-RUN_RE = re.compile(r"^ss(?P<ssaa>\d+)_oversamp(?P<oversamp>\d+)$")
+RUN_RE = re.compile(r"^ss(?P<ssaa>\d+)_os(?P<oversamp>\d+)$")
 INTERPOLATOR_COLORS = rcParams["axes.prop_cycle"].by_key()["color"]
 OVERSAMP_MARKERS = ("o", "s", "^", "v", "<", ">", "D", "P", "X")
 
@@ -87,7 +88,7 @@ def pattern_tag(
     distribution: str,
     fraction: float,
 ) -> str:
-    return (
+    return config_name(
         f"{pattern_type}_blackfrac{black_fraction:g}_"
         f"{distribution}_j{fraction:g}_seed{RANDOM_SEED}"
     )
@@ -106,8 +107,8 @@ def _reference_for_frame(
     frame: int,
 ) -> tuple[np.ndarray, str, str, int] | None:
     """Load analytic, or the pattern-appropriate highest-rule reference."""
-    base = f"{case_name}_{tag}_int_"
-    analytic_dir = REFERENCE_OUTPUT_DIR / f"{base}analytic_param_0"
+    base = f"{case_name}_{tag}_"
+    analytic_dir = REFERENCE_OUTPUT_DIR / f"{base}analytic_0"
     analytic_path = _reference_path(analytic_dir, "analytic", 0, frame)
     if analytic_path.exists():
         return np.load(analytic_path), "Analytic", "analytic", 0
@@ -116,9 +117,9 @@ def _reference_for_frame(
     methods = [preferred] + ([] if preferred == "rect" else ["rect"])
     for method in methods:
         candidates: list[tuple[int, Path]] = []
-        for directory in REFERENCE_OUTPUT_DIR.glob(f"{base}{method}_param_*"):
+        for directory in REFERENCE_OUTPUT_DIR.glob(f"{base}{method}_*"):
             try:
-                tail = directory.name.rsplit("_param_", 1)[1]
+                tail = directory.name.rsplit(f"_{method}_", 1)[1]
                 if REFERENCE_SUFFIX and tail.endswith(REFERENCE_SUFFIX):
                     tail = tail[: -len(REFERENCE_SUFFIX)]
                 param = int(tail)
@@ -144,7 +145,11 @@ def _discover_riley_runs(
     for interpolator_dir in RILEY_OUTPUT_DIR.glob(f"{prefix}*"):
         if not interpolator_dir.is_dir() or not interpolator_dir.name.startswith(prefix):
             continue
-        interpolator = interpolator_dir.name[len(prefix):]
+        interpolator_token = interpolator_dir.name[len(prefix):]
+        interpolator = next(
+            (name for name in RILEY_TEXTURE_SAMPLERS if config_name(name) == interpolator_token),
+            interpolator_token,
+        )
         if allowed_interpolators is not None and interpolator not in allowed_interpolators:
             continue
         for run_dir in interpolator_dir.iterdir():

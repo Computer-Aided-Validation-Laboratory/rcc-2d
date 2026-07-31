@@ -43,6 +43,7 @@ from exp1params import (
 from modules.psf_riley_common import camera_kwargs, enabled as psf_enabled
 from modules.render_selection import riley_enabled
 from modules.render_logging import case_label, render_log
+from modules.output_naming import config_name
 
 OUTPUT_ROOT = exp1_output_dir("exp1_riley_render_texuint_psf" if psf_enabled() else "exp1_riley_render_texuint")
 
@@ -138,7 +139,7 @@ def compute_texture_world_uvs(
 def render_exists(case_out: Path, num_frames: int) -> bool:
     """Return whether Riley wrote both saved representations for every frame."""
     return all(
-        (case_out / f"cam0_frame{ff}_field0.tiff").exists()
+        (case_out / f"image_c00_f{ff:02d}_b8.tiff").exists()
         and (case_out / f"image_c00_f{ff:02d}.npy").exists()
         for ff in range(num_frames)
     )
@@ -245,7 +246,7 @@ def main() -> None:
                     for oversamp in get_texture_oversamples():
                         render_log("EXP1", "riley-texuint", case_label(case_name),
                                    f"starting interp={tex_interp}; SSAA={ss}; OS={oversamp}; texture-bits={bb}")
-                        case_out = OUTPUT_ROOT / f"{case_name}_{tex_interp}" / (
+                        case_out = OUTPUT_ROOT / f"{case_name}_{config_name(tex_interp)}" / config_name(
                             f"ss{ss}_b{bb}_oversamp{oversamp}"
                         )
                         if not FORCE_RENDER_OVER and render_exists(
@@ -253,7 +254,7 @@ def main() -> None:
                         ):
                             print("    outputs exist; skipping.")
                             continue
-                        tex_filename = (
+                        tex_filename = config_name(
                             f"tex_px{p_val}_int_analytic_param_0_b{bb}"
                             f"_pad{TEX_PX_PAD}_oversamp{oversamp}.tiff"
                         )
@@ -297,7 +298,7 @@ def main() -> None:
                         config = riley.create_raster_config(
                             num_frames=num_frames,
                             total_threads=RILEY_RASTER_THREADS,
-                            save_strategy=riley.SaveStrategy.both,
+                            save_strategy=riley.SaveStrategy.memory,
                         )
                         # The Python wrapper creates one render group. Keep
                         # geometry serial and give its workers to raster work.
@@ -306,18 +307,15 @@ def main() -> None:
                         config.max_geom_workers_per_job = 1
                         config.max_raster_workers_per_job = RILEY_RASTER_THREADS
                         config.tile_size_min = 1
-                        config.save_format = riley.ImageFormat.tiff
-                        config.save_bits = 16 if bb in (12, 16) else 8
-                        config.save_scaling = riley.ScaleStrategy.none
                         images = timed_call(timer, str(case_out), riley.raster,
                             [mesh], [camera], config, out_dir=str(case_out)
                         )
                         if images is not None:
                             for ff in range(num_frames):
-                                np.save(
-                                    case_out / f"image_c00_f{ff:02d}.npy",
-                                    images[0, ff, 0],
-                                )
+                                image = np.asarray(images[0, ff, 0])
+                                np.save(case_out / f"image_c00_f{ff:02d}.npy", image)
+                                preview = np.rint(np.clip(image / float(2**bb - 1), 0.0, 1.0) * 255.0).astype(np.uint8)
+                                Image.fromarray(preview).save(case_out / f"image_c00_f{ff:02d}_b8.tiff")
 
     print("All renders completed.")
 

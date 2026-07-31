@@ -35,6 +35,7 @@ from exp0params_common import GRIDMETHOD_CASES, GRIDMETHOD_JOBS
 from exp3params import EGGBOX_PERIOD_FINAL_PX
 from modules.gridmethod import GridMethodConfig, analyse_sequence
 from modules.render_selection import measurement_enabled
+from modules.output_naming import data_case_name, is_rigid_case
 
 
 OUT_ROOT = Path("out")
@@ -59,7 +60,7 @@ def image_frames(directory: Path) -> list[Path]:
 def sequences() -> list[tuple[str, str, Path]]:
     found: list[tuple[str, str, Path]] = []
     for directory in OUT_ROOT.glob("exp3_*render*/*/*"):
-        if not directory.is_dir() or not directory.name.startswith("eggbox_"):
+        if not directory.is_dir() or not directory.name.startswith("eggb_"):
             continue
         case, root = directory.parent.name, directory.parent.parent.name
         if not measurement_enabled(root, GRIDMETHOD_CASES):
@@ -87,7 +88,7 @@ def sequence_complete(case: str, root: str, directory: Path, frame_count: int) -
     if not fields_complete:
         return False
     return (
-        "rigid" not in case
+        not is_rigid_case(case)
         or ((out_dir / "rigid_motion_summary.csv").is_file()
             and (out_dir / "rigid_motion_summary.png").is_file())
     )
@@ -105,9 +106,9 @@ def clear_generated_artifacts(case: str, root: str, directory: Path) -> None:
 
 
 def expected_motion(case: str, frames: int) -> tuple[np.ndarray, np.ndarray] | None:
-    if "rigid" not in case:
+    if not is_rigid_case(case):
         return None
-    root = Path("data") / case
+    root = Path("data") / data_case_name(case)
     x = np.loadtxt(root / "field_disp_x.csv", delimiter=",")
     y = np.loadtxt(root / "field_disp_y.csv", delimiter=",")
     if x.ndim == 1:

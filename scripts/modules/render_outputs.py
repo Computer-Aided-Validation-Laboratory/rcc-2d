@@ -8,6 +8,12 @@ import numpy as np
 from PIL import Image
 
 
+# Float NPY is the source of truth.  TIFF is deliberately only an 8-bit
+# visualisation/debug preview; higher camera depths are derived in memory by
+# analysis when required and must never be recreated by a render no-op check.
+PREVIEW_BIT_DEPTH = 8
+
+
 def camera_tiff_path(float_path: Path, bits: int) -> Path:
     """Return the bit-depth companion for a canonical float ``.npy`` image."""
     return float_path.with_name(f"{float_path.stem}_b{bits}.tiff")
@@ -21,16 +27,15 @@ def quantise_camera(image: np.ndarray, bits: int) -> np.ndarray:
 
 
 def write_camera_depths(float_path: Path, bit_depths: Iterable[int]) -> None:
-    """Create any missing TIFF depths from a previously rendered float image."""
+    """Create only the canonical 8-bit TIFF preview from a float image."""
     image = np.asarray(np.load(float_path, mmap_mode="r"), dtype=np.float64)
-    for bits in bit_depths:
-        output = camera_tiff_path(float_path, bits)
-        if not output.exists():
-            Image.fromarray(quantise_camera(image, bits)).save(output)
+    output = camera_tiff_path(float_path, PREVIEW_BIT_DEPTH)
+    if not output.exists():
+        Image.fromarray(quantise_camera(image, PREVIEW_BIT_DEPTH)).save(output)
 
 
 def float_and_depths_complete(float_path: Path, bit_depths: Iterable[int]) -> bool:
-    return float_path.is_file() and all(camera_tiff_path(float_path, bits).is_file() for bits in bit_depths)
+    return float_path.is_file() and camera_tiff_path(float_path, PREVIEW_BIT_DEPTH).is_file()
 
 
 def save_float_and_depths(float_path: Path, image: np.ndarray, bit_depths: Iterable[int]) -> None:

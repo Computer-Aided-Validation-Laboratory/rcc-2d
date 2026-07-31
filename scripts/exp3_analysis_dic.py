@@ -46,7 +46,7 @@ def reference(records: list[Record]) -> tuple[Record | None,str]:
     analytic=[r for r in records if r.analytic]
     if analytic: return analytic[0], "Analytic render DIC reference"
     if not records: return None,"No reference"
-    bespoke=[r for r in records if "gridint2d" in r.root or "speckint2d" in r.root]
+    bespoke=[r for r in records if "grid2d" in r.root or "speck2d" in r.root]
     if bespoke:
         ref=max(bespoke,key=lambda r:r.ssaa)
         return ref,f"Highest bespoke SSAA render DIC reference: SSAA={ref.ssaa}"
@@ -59,7 +59,7 @@ def series_label(record: Record) -> str:
     if "riley_render_tex" in record.root:
         storage = "texuint" if "texuint" in record.root else "texfloat"
         return f"riley_{storage}_{record.interpolator}{'_psf' if psf else ''}"
-    return f"{record.root.replace('_render_ssaa_im512x512', '').replace('_render_ssaa_im1020x252', '')}{'_psf' if psf and '_psf' not in record.root else ''}"
+    return f"{record.root.replace('_render_ssaa', '')}{'_psf' if psf and '_psf' not in record.root else ''}"
 
 
 def field_plot(path: Path, rec: Record, frame: int, ref: Record, ref_name: str, arrays: tuple[np.ndarray,...]) -> tuple[float,float]:

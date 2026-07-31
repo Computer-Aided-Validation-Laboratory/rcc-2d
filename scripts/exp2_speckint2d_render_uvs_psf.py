@@ -21,6 +21,7 @@ from modules.exp2speckint2d import make_speckle_pattern, save_image, fill_missin
 from modules.ortho_psf_common import render_psf_frame
 from modules.render_selection import custom_enabled
 from modules.render_logging import case_label, render_log
+from modules.output_naming import config_name
 
 OUTPUT_DIR = exp2_output_dir("exp2_speckint2d_render_uvs_psf")
 
@@ -66,7 +67,7 @@ def main() -> None:
             pattern = make_speckle_pattern("diskaddsat", PX_PER_SPECK * pixel_size, black_fraction, ADDITIVE_DISK_JITTER_DISTRIBUTION, ADDITIVE_DISK_JITTER_FRACTION, RANDOM_SEED, GAUSSIAN_CUTOFF_SIGMAS, bounds, I0, GAMMA)
             background_coverage = (I0 + GAMMA - BACKGROUND) / (2.0 * GAMMA)
             for method, ssaa in _methods():
-                out_dir = OUTPUT_DIR / f"{output_case_name(case_path.name, TARG_PX_X)}_{tag}_int_{method}_param_{ssaa}_psf"
+                out_dir = OUTPUT_DIR / f"{output_case_name(case_path.name, TARG_PX_X)}_{tag}_{method}_{ssaa}_psf"
                 out_dir.mkdir(parents=True, exist_ok=True)
                 for frame in range(disp_x.shape[1]):
                     if frame not in _active_frames(): continue

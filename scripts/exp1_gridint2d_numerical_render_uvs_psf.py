@@ -16,7 +16,7 @@ from exp1params import (
     mapping_mode_for_case, NUM_PROCESSES,
 )
 from modules.ortho_psf_common import render_psf_frame
-from modules.render_outputs import save_float_and_depths, write_camera_depths
+from modules.render_outputs import save_float_and_depths, write_camera_depths, float_and_depths_complete
 from modules.render_selection import custom_enabled
 from modules.render_logging import case_label, render_log
 
@@ -67,7 +67,7 @@ def main() -> None:
                 canonical = case_out / f"targ_px{TARG_PX_X}_int_{method}_param_{ssaa}_psf_frame{frame:02d}.npy"
                 if canonical.exists() and not force_render:
                     write_camera_depths(canonical, BIT_DEPTHS)
-                if not force_render and canonical.exists() and all(canonical.with_name(f"{canonical.stem}_b{bits}.tiff").exists() for bits in BIT_DEPTHS):
+                if not force_render and float_and_depths_complete(canonical, BIT_DEPTHS):
                     continue
                 render_log("EXP1", "gridint2d-psf", case_label(case_out.name),
                            f"frame={frame:02d}; SSAA={ssaa}; mapping={mapping}")

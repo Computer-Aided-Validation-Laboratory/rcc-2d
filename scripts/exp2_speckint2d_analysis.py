@@ -36,7 +36,7 @@ RESULTS_DIR = exp2_output_dir("exp2_speckint2d_analysis")
 RENDER_SUFFIX = ""
 WRITE_RECTCONV = True
 JOB_RE = re.compile(
-    r"^(?P<pattern>.+)_int_(?P<method>analytic|rect|gauss|mc)_param_(?P<param>\d+)(?P<suffix>_psf)?$"
+    r"^(?P<pattern>.+)_(?P<method>analytic|rect|gauss|mc)_(?P<param>\d+)(?P<suffix>_psf)?$"
 )
 
 
@@ -90,7 +90,7 @@ def _reference_job(
         for bit_depth in BIT_DEPTHS
     ):
         return ("analytic", 0), analytic, "Analytic Reference"
-    preferred = "rect" if "_diskaddsat_" in group_name else "gauss"
+    preferred = "rect" if "_diskadd_" in group_name else "gauss"
     # Smooth fields prefer Gauss; sharp disks prefer rectangular SSAA.  Always
     # try the highest rectangular SSAA afterwards as a universal fallback.
     methods = [preferred] + ([] if preferred == "rect" else ["rect"])

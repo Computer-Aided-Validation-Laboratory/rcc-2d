@@ -35,6 +35,7 @@ from exp2params import (
 from modules.exp2speckint2d import make_speckle_pattern, render_case
 from modules.render_selection import custom_enabled
 from modules.render_logging import case_label, render_log
+from modules.output_naming import config_name
 from modules.script_timing import ScriptTimer
 
 
@@ -64,10 +65,9 @@ def pattern_tag(
     distribution: str,
     fraction: float,
 ) -> str:
-    return (
+    return config_name(
         f"{pattern_type}_blackfrac{black_fraction:g}_"
-        f"{distribution}_j{fraction:g}_"
-        f"seed{RANDOM_SEED}"
+        f"{distribution}_j{fraction:g}_seed{RANDOM_SEED}"
     )
 
 
@@ -149,8 +149,8 @@ def main() -> None:
                                 )
                                 continue
                             out_dir = OUTPUT_DIR / (
-                                f"{output_case_name(case_dir.name, TARG_PX_X)}_{tag}_int_"
-                                f"{method}_param_{param}"
+                                f"{output_case_name(case_dir.name, TARG_PX_X)}_{tag}_"
+                                f"{method}_{param}"
                             )
                             render_log("EXP2", "speckint2d", case_label(case_dir.name),
                                        f"starting {pattern_type}; {method}={param}; mapping={mapping_mode}")

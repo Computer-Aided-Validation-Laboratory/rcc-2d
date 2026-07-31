@@ -35,6 +35,7 @@ from exp1params import (
     exp1_output_dir,
 )
 from modules.script_timing import ScriptTimer, timed_call
+from modules.output_naming import config_name
 from modules.analysis_memory import make_agg_figure, release_batch, release_figure
 
 # Defaults make this base entry point usable directly.  The world, UV, and
@@ -1544,8 +1545,8 @@ def _riley_texture_paths(
     frame: int,
 ) -> tuple[Path, Path]:
     """Return canonical texfloat image and camera-depth paths."""
-    base = RILEY_TEX_DIR / f"{case_name}_{tex_interp}"
-    canonical = base / f"ss{ssaa}_oversamp{oversamp}_f"
+    base = RILEY_TEX_DIR / f"{case_name}_{config_name(tex_interp)}"
+    canonical = base / config_name(f"ss{ssaa}_oversamp{oversamp}_f")
     canonical_paths = (
         canonical / f"image_c00_f{frame:02d}.npy",
         canonical / f"image_c00_f{frame:02d}_b{bit_depth}.tiff",

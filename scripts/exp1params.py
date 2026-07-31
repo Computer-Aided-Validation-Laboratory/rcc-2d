@@ -8,6 +8,7 @@
 # --------------------------------------------------------------------------
 
 from pathlib import Path
+from modules.output_naming import output_root
 from typing import List, Tuple
 
 import riley
@@ -106,8 +107,12 @@ TARG_PX_X: int = 32
 TARG_PX_Y: int = 32
 
 def exp1_output_dir(name: str) -> Path:
-    """Return a size-qualified Experiment 1 output directory."""
-    return Path("./out") / f"{name}_im{TARG_PX_X}"
+    """Return the canonical Experiment 1 output root.
+
+    The camera size is carried by each case directory (``..._cam32_...``),
+    rather than duplicated in the root name.
+    """
+    return output_root(name)
 
 # Output directories for Exp 1.  The image-size suffix permits retaining
 # results for several target sizes side by side.

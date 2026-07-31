@@ -39,6 +39,7 @@ from modules.psf_riley_common import camera_kwargs, enabled as psf_enabled
 from modules.render_outputs import float_and_depths_complete, save_float_and_depths, write_camera_depths
 from modules.render_selection import float_textures_enabled
 from modules.render_logging import case_label, render_log
+from modules.output_naming import config_name
 
 OUTPUT_ROOT = exp1_output_dir("exp1_riley_render_texfloat_psf" if psf_enabled() else "exp1_riley_render_texfloat")
 
@@ -224,7 +225,7 @@ def main() -> None:
             tex_sample = RILEY_TEXTURE_SAMPLERS[tex_interp]
             for ssaa in get_ssaa_levels():
                     for oversamp in get_texture_oversamples():
-                        case_out = OUTPUT_ROOT / f"{case_name}_{tex_interp}" / f"ss{ssaa}_oversamp{oversamp}_f"
+                        case_out = OUTPUT_ROOT / f"{case_name}_{config_name(tex_interp)}" / config_name(f"ss{ssaa}_oversamp{oversamp}_f")
                         float_paths = [case_out / f"image_c00_f{frame:02d}.npy" for frame in range(num_frames)]
                         if all(path.exists() for path in float_paths) and not FORCE_RENDER_OVER:
                             for path in float_paths:
@@ -235,7 +236,7 @@ def main() -> None:
                         render_log("EXP1", "riley-texfloat", case_label(case_name),
                                    f"starting interp={tex_interp}; SSAA={ssaa}; OS={oversamp}")
 
-                        tex_path = TEXTURE_OUTPUT_DIR / (
+                        tex_path = TEXTURE_OUTPUT_DIR / config_name(
                             f"tex_px{p_val}_int_analytic_param_0"
                             f"_pad{TEX_PX_PAD}_oversamp{oversamp}.npy"
                         )

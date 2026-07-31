@@ -26,10 +26,10 @@ RECT_RESULTS = Path("out/exp3_analysis_conv_rectconv")
 
 
 def family(item: Render) -> str:
-    if "gridint2d" in item.root:
-        return "gridint2d"
-    if "speckint2d" in item.root:
-        return "speckint2d"
+    if "grid2d" in item.root:
+        return "grid2d"
+    if "speck2d" in item.root:
+        return "speck2d"
     if "riley_render_func" in item.root:
         return "riley_func"
     storage = "texuint" if "texuint" in item.root else "texfloat"
@@ -114,14 +114,14 @@ def comparison_overlays(rows: list[dict[str, object]]) -> None:
     """Overlay like-for-like bespoke Exp3 and Exp1/2 SSAA convergence."""
     comparison_dir = RESULTS / "exp1_exp2_comparisons"; comparison_dir.mkdir(parents=True, exist_ok=True)
     comparison_bit_depth = 16 if 16 in BIT_DEPTHS else max(BIT_DEPTHS)
-    for pattern, previous in (("eggbox", Path("out/exp1_gridint2d_analysis_uvs_im32/summary.csv")), ("diskaddsat", Path("out/exp2_speckint2d_analysis_im32/summary.csv")), ("gausscont", Path("out/exp2_speckint2d_analysis_im32/summary.csv"))):
+    for pattern, previous in (("eggbox", Path("out/exp1_grid2d_analysis_uvs/summary.csv")), ("diskaddsat", Path("out/exp2_speck2d_analysis/summary.csv")), ("gausscont", Path("out/exp2_speck2d_analysis/summary.csv"))):
         if not previous.exists(): continue
         old = list(csv.DictReader(previous.open()))
         for case_kind in ("rigid", "affine"):
             # These are intentionally bespoke-only comparisons.  Texture and
             # function-shader rows have independent OS/shader controls and
             # must never be concatenated into an SSAA curve.
-            exp3_family = "gridint2d" if pattern == "eggbox" else "speckint2d"
+            exp3_family = "grid2d" if pattern == "eggbox" else "speck2d"
             new = [
                 row for row in rows
                 if row["Pattern"] == pattern

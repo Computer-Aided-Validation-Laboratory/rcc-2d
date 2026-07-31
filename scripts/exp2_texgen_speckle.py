@@ -33,6 +33,7 @@ from modules.exp2speckint2d import image_outputs_complete, make_speckle_pattern,
 from modules.script_timing import ScriptTimer, timed_call
 from modules.render_selection import uint_textures_enabled
 from modules.texture_preview import write_preview_b8
+from modules.output_naming import config_name
 
 
 def tag(
@@ -41,10 +42,9 @@ def tag(
     distribution: str,
     fraction: float,
 ) -> str:
-    return (
+    return config_name(
         f"{pattern_type}_blackfrac{black_fraction:g}_"
-        f"{distribution}_j{fraction:g}_"
-        f"seed{RANDOM_SEED}"
+        f"{distribution}_j{fraction:g}_seed{RANDOM_SEED}"
     )
 
 
@@ -57,7 +57,7 @@ def generate_texture(
     ssaa: int,
 ) -> None:
     """Render a texture with ``ssaa`` squared midpoint samples per texel."""
-    prefix = (
+    prefix = config_name(
         f"tex_px{TARG_PX_X}_"
         f"{tag(pattern_type, black_fraction, distribution, fraction)}"
         f"_pad{TEX_PX_PAD}_oversamp{oversample}_ssaa{ssaa}"

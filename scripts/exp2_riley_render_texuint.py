@@ -57,6 +57,7 @@ from exp2params import additive_jitter_for
 from modules.script_timing import ScriptTimer, timed_call
 from modules.render_selection import riley_enabled
 from modules.render_logging import case_label, render_log
+from modules.output_naming import config_name
 
 
 # Exp2 deliberately creates large oversampled textures.  They are local,
@@ -89,7 +90,7 @@ def render_exists(case_out: Path, frames: range) -> bool:
     return all(
         (case_out / f"image_c00_f{frame:02d}_raw.npy").exists()
         and (case_out / f"image_c00_f{frame:02d}_clamped.npy").exists()
-        and (case_out / f"image_c00_f{frame:02d}_clamped.tiff").exists()
+        and (case_out / f"image_c00_f{frame:02d}_clamped_b8.tiff").exists()
         for frame in frames
     )
 
@@ -151,13 +152,13 @@ def main() -> None:
                             maximum = float(2**bit_depth - 1)
                             for oversamp in get_texture_oversamples():
                                 case_out = (
-                                    OUTPUT_ROOT / f"{case_name}_{tag}_{interp_name}"
-                                    / f"ss{ssaa}_b{bit_depth}_oversamp{oversamp}"
+                                    OUTPUT_ROOT / f"{case_name}_{tag}_{config_name(interp_name)}"
+                                    / config_name(f"ss{ssaa}_b{bit_depth}_oversamp{oversamp}")
                                 )
                                 if not FORCE_RENDER_OVER and render_exists(case_out, frames):
                                     print(f"  {case_out.name}: outputs exist; skipping.")
                                     continue
-                                texture_path = TEXTURE_OUTPUT_DIR / (
+                                texture_path = TEXTURE_OUTPUT_DIR / config_name(
                                     f"tex_px{texture_pixels}_{tag}_pad{TEX_PX_PAD}"
                                     f"_oversamp{oversamp}_analytic_b{bit_depth}.tiff"
                                 )
@@ -208,9 +209,9 @@ def main() -> None:
                                     np.save(case_out / f"image_c00_f{frame:02d}_raw.npy", coverage)
                                     clamped = intensity_from_coverage(coverage)
                                     np.save(case_out / f"image_c00_f{frame:02d}_clamped.npy", clamped)
-                                    counts = np.rint(np.flipud(clamped) * 65535.0).astype(np.uint16)
+                                    counts = np.rint(np.flipud(clamped) * 255.0).astype(np.uint8)
                                     Image.fromarray(counts).save(
-                                        case_out / f"image_c00_f{frame:02d}_clamped.tiff"
+                                        case_out / f"image_c00_f{frame:02d}_clamped_b8.tiff"
                                     )
     print("All digitised Riley coverage renders completed.")
 

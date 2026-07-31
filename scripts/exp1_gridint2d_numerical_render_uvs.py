@@ -22,7 +22,7 @@ from modules.exp1common import (
     parse_case_params,
     output_case_name,
 )
-from modules.render_outputs import save_float_and_depths, write_camera_depths
+from modules.render_outputs import save_float_and_depths, write_camera_depths, float_and_depths_complete
 from modules.render_selection import custom_enabled
 from modules.render_logging import case_label, render_log
 from exp1params import (
@@ -461,9 +461,7 @@ def generate_grid_images(case_dir: Path, method: str, param: int) -> None:
         canonical = case_out_dir / f"targ_px{p_val}_int_{method}_param_{param}_frame{ff:02d}.npy"
         if canonical.exists() and not FORCE_RENDER_OVER:
             write_camera_depths(canonical, BIT_DEPTHS)
-        if not FORCE_RENDER_OVER and canonical.exists() and all(
-            canonical.with_name(f"{canonical.stem}_b{bb}.tiff").exists() for bb in BIT_DEPTHS
-        ):
+        if not FORCE_RENDER_OVER and float_and_depths_complete(canonical, BIT_DEPTHS):
             print(f"    frame {ff:02d}: outputs exist; skipping.")
             continue
 

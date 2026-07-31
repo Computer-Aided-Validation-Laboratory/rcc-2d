@@ -49,6 +49,7 @@ from exp2params import (
 from modules.psf_riley_common import camera_kwargs, enabled as psf_enabled
 from modules.render_selection import float_textures_enabled
 from modules.render_logging import case_label, render_log
+from modules.output_naming import config_name
 
 OUTPUT_ROOT = exp2_output_dir("exp2_riley_render_texfloat_psf" if psf_enabled() else "exp2_riley_render_texfloat")
 
@@ -87,7 +88,7 @@ def pattern_tag(
     distribution: str,
     fraction: float,
 ) -> str:
-    return (
+    return config_name(
         f"{pattern_type}_blackfrac{black_fraction:g}_"
         f"{distribution}_j{fraction:g}_seed{RANDOM_SEED}"
     )
@@ -153,7 +154,7 @@ def render_exists(case_out: Path, frames: range) -> bool:
     return all(
         (case_out / f"image_c00_f{frame:02d}_raw.npy").exists()
         and (case_out / f"image_c00_f{frame:02d}_clamped.npy").exists()
-        and all((case_out / f"image_c00_f{frame:02d}_clamped_b{bits}.tiff").exists() for bits in BIT_DEPTHS)
+        and (case_out / f"image_c00_f{frame:02d}_clamped_b8.tiff").exists()
         for frame in frames
     )
 
@@ -165,7 +166,7 @@ def write_missing_camera_depths(case_out: Path, frames: range) -> None:
         if not path.exists():
             continue
         image = np.asarray(np.load(path, mmap_mode="r"), dtype=np.float64)
-        for bits in BIT_DEPTHS:
+        for bits in (8,):
             output = case_out / f"image_c00_f{frame:02d}_clamped_b{bits}.tiff"
             if not output.exists():
                 maximum = float((1 << bits) - 1)
@@ -243,8 +244,8 @@ def main() -> None:
                                 for oversamp in get_texture_oversamples():
                                     case_out = (
                                         OUTPUT_ROOT
-                                        / f"{output_case_name(case_path.name, TARG_PX_X)}_{tag}_{interp_name}"
-                                        / f"ss{ssaa}_oversamp{oversamp}"
+                                        / f"{output_case_name(case_path.name, TARG_PX_X)}_{tag}_{config_name(interp_name)}"
+                                        / config_name(f"ss{ssaa}_oversamp{oversamp}")
                                     )
                                     if not FORCE_RENDER_OVER:
                                         write_missing_camera_depths(case_out, frame_range)
@@ -253,7 +254,7 @@ def main() -> None:
                                     ):
                                         print(f"  {case_out.name}: outputs exist; skipping.")
                                         continue
-                                    texture_path = TEXTURE_OUTPUT_DIR / (
+                                    texture_path = TEXTURE_OUTPUT_DIR / config_name(
                                         f"tex_px{p_val}_{tag}_pad{TEX_PX_PAD}"
                                         f"_oversamp{oversamp}_analytic.npy"
                                     )

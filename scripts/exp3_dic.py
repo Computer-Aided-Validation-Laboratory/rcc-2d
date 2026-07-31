@@ -39,6 +39,7 @@ if str(HERE) not in sys.path:
 
 from modules.exp3_dic_data import load_result, read_pyvale_binary, result_path, save_arrays
 from modules.render_selection import measurement_enabled
+from modules.output_naming import data_case_name, is_rigid_case
 from exp0params_common import DIC_CASES
 from exp3params import (
     DIC_CORRELATION_THRESHOLD,
@@ -72,7 +73,7 @@ def render_sequences() -> list[tuple[str, str, Path]]:
             continue
         if CASE_FILTER and case != CASE_FILTER:
             continue
-        if not (config.startswith("diskaddsat_") or config.startswith("gausscont_")):
+        if not (config.startswith("diskadd_") or config.startswith("gaussadd_")):
             continue
         if MATCH_FILTER and MATCH_FILTER not in str(config_dir):
             continue
@@ -115,9 +116,9 @@ def field_title(label: str, frame: int, component: str, width: int = 42) -> str:
 
 
 def physical_expected_rigid(case: str, frames: int) -> tuple[np.ndarray, np.ndarray] | None:
-    if "rigid" not in case:
+    if not is_rigid_case(case):
         return None
-    data_dir = Path("data") / case
+    data_dir = Path("data") / data_case_name(case)
     ux = np.loadtxt(data_dir / "field_disp_x.csv", delimiter=",")
     uy = np.loadtxt(data_dir / "field_disp_y.csv", delimiter=",")
     if ux.ndim == 1:
@@ -319,7 +320,7 @@ def run_postprocess_stage(sequences: list[tuple[str, str, Path]]) -> None:
             image_path = output_dir / f"displacement_frame{index:02d}.png"
             if not compact.is_file() or not image_path.is_file():
                 tasks.append((str(raw) if raw is not None else None, str(compact), str(image_path), config_dir.name, index))
-        if "rigid" in case:
+        if is_rigid_case(case):
             summaries.append((case, output_dir, len(frames), config_dir.name))
 
     if tasks:

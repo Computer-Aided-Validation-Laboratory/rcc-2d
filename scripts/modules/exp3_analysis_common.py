@@ -13,7 +13,7 @@ from matplotlib.ticker import LogFormatterMathtext, LogLocator, MaxNLocator, Sca
 from modules.exp_common_analysis import release_batch
 
 OUT = Path("out")
-CASE_RE = re.compile(r"plate.*?(?:rigid|affine|chirp)$")
+CASE_RE = re.compile(r"(?:pt|plate).*?(?:rig|rigid|aff|affine|qsadd|quadsaddle|chirp)$")
 SS_RE = re.compile(r"_ss(\d+)")
 OS_RE = re.compile(r"_os(\d+)")
 
@@ -32,11 +32,11 @@ class Render:
 
 
 def pattern_of(config: str) -> str:
-    if config.startswith("eggbox"):
+    if config.startswith(("eggb", "eggbox")):
         return "eggbox"
-    if config.startswith("diskaddsat"):
+    if config.startswith(("diskadd", "diskaddsat")):
         return "diskaddsat"
-    if config.startswith("gausscont"):
+    if config.startswith(("gaussadd", "gausscont")):
         return "gausscont"
     return config.split("_")[0]
 
@@ -47,8 +47,8 @@ def parameter(config: str, regex: re.Pattern[str]) -> int:
 
 
 def interpolator_of(config: str) -> str:
-    for name in ("cubic_catmull_rom", "linear", "func"):
-        if f"_{name}_" in config or config.startswith(f"eggbox_{name}_"):
+    for name in ("cubiccm", "cubic_catmull_rom", "line", "linear", "func"):
+        if f"_{name}_" in config or config.startswith(f"eggb_{name}_") or config.startswith(f"eggbox_{name}_"):
             return name
     return "bespoke"
 
@@ -120,7 +120,7 @@ def best_reference(items: list[Render]) -> tuple[Render | None, str]:
         return analytic[0], "Analytic reference"
     if not items:
         return None, "No reference"
-    bespoke = [item for item in items if "gridint2d" in item.root or "speckint2d" in item.root]
+    bespoke = [item for item in items if "grid2d" in item.root or "speck2d" in item.root]
     if bespoke:
         reference = max(bespoke, key=lambda item: item.ssaa)
         return reference, f"Highest bespoke SSAA reference: SSAA={reference.ssaa}"

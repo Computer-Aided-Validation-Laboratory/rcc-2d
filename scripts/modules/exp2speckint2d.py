@@ -828,7 +828,7 @@ def save_image(
     flipped = np.ascontiguousarray(np.flipud(image), dtype=np.float64)
     raw_flipped = np.ascontiguousarray(np.flipud(float_texture), dtype=np.float64)
     np.save(output_dir / f"{prefix}.npy", raw_flipped)
-    for bits in (BIT_DEPTHS if bit_depths is None else bit_depths):
+    for bits in (8,):
         max_value = float(2**bits - 1)
         quantized = np.clip(np.round(flipped * max_value), 0.0, max_value)
         image_data = quantized.astype(
@@ -839,10 +839,7 @@ def save_image(
 
 def image_outputs_complete(output_dir: Path, prefix: str, bit_depths: tuple[int, ...] | list[int] | None = None) -> bool:
     """Return whether the f64 image and every digitised image are present."""
-    return (output_dir / f"{prefix}.npy").exists() and all(
-        (output_dir / f"{prefix}_b{bits}.tiff").exists()
-        for bits in (BIT_DEPTHS if bit_depths is None else bit_depths)
-    )
+    return (output_dir / f"{prefix}.npy").exists() and (output_dir / f"{prefix}_b8.tiff").exists()
 
 
 def fill_missing_digitised_outputs(
@@ -851,7 +848,7 @@ def fill_missing_digitised_outputs(
     bit_depths: tuple[int, ...] | list[int] | None = None,
 ) -> None:
     """Digitise an existing normalised float render without rerasterising it."""
-    depths = BIT_DEPTHS if bit_depths is None else bit_depths
+    depths = (8,)
     float_path = output_dir / f"{prefix}.npy"
     if not float_path.exists():
         return

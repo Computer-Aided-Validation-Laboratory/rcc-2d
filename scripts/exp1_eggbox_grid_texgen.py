@@ -34,6 +34,7 @@ from modules.script_timing import ScriptTimer, timed_call
 from modules.render_selection import uint_textures_enabled
 from modules.render_logging import render_log
 from modules.texture_preview import write_preview_b8
+from modules.output_naming import config_name
 
 # Process bounded horizontal bands, so a high-oversampling texture never needs
 # a full floating point image in RAM.  These can be overridden for a particular
@@ -115,12 +116,12 @@ def generate_texture(
     tex_out_dir.mkdir(parents=True, exist_ok=True)
 
     p_val: int = max(TARG_PX_X, TARG_PX_Y)
-    prefix: str = (
+    prefix: str = config_name(
         f"tex_px{p_val}_int_{method}_param_{param}_b{bb}"
         f"_pad{TEX_PX_PAD}_oversamp{oversamp}"
     )
     output_path = tex_out_dir / f"{prefix}.tiff"
-    float_prefix = (
+    float_prefix = config_name(
         f"tex_px{p_val}_int_{method}_param_{param}"
         f"_pad{TEX_PX_PAD}_oversamp{oversamp}"
     )
@@ -241,7 +242,9 @@ def main() -> None:
         for p in tex_dir_ref.glob("*_int_rect_*"):
             p.unlink()
 
-    texture_bits = BIT_DEPTHS if uint_textures_enabled() else [8]
+    # TIFF is preview-only.  Keep source float textures and one 8-bit preview;
+    # uint source depths are generated from the float NPY on demand elsewhere.
+    texture_bits = [8]
     for bb in texture_bits:
         for oversamp in TEX_OVERSAMPLES:
             render_log("EXP1", "texgen", "eggbox", f"starting analytic; OS={oversamp}; texture-bits={bb}")
