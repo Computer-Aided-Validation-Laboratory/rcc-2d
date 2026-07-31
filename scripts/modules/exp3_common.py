@@ -213,6 +213,37 @@ def texture_path(case: str, pattern: str, oversamp: int, storage: str = "float",
     return texture_config_dir(case, pattern, oversamp, storage) / f"texture_{suffix}.npy"
 
 
+def texture_owner_case(case: str) -> str:
+    """Return the deterministic texture owner for cases sharing camera space.
+
+    Texture generation is defined in undeformed camera/reference coordinates,
+    so rigid and affine cases with equal camera pixels and ROI use precisely
+    the same texture.  Prefer the rigid case as the owner; other matching
+    cases link to its float asset instead of duplicating multi-GiB arrays.
+    """
+    geometry = (CASE_CAMERA_PIXELS[case], CASE_ROI_SIZES[case])
+    matches = [candidate for candidate in DEFORMATION_CASES
+               if (CASE_CAMERA_PIXELS[candidate], CASE_ROI_SIZES[candidate]) == geometry]
+    return next((candidate for candidate in matches if "rigid" in candidate), case)
+
+
+def _link_texture_asset(source: Path, destination: Path) -> None:
+    """Create a verified same-filesystem hard link for one shared asset."""
+    destination.parent.mkdir(parents=True, exist_ok=True)
+    if destination.exists():
+        if destination.stat().st_size != source.stat().st_size:
+            raise RuntimeError(f"Shared texture size mismatch: {destination}")
+        return
+    temporary = destination.with_name(f".{destination.name}.linktmp")
+    os.link(source, temporary)
+    try:
+        if temporary.stat().st_size != source.stat().st_size:
+            raise RuntimeError(f"Shared texture link verification failed: {destination}")
+        os.replace(temporary, destination)
+    finally:
+        temporary.unlink(missing_ok=True)
+
+
 def _write_texture_preview(path: Path, oversamp: int) -> None:
     if oversamp == 1:
         preview = path.with_name(f"{path.stem}_preview_b8.tiff")
@@ -237,6 +268,26 @@ def generate_texture(case: str, pattern: str, oversamp: int) -> Path:
     width, height = CASE_CAMERA_PIXELS[case]
     tex_w, tex_h = oversamp * (width + 2 * TEX_PX_PAD), oversamp * (height + 2 * TEX_PX_PAD)
     marker_value = marker.read_text().strip() if marker.exists() else ""
+    owner = texture_owner_case(case)
+    if owner != case:
+        # Generate/load the one canonical float source first, then link the
+        # case-local logical path.  The marker remains case-local so existing
+        # resumable Riley render signatures stay valid.
+        owner_path = generate_texture(owner, pattern, oversamp)
+        if not path.exists():
+            _link_texture_asset(owner_path, path)
+        owner_preview = owner_path.with_name(f"{owner_path.stem}_preview_b8.tiff")
+        preview = path.with_name(f"{path.stem}_preview_b8.tiff")
+        if owner_preview.exists() and not preview.exists():
+            _link_texture_asset(owner_preview, preview)
+        for bits in bit_depths() if uint_textures_enabled() else ():
+            owner_uint = texture_path(owner, pattern, oversamp, "uint", bits)
+            current_uint = texture_path(case, pattern, oversamp, "uint", bits)
+            if owner_uint.exists() and not current_uint.exists():
+                _link_texture_asset(owner_uint, current_uint)
+        if not marker.exists():
+            marker.write_text(f"{texture_signature}\n")
+        return path
     if path.exists() and marker_value == texture_signature and not force_render():
         try:
             texture = np.load(path, mmap_mode="r")
