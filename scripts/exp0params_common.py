@@ -10,6 +10,10 @@ ANALYSIS_JOBS: int = CORES
 # Keep this separate from ``ANALYSIS_JOBS`` so an interactive Grid Method run
 # can be throttled without changing the all-script analysis launcher.
 GRIDMETHOD_JOBS: int = CORES
+# Exp3 texgen distributes independent analytic row batches across this many
+# processes.  The environment variable ``EXP3_TEXGEN_JOBS`` can temporarily
+# reduce it without changing the shared workstation default.
+TEXGEN_JOBS: int = CORES
 NUM_PROCESSES: int = CORES
 RILEY_RASTER_THREADS: int = CORES
 

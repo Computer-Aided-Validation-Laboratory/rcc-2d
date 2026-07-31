@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import os
 import hashlib
+import multiprocessing
 from pathlib import Path
 
 import numpy as np
@@ -27,6 +28,8 @@ from modules.exp_common_render import (
 from modules.render_outputs import float_and_depths_complete, save_float_and_depths, write_camera_depths
 from modules.render_logging import case_label, render_log
 from modules.render_selection import uint_textures_enabled
+from modules.texture_preview import write_preview_b8
+from exp0params_common import TEXGEN_JOBS
 from exp3params import (
     BACKGROUND, BIT_DEPTHS, CASE_CAMERA_PIXELS, CASE_ROI_SIZES,
     DEFORMATION_CASES, EGGBOX_PERIOD_FINAL_PX, FORCE_RENDER_OVER, GAMMA, I0,
@@ -46,6 +49,61 @@ def _levels(name: str, defaults: list[int]) -> list[int]:
 def ssaa_levels() -> list[int]: return _levels("EXP3_SSAA_LEVELS", SSAA_LEVELS)
 def oversamples() -> list[int]: return _levels("EXP3_TEX_OVERSAMPLES", TEX_OVERSAMPLES)
 def bit_depths() -> list[int]: return _levels("EXP3_BIT_DEPTHS", BIT_DEPTHS)
+
+
+TEXGEN_WORKERS = max(1, int(os.environ.get("EXP3_TEXGEN_JOBS", str(TEXGEN_JOBS))))
+_texgen_pattern = None
+_texgen_pattern_type: str | None = None
+_texgen_x_start: np.ndarray | None = None
+_texgen_y_top: float | None = None
+_texgen_texel_size: tuple[float, float] | None = None
+
+
+def _init_speckle_texgen_worker(
+    pattern_type: str,
+    speckle_size: float,
+    black_fraction: float,
+    distribution: str,
+    jitter: float,
+    bounds: tuple[float, float, float, float],
+    x_start: np.ndarray,
+    y_top: float,
+    sx: float,
+    sy: float,
+) -> None:
+    """Initialise one immutable analytic speckle field per texgen worker."""
+    global _texgen_pattern, _texgen_pattern_type, _texgen_x_start
+    global _texgen_y_top, _texgen_texel_size
+    _texgen_pattern = make_speckle_pattern(
+        pattern_type, speckle_size, black_fraction, distribution, jitter,
+        RANDOM_SEED, GAUSSIAN_CUTOFF_SIGMAS, bounds, I0, GAMMA,
+        GAUSSIAN_EQUIVALENT_DISK_EDGE_FRACTION,
+        GAUSSIAN_CONTINUOUS_TAIL_SIGMAS,
+    )
+    _texgen_pattern_type = pattern_type
+    _texgen_x_start = x_start
+    _texgen_y_top = y_top
+    _texgen_texel_size = (sx, sy)
+
+
+def _integrate_speckle_texgen_rows(task: tuple[int, int]) -> tuple[int, int, np.ndarray]:
+    """Return one independently integrated texture row batch."""
+    if (
+        _texgen_pattern is None or _texgen_pattern_type is None
+        or _texgen_x_start is None or _texgen_y_top is None
+        or _texgen_texel_size is None
+    ):
+        raise RuntimeError("Exp3 texture worker was not initialised.")
+    start_row, end_row = task
+    sx, sy = _texgen_texel_size
+    y_start = _texgen_y_top - (np.arange(start_row, end_row) + 1.0) * sy
+    xx, yy = np.meshgrid(_texgen_x_start, y_start)
+    coverage = (
+        _texgen_pattern.evaluate_diskaddsat_box_average(xx, yy, sx, sy)
+        if _texgen_pattern_type == "diskaddsat" else
+        _texgen_pattern.evaluate_gausscont_box_average(xx, yy, sx, sy)
+    )
+    return start_row, end_row, _texgen_pattern.intensity_from_coverage(coverage)
 
 
 def selected_cases() -> list[str]:
@@ -132,6 +190,13 @@ def texture_path(case: str, pattern: str, oversamp: int, storage: str = "float",
     return texture_config_dir(case, pattern, oversamp, storage) / f"texture_{suffix}.npy"
 
 
+def _write_texture_preview(path: Path, oversamp: int) -> None:
+    if oversamp == 1:
+        preview = path.with_name(f"{path.stem}_preview_b8.tiff")
+        if write_preview_b8(path, preview):
+            print(f"  wrote texture preview: {preview.name}")
+
+
 def generate_texture(case: str, pattern: str, oversamp: int) -> Path:
     """Generate a row-major texture of analytic texel averages.
 
@@ -156,6 +221,7 @@ def generate_texture(case: str, pattern: str, oversamp: int) -> Path:
         except (OSError, ValueError):
             valid_texture = False
         if valid_texture:
+            _write_texture_preview(path, oversamp)
             for bits in bit_depths() if uint_textures_enabled() else ():
                 uint_path = texture_path(case, pattern, oversamp, "uint", bits)
                 if not uint_path.exists():
@@ -190,36 +256,42 @@ def generate_texture(case: str, pattern: str, oversamp: int) -> Path:
         temporary.replace(path)
     else:
         distribution, jitter = additive_jitter_for(pattern)
-        speckles = make_speckle_pattern(
-            pattern, 5.0 * roi_x / width, BLACK_AREA_FRACTIONS[0], distribution,
-            jitter, RANDOM_SEED, GAUSSIAN_CUTOFF_SIGMAS,
-            (x[0], x[-1], y[-1], y[0]), I0, GAMMA,
-            GAUSSIAN_EQUIVALENT_DISK_EDGE_FRACTION, GAUSSIAN_CONTINUOUS_TAIL_SIGMAS,
-        )
         # A full OS=32 finite-star texture is several GiB.  Write one bounded
         # row batch at a time, so analytic integration does not require a
         # second full texture-sized coordinate/coverage allocation.
         rows_per_batch = max(1, int(os.environ.get("EXP3_TEXGEN_CHUNK_PIXELS", "1000000")) // tex_w)
+        tasks = [
+            (start_row, min(start_row + rows_per_batch, tex_h))
+            for start_row in range(0, tex_h, rows_per_batch)
+        ]
         temporary = path.with_suffix(".tmp.npy")
         path.parent.mkdir(parents=True, exist_ok=True)
         texture = np.lib.format.open_memmap(temporary, mode="w+", dtype=np.float64, shape=(tex_h, tex_w))
         x_start = x - 0.5 * sx
-        for start_row in range(0, tex_h, rows_per_batch):
-            end_row = min(start_row + rows_per_batch, tex_h)
-            # Texture rows descend in world Y, hence the lower edge is centre
-            # minus half a texel even though row zero is at the image top.
-            y_start = y[start_row:end_row] - 0.5 * sy
-            xx, yy = np.meshgrid(x_start, y_start)
-            coverage = (
-                speckles.evaluate_diskaddsat_box_average(xx, yy, sx, sy)
-                if pattern == "diskaddsat" else
-                speckles.evaluate_gausscont_box_average(xx, yy, sx, sy)
-            )
-            texture[start_row:end_row] = speckles.intensity_from_coverage(coverage)
+        workers = min(TEXGEN_WORKERS, len(tasks))
+        print(
+            f"  analytic texgen: {len(tasks)} row batches, {workers} workers, "
+            f"up to {rows_per_batch} rows/batch"
+        )
+        initargs = (
+            pattern, 5.0 * roi_x / width, BLACK_AREA_FRACTIONS[0],
+            distribution, jitter, (x[0], x[-1], y[-1], y[0]), x_start,
+            roi_y / 2 + TEX_PX_PAD * roi_y / height, sx, sy,
+        )
+        if workers == 1:
+            _init_speckle_texgen_worker(*initargs)
+            for task in tasks:
+                start_row, end_row, intensity = _integrate_speckle_texgen_rows(task)
+                texture[start_row:end_row] = intensity
+        else:
+            with multiprocessing.Pool(workers, initializer=_init_speckle_texgen_worker, initargs=initargs) as pool:
+                for start_row, end_row, intensity in pool.imap_unordered(_integrate_speckle_texgen_rows, tasks):
+                    texture[start_row:end_row] = intensity
         texture.flush()
         del texture
         temporary.replace(path)
     texture = np.load(path, mmap_mode="r")
+    _write_texture_preview(path, oversamp)
     for bits in bit_depths() if uint_textures_enabled() else ():
         maximum = 2**bits - 1
         quant = np.round(np.clip(texture, 0, 1) * maximum)

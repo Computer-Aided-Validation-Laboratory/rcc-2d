@@ -32,6 +32,7 @@ from exp2params import (
 from modules.exp2speckint2d import image_outputs_complete, make_speckle_pattern, save_image
 from modules.script_timing import ScriptTimer, timed_call
 from modules.render_selection import uint_textures_enabled
+from modules.texture_preview import write_preview_b8
 
 
 def tag(
@@ -62,7 +63,15 @@ def generate_texture(
         f"_pad{TEX_PX_PAD}_oversamp{oversample}_ssaa{ssaa}"
     )
     texture_bits = BIT_DEPTHS if uint_textures_enabled() else ()
+    float_path = TEXTURE_OUTPUT_DIR / f"{prefix}.npy"
+    preview_path = TEXTURE_OUTPUT_DIR / f"{prefix}_preview_b8.tiff"
+    coverage_to_intensity = lambda coverage: np.clip(
+        I0 + GAMMA * (2.0 * (1.0 - np.clip(coverage, 0.0, 1.0)) - 1.0),
+        0.0, 1.0,
+    )
     if not FORCE_RENDER_OVER and image_outputs_complete(TEXTURE_OUTPUT_DIR, prefix, texture_bits):
+        if oversample == 1 and write_preview_b8(float_path, preview_path, coverage_to_intensity):
+            print(f"    wrote texture preview: {preview_path.name}")
         print("    outputs exist; skipping.")
         return
     roi_size = float(max(TARG_PX_X, TARG_PX_Y))
@@ -108,6 +117,8 @@ def generate_texture(
     coverage_image /= float(ssaa * ssaa)
     image = pattern.intensity_from_coverage(coverage_image)
     save_image(image, TEXTURE_OUTPUT_DIR, prefix, float_texture=coverage_image, bit_depths=texture_bits)
+    if oversample == 1 and write_preview_b8(float_path, preview_path, coverage_to_intensity):
+        print(f"    wrote texture preview: {preview_path.name}")
 
 
 def main() -> None:

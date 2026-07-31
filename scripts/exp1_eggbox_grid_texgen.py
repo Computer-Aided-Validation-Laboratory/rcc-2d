@@ -33,6 +33,7 @@ from exp1params import (
 from modules.script_timing import ScriptTimer, timed_call
 from modules.render_selection import uint_textures_enabled
 from modules.render_logging import render_log
+from modules.texture_preview import write_preview_b8
 
 # Process bounded horizontal bands, so a high-oversampling texture never needs
 # a full floating point image in RAM.  These can be overridden for a particular
@@ -124,19 +125,18 @@ def generate_texture(
         f"_pad{TEX_PX_PAD}_oversamp{oversamp}"
     )
     float_path = tex_out_dir / f"{float_prefix}.npy"
+    preview_path = tex_out_dir / f"{float_prefix}_preview_b8.tiff"
 
     if (
         not FORCE_RENDER_OVER
         and (not write_uint or output_path.exists())
         and float_path.exists()
     ):
+        if oversamp == 1 and write_preview_b8(float_path, preview_path):
+            print(f"    wrote texture preview: {preview_path.name}")
         print(f"    float texture exists; skipping: {float_path.name}")
         return
 
-    if not write_uint:
-        # The float texture is the only dependency of texfloat rendering.
-        # Do not create digitised source-texture assets while texuint is off.
-        return
     dtype = np.dtype(np.uint8 if bb == 8 else np.uint16)
     texture_bytes = tex_w * tex_h * dtype.itemsize
     float_bytes = tex_w * tex_h * np.dtype(np.float64).itemsize
@@ -198,6 +198,14 @@ def generate_texture(
             if "pixel_float" in locals():
                 del pixel_float
         pixel_float = np.load(float_path, mmap_mode="r")
+
+    if oversamp == 1 and write_preview_b8(float_path, preview_path):
+        print(f"    wrote texture preview: {preview_path.name}")
+    if not write_uint:
+        # The f64 texture and its OS=1 preview are dependencies of texfloat
+        # rendering.  Avoid only the regular digitised source-texture asset.
+        del pixel_float
+        return
 
     pixel_bb = np.memmap(staging_path, mode="w+", dtype=dtype, shape=(tex_h, tex_w))
     try:
