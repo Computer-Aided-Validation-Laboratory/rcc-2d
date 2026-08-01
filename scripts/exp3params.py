@@ -45,13 +45,13 @@ DIC_CORRELATION_THRESHOLD = 0.8
 DIC_POSTPROCESS_JOBS = CORES
 
 if TEST_RUN:
-    SSAA_LEVELS = [1, 2, 4, 8, 16, 32]
-    TEX_OVERSAMPLES = [1, 2, 4, 8, 16, 32]
+    SSAA_LEVELS = [1, 2, 4, 8, 16]
+    TEX_OVERSAMPLES = [1, 2, 4, 8, 16]
 else:
     # Needed for the 8-bit convergence study; sharp texture cases may need
     # a higher SSAA reference once their streamed texture path is available.
-    SSAA_LEVELS = [1, 2, 4, 8, 16, 32, 64, 128]
-    TEX_OVERSAMPLES = [1, 2, 4, 8, 16, 32, 64, 128]
+    SSAA_LEVELS = [1, 2, 4, 8, 16, 32, 64]
+    TEX_OVERSAMPLES = [1, 2, 4, 8, 16, 32, 64]
 
 RILEY_TEXTURE_SAMPLERS = {
     "nearest": riley.TextureSample.nearest,
