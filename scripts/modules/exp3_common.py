@@ -42,6 +42,17 @@ from exp3params import (
 )
 
 
+def coverage_to_intensity(coverage: np.ndarray) -> np.ndarray:
+    """Convert post-pixel additive coverage to the final camera intensity.
+
+    Additive textures and Riley's float texture raster stay as raw coverage:
+    one isolated blob contributes one and overlaps may exceed one.  Saturation
+    is deliberately applied only here, after pixel integration.
+    """
+    clipped = np.clip(np.asarray(coverage, dtype=np.float64), 0.0, 1.0)
+    return np.clip(I0 + GAMMA * (1.0 - 2.0 * clipped), 0.0, 1.0)
+
+
 def _levels(name: str, defaults: list[int]) -> list[int]:
     value = os.environ.get(name)
     return defaults if not value else [int(v) for v in value.split(",") if v.strip()]
@@ -106,7 +117,7 @@ def _integrate_speckle_texgen_rows(task: tuple[int, int]) -> tuple[int, int, np.
         if _texgen_pattern_type == "diskaddsat" else
         _texgen_pattern.evaluate_gausscont_box_average(xx, yy, sx, sy)
     )
-    return start_row, end_row, _texgen_pattern.intensity_from_coverage(coverage)
+    return start_row, end_row, coverage
 
 
 def _init_eggbox_texgen_worker(
@@ -244,10 +255,11 @@ def _link_texture_asset(source: Path, destination: Path) -> None:
         temporary.unlink(missing_ok=True)
 
 
-def _write_texture_preview(path: Path, oversamp: int) -> None:
+def _write_texture_preview(path: Path, oversamp: int, pattern: str) -> None:
     if oversamp == 1:
         preview = path.with_name(f"{path.stem}_preview_b8.tiff")
-        if write_preview_b8(path, preview):
+        transform = coverage_to_intensity if pattern != "eggbox" else None
+        if write_preview_b8(path, preview, transform):
             print(f"  wrote texture preview: {preview.name}")
 
 
@@ -261,7 +273,7 @@ def generate_texture(case: str, pattern: str, oversamp: int) -> Path:
     """
     path = texture_path(case, pattern, oversamp)
     texture_signature = hashlib.sha256(repr((
-        "analytic_texel_integral_v1", case, pattern, oversamp,
+        "raw_coverage_texel_integral_v2", case, pattern, oversamp,
         CASE_CAMERA_PIXELS[case], CASE_ROI_SIZES[case], EGGBOX_PERIOD_FINAL_PX,
     )).encode()).hexdigest()
     marker = path.with_suffix(".sha256")
@@ -295,12 +307,13 @@ def generate_texture(case: str, pattern: str, oversamp: int) -> Path:
         except (OSError, ValueError):
             valid_texture = False
         if valid_texture:
-            _write_texture_preview(path, oversamp)
+            _write_texture_preview(path, oversamp, pattern)
             for bits in bit_depths() if uint_textures_enabled() else ():
                 uint_path = texture_path(case, pattern, oversamp, "uint", bits)
                 if not uint_path.exists():
                     maximum = 2**bits - 1
-                    np.save(uint_path, np.rint(np.clip(texture, 0, 1) * maximum).astype(np.uint8 if bits <= 8 else np.uint16))
+                    camera_texture = coverage_to_intensity(texture) if pattern != "eggbox" else texture
+                    np.save(uint_path, np.rint(np.clip(camera_texture, 0, 1) * maximum).astype(np.uint8 if bits <= 8 else np.uint16))
             return path
     render_log("EXP3", "texgen", case_label(case), f"generating {pattern} OS={oversamp}")
     roi_x, roi_y = CASE_ROI_SIZES[case]
@@ -374,20 +387,21 @@ def generate_texture(case: str, pattern: str, oversamp: int) -> Path:
         if workers == 1:
             _init_speckle_texgen_worker(*initargs)
             for task in tasks:
-                start_row, end_row, intensity = _integrate_speckle_texgen_rows(task)
-                texture[start_row:end_row] = intensity
+                start_row, end_row, coverage = _integrate_speckle_texgen_rows(task)
+                texture[start_row:end_row] = coverage
         else:
             with multiprocessing.Pool(workers, initializer=_init_speckle_texgen_worker, initargs=initargs) as pool:
-                for start_row, end_row, intensity in pool.imap_unordered(_integrate_speckle_texgen_rows, tasks):
-                    texture[start_row:end_row] = intensity
+                for start_row, end_row, coverage in pool.imap_unordered(_integrate_speckle_texgen_rows, tasks):
+                    texture[start_row:end_row] = coverage
         texture.flush()
         del texture
         temporary.replace(path)
     texture = np.load(path, mmap_mode="r")
-    _write_texture_preview(path, oversamp)
+    _write_texture_preview(path, oversamp, pattern)
     for bits in bit_depths() if uint_textures_enabled() else ():
         maximum = 2**bits - 1
-        quant = np.round(np.clip(texture, 0, 1) * maximum)
+        camera_texture = coverage_to_intensity(texture) if pattern != "eggbox" else texture
+        quant = np.round(np.clip(camera_texture, 0, 1) * maximum)
         dtype = np.uint8 if bits <= 8 else np.uint16
         uint_path = texture_path(case, pattern, oversamp, "uint", bits)
         uint_path.parent.mkdir(parents=True, exist_ok=True)
@@ -552,7 +566,7 @@ def bespoke_render(case: str, pattern: str, method: str, param: int, *, texture_
                     if pattern == "diskaddsat" else
                     analytic_gaussian_coverage(ref_centres, maps, speckles, roi_x / width)
                 )
-                flat[ids] = speckles.intensity_from_coverage(coverage)
+                flat[ids] = coverage
                 continue
             qx = (px[:, None] + dx.ravel()).ravel(); qy = (py[:, None] + dy.ravel()).ravel()
             rx, ry, valid = reference_points(case, coords, connect, ux, uy, frame, qx, qy, topology=topology, deformed=deformed)
@@ -562,14 +576,16 @@ def bespoke_render(case: str, pattern: str, method: str, param: int, *, texture_
                 if pattern != "eggbox":
                     if speckles is None:
                         raise RuntimeError("Speckle pattern was not initialised.")
-                    values = speckles.intensity_from_coverage(speckles.evaluate_coverage(rx, ry))
+                    values = speckles.evaluate_coverage(rx, ry)
             else:
                 values = _sample_texture(texture, case, rx, ry, texture_os, interp)
-            values[~valid] = BACKGROUND
+            values[~valid] = 0.0 if pattern != "eggbox" else BACKGROUND
             flat[ids] = values.reshape(len(ids), samples * samples).sum(axis=1) * weights
         image = flat.reshape(height, width)
         if psf:
-            image = gaussian_filter(image, PSF_SIGMA_FINAL_PX, mode="constant", cval=BACKGROUND, radius=round(PSF_SUPPORT_SIGMAS * PSF_SIGMA_FINAL_PX))
+            image = gaussian_filter(image, PSF_SIGMA_FINAL_PX, mode="constant", cval=0.0 if pattern != "eggbox" else BACKGROUND, radius=round(PSF_SUPPORT_SIGMAS * PSF_SIGMA_FINAL_PX))
+        if pattern != "eggbox":
+            image = coverage_to_intensity(image)
         _save(image, root, prefix)
         print(f"  {case} {prefix}: rendered.")
     mark_case_outputs(root, signature)
@@ -623,7 +639,11 @@ def riley_render(case: str, pattern: str, shader: str, ssaa: int, *, texture_os:
     else:
         texture=np.load(texture_path(case, pattern, texture_os, "uint" if storage=="uint" else "float", source_bits))
         texture_storage = riley.TextureStorage.floating if storage == "float" else (riley.TextureStorage.u8 if texture.dtype == np.uint8 else riley.TextureStorage.u16)
-        if storage == "uint":
+        if storage == "float" and pattern != "eggbox":
+            # Match Exp2: preserve unbounded floating coverage through the
+            # raster.  Clamp/scale only after Riley has integrated a pixel.
+            kwargs["scaling_type"] = riley.ScaleStrategy.none
+        else:
             kwargs["scaling_max"] = float(2**source_bits - 1)
         if interp not in RILEY_TEXTURE_SAMPLERS:
             raise ValueError(f"Unsupported Riley sampler {interp!r}; choose from {', '.join(RILEY_TEXTURE_SAMPLERS)}")
@@ -639,8 +659,15 @@ def riley_render(case: str, pattern: str, shader: str, ssaa: int, *, texture_os:
     render_log("EXP3", "riley", case_label(case), f"starting {detail}")
     root.mkdir(parents=True,exist_ok=True); images=riley.raster([mesh],[camera],config,out_dir=str(root))
     if images is not None:
-        maximum = float(2**source_bits - 1)
         for frame in frames:
-            save_float_and_depths(root/f"image_c00_f{frame:02d}.npy", np.asarray(images[0,frame,0], dtype=np.float64) / maximum, bit_depths())
+            rendered = np.asarray(images[0,frame,0], dtype=np.float64)
+            if shader.startswith("tex") and storage == "float" and pattern != "eggbox":
+                np.save(root / f"image_c00_f{frame:02d}_raw.npy", rendered)
+                rendered = coverage_to_intensity(rendered)
+            elif storage == "uint":
+                rendered /= float(2**source_bits - 1)
+            else:
+                rendered /= float(2**source_bits - 1)
+            save_float_and_depths(root/f"image_c00_f{frame:02d}.npy", rendered, bit_depths())
     mark_case_outputs(root, signature)
     return root

@@ -30,6 +30,9 @@ from modules.exp1common import output_case_name
 from modules.analysis_memory import release_batch
 from modules.expplots import plot_bespoke_four_panel, samples_for_method
 from modules.script_timing import ScriptTimer, timed_call
+from modules.render_selection import custom_enabled
+from modules.analysis_selection import analysis_should_run, mark_analysis_complete
+from modules.analysis_parallel import run_analysis_jobs
 
 
 RESULTS_DIR = exp2_output_dir("exp2_speckint2d_analysis")
@@ -248,7 +251,23 @@ def analyse_rectangular_self_convergence(
     return rows
 
 
+def _analyse_group_job(item: tuple[str, dict[tuple[str, int], Path]]) -> tuple[list[dict[str, object]], list[dict[str, object]]]:
+    group_name, jobs = item
+    rows = analyse_group(group_name, jobs)
+    rect_rows = (
+        analyse_rectangular_self_convergence(group_name, jobs)
+        if WRITE_RECTCONV else []
+    )
+    release_batch()
+    return rows, rect_rows
+
+
 def main() -> None:
+    if not any(custom_enabled(case) for case in ("disk", "gauss")):
+        print("Experiment 2 speckle analysis disabled by CUSTOM_RENDER_CASES; skipping.")
+        return
+    if not analysis_should_run(RESULTS_DIR, "Experiment 2 speckle analysis"):
+        return
     timer = ScriptTimer(__file__)
     RESULTS_DIR.mkdir(parents=True, exist_ok=True)
     rectconv_dir = Path(f"{RESULTS_DIR}_rectconv")
@@ -258,15 +277,14 @@ def main() -> None:
         rectconv_dir.mkdir(parents=True, exist_ok=True)
     all_rows: list[dict[str, object]] = []
     rectconv_rows: list[dict[str, object]] = []
-    for group_name, jobs in sorted(_discover_jobs().items()):
-        print(f"Analysing {group_name}")
-        all_rows.extend(timed_call(timer, group_name, analyse_group, group_name, jobs))
-        if WRITE_RECTCONV:
-            rectconv_rows.extend(timed_call(timer, f"{group_name}_rectconv", analyse_rectangular_self_convergence, group_name, jobs))
-        release_batch()
+    groups = sorted(_discover_jobs().items())
+    for rows, rect_rows in run_analysis_jobs("Experiment 2 speckle analysis", groups, _analyse_group_job):
+        all_rows.extend(rows)
+        rectconv_rows.extend(rect_rows)
     _write_rows(RESULTS_DIR / "summary.csv", all_rows)
     if WRITE_RECTCONV:
         _write_rows(rectconv_dir / "summary.csv", rectconv_rows)
+    mark_analysis_complete(RESULTS_DIR)
     print("Experiment 2 grid analysis completed.")
 
 

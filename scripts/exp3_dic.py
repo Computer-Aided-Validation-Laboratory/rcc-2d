@@ -19,7 +19,6 @@ or summary.
 from __future__ import annotations
 
 import csv
-from concurrent.futures import ProcessPoolExecutor, as_completed
 from multiprocessing import get_context
 import os
 import re
@@ -38,12 +37,12 @@ if str(HERE) not in sys.path:
     sys.path.insert(0, str(HERE))
 
 from modules.exp3_dic_data import load_result, read_pyvale_binary, result_path, save_arrays
-from modules.render_selection import measurement_enabled
+from modules.render_selection import analysis_enabled, measurement_enabled
 from modules.output_naming import data_case_name, is_rigid_case
+from modules.analysis_parallel import run_analysis_jobs
 from exp0params_common import DIC_CASES
 from exp3params import (
     DIC_CORRELATION_THRESHOLD,
-    DIC_POSTPROCESS_JOBS,
     DIC_SHAPE_FUNCTION,
     DIC_SUBSET_SIZE_PX,
     DIC_SUBSET_STEP_PX,
@@ -75,6 +74,8 @@ def render_sequences() -> list[tuple[str, str, Path]]:
             continue
         if not (config.startswith("diskadd_") or config.startswith("gaussadd_")):
             continue
+        if not analysis_enabled(render_root.name, "diskadd" if config.startswith("diskadd_") else "gaussadd"):
+            continue
         if MATCH_FILTER and MATCH_FILTER not in str(config_dir):
             continue
         frames = image_frames(config_dir)
@@ -89,6 +90,7 @@ def image_frames(directory: Path) -> list[Path]:
     files = list(directory.glob("frame*.npy"))
     if not files:
         files = list(directory.glob("image_c00_f*.npy"))
+    files = [path for path in files if not path.stem.endswith("_raw")]
     def frame_number(path: Path) -> int:
         match = re.search(r"(?:frame|_f)(\d+)", path.stem)
         if match is None:
@@ -280,6 +282,10 @@ def postprocess_frame(raw_path: str | None, compact_path: str, image_path: str, 
     return image_path, index
 
 
+def _postprocess_job(task: tuple[str | None, str, str, str, int]) -> tuple[str, int]:
+    return postprocess_frame(*task)
+
+
 def rigid_rows(case: str, output_dir: Path, frame_count: int) -> list[dict[str, float | int]]:
     """Read one completed rigid sequence for its compact bias summary only."""
     expected = physical_expected_rigid(case, frame_count)
@@ -324,14 +330,11 @@ def run_postprocess_stage(sequences: list[tuple[str, str, Path]]) -> None:
             summaries.append((case, output_dir, len(frames), config_dir.name))
 
     if tasks:
-        workers = min(max(1, DIC_POSTPROCESS_JOBS), len(tasks))
-        print(f"Stage 2: generating {len(tasks)} displacement maps with {workers} processes")
         # Spawn avoids inheriting PyVale's native state from the DIC controller.
-        with ProcessPoolExecutor(max_workers=workers, mp_context=get_context("spawn")) as pool:
-            futures = [pool.submit(postprocess_frame, *task) for task in tasks]
-            for future in as_completed(futures):
-                image_path, index = future.result()
-                print(f"  postprocess frame {index:02d}: wrote {Path(image_path).name}", flush=True)
+        for image_path, index in run_analysis_jobs(
+            "Exp3 DIC stage 2", tasks, _postprocess_job, mp_context=get_context("spawn"),
+        ):
+            print(f"  postprocess frame {index:02d}: wrote {Path(image_path).name}", flush=True)
     else:
         print("Stage 2: all displacement maps exist; skipping figure workers")
 

@@ -6,7 +6,6 @@ import csv
 import os
 import re
 from collections import defaultdict
-from concurrent.futures import ProcessPoolExecutor, as_completed
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -16,6 +15,8 @@ from matplotlib.figure import Figure
 
 from exp0params_common import CORES
 from modules.exp3_analysis_common import OUT, OS_RE, SS_RE, numeric_y_axis, parameter, pattern_of, release, title_lines
+from modules.analysis_selection import analysis_should_run, mark_analysis_complete
+from modules.analysis_parallel import run_analysis_jobs
 
 RESULTS=OUT/"exp3_analysis_gridmethod"
 
@@ -76,18 +77,20 @@ def convergence(rows:list[dict[str,object]])->None:
         path=RESULTS/case/root/f"frame{frame:02d}_convergence.png";path.parent.mkdir(parents=True,exist_ok=True);fig.savefig(path,dpi=150);fig.clear();release()
 
 def main()->None:
+    if not analysis_should_run(RESULTS, "Experiment 3 Grid Method analysis"):
+        return
     records=discover();groups=defaultdict(list)
     for record in records:groups[record.case].append(record)
     rows=[]
     limit=int(os.environ.get("EXP3_ANALYSIS_LIMIT", "0"))
     if limit: records=records[:limit]
-    with ProcessPoolExecutor(max_workers=CORES) as pool:
-        futures=[pool.submit(analyse,(record,groups[record.case])) for record in records]
-        for future in as_completed(futures):rows.extend(future.result())
+    jobs=[(record,groups[record.case]) for record in records]
+    for result in run_analysis_jobs("Experiment 3 Grid Method analysis", jobs, analyse): rows.extend(result)
     if rows:
         RESULTS.mkdir(parents=True,exist_ok=True)
         with (RESULTS/"summary.csv").open("w",newline="") as f:writer=csv.DictWriter(f,fieldnames=list(rows[0]));writer.writeheader();writer.writerows(rows)
         convergence(rows)
+    mark_analysis_complete(RESULTS)
     print(f"Wrote {len(rows)} grid-method displacement comparisons.")
 
 if __name__=="__main__":main()

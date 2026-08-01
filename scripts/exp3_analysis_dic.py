@@ -6,7 +6,6 @@ import csv
 import os
 import re
 from collections import defaultdict
-from concurrent.futures import ProcessPoolExecutor, as_completed
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -17,6 +16,8 @@ from matplotlib.figure import Figure
 from exp0params_common import CORES
 from modules.exp3_analysis_common import OUT, OS_RE, SS_RE, interpolator_of, numeric_y_axis, parameter, pattern_of, release, title_lines
 from modules.exp3_dic_data import load_result, result_path
+from modules.analysis_selection import analysis_should_run, mark_analysis_complete
+from modules.analysis_parallel import run_analysis_jobs
 
 RESULTS = OUT / "exp3_analysis_dic"
 
@@ -31,7 +32,8 @@ def discover() -> list[Record]:
     for directory in (OUT / "exp3_dic").glob("*/*/*"):
         if not directory.is_dir() or not list(directory.glob("dic_frame*.npz")): continue
         case, root, config = directory.parent.parent.name, directory.parent.name, directory.name
-        rows.append(Record(case, root, config, directory, pattern_of(config), parameter(config, SS_RE), parameter(config, OS_RE), interpolator_of(config), "_analytic_" in config))
+        pattern = pattern_of(config)
+        rows.append(Record(case, root, config, directory, pattern, parameter(config, SS_RE), parameter(config, OS_RE), interpolator_of(config), "_analytic_" in config))
     return rows
 
 
@@ -51,6 +53,19 @@ def reference(records: list[Record]) -> tuple[Record | None,str]:
         ref=max(bespoke,key=lambda r:r.ssaa)
         return ref,f"Highest bespoke SSAA render DIC reference: SSAA={ref.ssaa}"
     ref=max(records,key=lambda r:(r.ssaa,r.osamp)); return ref,f"Highest SSAA/OS render DIC reference: SSAA={ref.ssaa}, OS={ref.osamp or 1}"
+
+
+def reference_candidates(record: Record, records: list[Record]) -> list[Record]:
+    """Keep texture reconstruction convergence separate from the continuum."""
+    if "riley_render_tex" not in record.root:
+        return [item for item in records if item.case == record.case and item.pattern == record.pattern and ("_psf" in item.root or "_psf" in item.config) == ("_psf" in record.root or "_psf" in record.config)]
+    return [
+        item for item in records
+        if item.case == record.case and item.root == record.root
+        and item.pattern == record.pattern and item.interpolator == record.interpolator
+        and item.osamp == record.osamp
+        and ("_psf" in item.root or "_psf" in item.config) == ("_psf" in record.root or "_psf" in record.config)
+    ]
 
 
 def series_label(record: Record) -> str:
@@ -103,18 +118,19 @@ def convergence(rows:list[dict[str,object]])->None:
 
 
 def main()->None:
-    records=discover();by_group=defaultdict(list)
-    for rec in records:by_group[(rec.case,rec.pattern,"_psf" in rec.root or "_psf" in rec.config)].append(rec)
+    if not analysis_should_run(RESULTS, "Experiment 3 DIC analysis"):
+        return
+    records=discover()
     rows=[]
     limit=int(os.environ.get("EXP3_ANALYSIS_LIMIT", "0"))
     if limit: records=records[:limit]
-    with ProcessPoolExecutor(max_workers=CORES) as pool:
-        futures=[pool.submit(analyse,(rec,by_group[(rec.case,rec.pattern,"_psf" in rec.root or "_psf" in rec.config)])) for rec in records]
-        for future in as_completed(futures):rows.extend(future.result())
+    jobs=[(rec,reference_candidates(rec, records)) for rec in records]
+    for result in run_analysis_jobs("Experiment 3 DIC analysis", jobs, analyse): rows.extend(result)
     if rows:
         RESULTS.mkdir(parents=True,exist_ok=True)
         with (RESULTS/"summary.csv").open("w",newline="") as f: writer=csv.DictWriter(f,fieldnames=list(rows[0]));writer.writeheader();writer.writerows(rows)
         convergence(rows)
+    mark_analysis_complete(RESULTS)
     print(f"Wrote {len(rows)} DIC displacement comparisons.")
 
 if __name__=="__main__":main()

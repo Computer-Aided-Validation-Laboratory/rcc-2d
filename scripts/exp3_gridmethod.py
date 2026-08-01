@@ -17,7 +17,6 @@ import os
 import re
 import sys
 import textwrap
-from concurrent.futures import ProcessPoolExecutor, as_completed
 from dataclasses import replace
 from pathlib import Path
 
@@ -31,18 +30,18 @@ HERE = Path(__file__).resolve().parent
 if str(HERE) not in sys.path:
     sys.path.insert(0, str(HERE))
 
-from exp0params_common import GRIDMETHOD_CASES, GRIDMETHOD_JOBS
+from exp0params_common import GRIDMETHOD_CASES
 from exp3params import EGGBOX_PERIOD_FINAL_PX
 from modules.gridmethod import GridMethodConfig, analyse_sequence
-from modules.render_selection import measurement_enabled
+from modules.render_selection import analysis_enabled, measurement_enabled
 from modules.output_naming import data_case_name, is_rigid_case
+from modules.analysis_parallel import run_analysis_jobs
 
 
 OUT_ROOT = Path("out")
 RESULT_ROOT = OUT_ROOT / "exp3_gridmethod"
 CASE_FILTER = os.environ.get("EXP3_GRIDMETHOD_CASE")
 LIMIT = int(os.environ.get("EXP3_GRIDMETHOD_LIMIT", "0"))
-WORKERS = max(1, int(os.environ.get("EXP3_GRIDMETHOD_JOBS", str(GRIDMETHOD_JOBS))))
 
 
 def image_frames(directory: Path) -> list[Path]:
@@ -63,6 +62,8 @@ def sequences() -> list[tuple[str, str, Path]]:
         if not directory.is_dir() or not directory.name.startswith("eggb_"):
             continue
         case, root = directory.parent.name, directory.parent.parent.name
+        if not analysis_enabled(root, "eggb"):
+            continue
         if not measurement_enabled(root, GRIDMETHOD_CASES):
             continue
         if CASE_FILTER and case != CASE_FILTER:
@@ -187,13 +188,19 @@ def analyse(case: str, root: str, directory: Path) -> None:
     gc.collect()
 
 
+def _analyse_job(item: tuple[str, str, Path]) -> tuple[str, str, str]:
+    case, root, directory = item
+    analyse(case, root, directory)
+    return case, root, directory.name
+
+
 def main() -> None:
     jobs = sequences()
     if LIMIT:
         jobs = jobs[:LIMIT]
     if not jobs:
         raise FileNotFoundError("No completed Exp3 eggbox sequences matched the requested filter.")
-    print(f"Exp3 grid method: {len(jobs)} sequences; families={','.join(GRIDMETHOD_CASES)}; workers={WORKERS}")
+    print(f"Exp3 grid method: {len(jobs)} sequences; families={','.join(GRIDMETHOD_CASES)}")
     pending: list[tuple[str, str, Path]] = []
     for index, (case, root, directory) in enumerate(jobs, start=1):
         print(f"[{index}/{len(jobs)}] {root}/{case}/{directory.name}")
@@ -206,21 +213,12 @@ def main() -> None:
         pending.append((case, root, directory))
     if not pending:
         return
-    if WORKERS == 1 or len(pending) == 1:
-        for case, root, directory in pending:
-            analyse(case, root, directory)
-        return
-    # Sequences share no output files, so each process can safely own a full
+    # Sequences share no output files, so each process owns a full
     # load/analyse/write/release lifecycle without synchronisation.
-    with ProcessPoolExecutor(max_workers=min(WORKERS, len(pending))) as executor:
-        futures = {
-            executor.submit(analyse, case, root, directory): (case, root, directory)
-            for case, root, directory in pending
-        }
-        for index, future in enumerate(as_completed(futures), start=1):
-            case, root, directory = futures[future]
-            future.result()
-            print(f"  completed [{index}/{len(pending)}] {root}/{case}/{directory.name}", flush=True)
+    for index, (case, root, name) in enumerate(
+        run_analysis_jobs("Exp3 Grid Method", pending, _analyse_job), start=1
+    ):
+        print(f"  completed [{index}/{len(pending)}] {root}/{case}/{name}", flush=True)
 
 
 if __name__ == "__main__":

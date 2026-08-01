@@ -15,6 +15,7 @@ digitised (unsigned-integer) texture analysis.
 from modules import exp1_riley_analysis_common as riley_analysis
 from exp1params import exp1_output_dir
 from modules.script_timing import ScriptTimer
+from modules.render_selection import riley_enabled
 
 riley_analysis.OUTPUT_DIR = exp1_output_dir("exp1_gridint2d_render_uvs")
 riley_analysis.RILEY_TEX_DIR = exp1_output_dir("exp1_riley_render_texfloat")
@@ -23,5 +24,8 @@ riley_analysis.ANALYSIS_MODE = "tex"
 
 
 if __name__ == "__main__":
-    with ScriptTimer(__file__).case("all_configured_cases"):
-        riley_analysis.main()
+    if not riley_enabled("texfloat"):
+        print("Experiment 1 Riley texfloat analysis disabled by RILEY_RENDER_CASES; skipping.")
+    else:
+        with ScriptTimer(__file__).case("all_configured_cases"):
+            riley_analysis.main()

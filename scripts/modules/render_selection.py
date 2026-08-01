@@ -36,3 +36,30 @@ def measurement_family(render_root: str) -> str:
 
 def measurement_enabled(render_root: str, enabled_cases: tuple[str, ...]) -> bool:
     return measurement_family(render_root) in enabled_cases
+
+
+def analysis_enabled(render_root: str, pattern: str | None = None) -> bool:
+    """Return whether an existing render is enabled for analysis.
+
+    This applies the same Exp0 family switches used for rendering, including
+    PSF variants, so stale output directories cannot silently re-enter an
+    all-analysis run.
+    """
+    name = render_root.lower()
+    psf = "_psf" in name
+    if "riley" in name:
+        if "func" in name:
+            return riley_enabled("func_psf" if psf else "func")
+        if "texu" in name or "texuint" in name:
+            return riley_enabled("texuint_psf" if psf else "texuint")
+        if "texf" in name or "texfloat" in name:
+            return riley_enabled("texfloat_psf" if psf else "texfloat")
+        return False
+    pattern_name = (pattern or "").lower()
+    if pattern_name in {"eggb", "eggbox"}:
+        return custom_enabled("eggbox_psf" if psf else "eggbox")
+    if pattern_name in {"diskadd", "diskaddsat", "disk"}:
+        return custom_enabled("disk_psf" if psf else "disk")
+    if pattern_name in {"gaussadd", "gausscont", "gauss"}:
+        return custom_enabled("gauss")
+    return False

@@ -10,7 +10,6 @@ from __future__ import annotations
 import csv
 import os
 from collections import defaultdict
-from concurrent.futures import ProcessPoolExecutor, as_completed
 from pathlib import Path
 
 import numpy as np
@@ -20,6 +19,8 @@ from matplotlib.figure import Figure
 from exp0params_common import CORES
 from exp3params import BIT_DEPTHS
 from modules.exp3_analysis_common import Render, best_reference, discover_renders, image_frames, load_image, numeric_y_axis, release, title_lines
+from modules.analysis_selection import analysis_should_run, mark_analysis_complete
+from modules.analysis_parallel import run_analysis_jobs
 
 RESULTS = Path("out/exp3_analysis_conv")
 RECT_RESULTS = Path("out/exp3_analysis_conv_rectconv")
@@ -155,23 +156,35 @@ def comparison_overlays(rows: list[dict[str, object]]) -> None:
 
 
 def main() -> None:
+    if not analysis_should_run(RESULTS, "Experiment 3 convergence analysis"):
+        return
     renders = discover_renders(); groups: dict[tuple[str, str, str], list[Render]] = defaultdict(list)
     by_case_pattern: dict[tuple[str, str, bool], list[Render]] = defaultdict(list)
     for item in renders:
         psf = "_psf" in item.root or "_psf" in item.config
         groups[(item.case, family(item), item.pattern, psf)].append(item); by_case_pattern[(item.case, item.pattern, psf)].append(item)
-    tasks = [
-        (case, f"{fam}_psf" if psf else fam, pattern, f"{case}/{fam}/{pattern}", items, by_case_pattern[(case, pattern, psf)], bit_depth)
-        for (case, fam, pattern, psf), items in groups.items()
-        for bit_depth in BIT_DEPTHS
-    ]
+    tasks = []
+    for (case, fam, pattern, psf), items in groups.items():
+        # A Riley texture at each OS is a separate reconstructed signal.  Its
+        # highest SSAA is therefore its own reference; never compare it to
+        # the continuum analytic image or a different texture OS.
+        buckets = (
+            {osamp: [item for item in items if item.oversamp == osamp]
+             for osamp in sorted({item.oversamp for item in items})}
+            if fam.startswith("riley_tex") else {None: items}
+        )
+        for osamp, bucket in buckets.items():
+            display_family = f"{fam}_os{osamp}" if osamp is not None else fam
+            display_family = f"{display_family}_psf" if psf else display_family
+            candidates = bucket if osamp is not None else by_case_pattern[(case, pattern, psf)]
+            for bit_depth in BIT_DEPTHS:
+                tasks.append((case, display_family, pattern, f"{case}/{display_family}/{pattern}", bucket, candidates, bit_depth))
     limit = int(os.environ.get("EXP3_ANALYSIS_LIMIT", "0"))
     if limit: tasks = tasks[:limit]
     primary: list[dict[str, object]] = []; self_rows: list[dict[str, object]] = []
-    with ProcessPoolExecutor(max_workers=CORES) as pool:
-        for future in as_completed([pool.submit(analyse_group, task) for task in tasks]):
-            a, b = future.result(); primary.extend(a); self_rows.extend(b)
-    write_csv(RESULTS, primary); write_csv(RECT_RESULTS, self_rows); comparison_overlays(primary)
+    for a, b in run_analysis_jobs("Experiment 3 convergence analysis", tasks, analyse_group):
+        primary.extend(a); self_rows.extend(b)
+    write_csv(RESULTS, primary); write_csv(RECT_RESULTS, self_rows); comparison_overlays(primary); mark_analysis_complete(RESULTS)
     print(f"Wrote {len(primary)} primary and {len(self_rows)} self-convergence rows.")
 
 

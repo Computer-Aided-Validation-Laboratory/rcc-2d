@@ -37,6 +37,9 @@ from modules.exp1common import output_case_name
 from modules.analysis_memory import make_agg_figure, release_batch, release_figure
 from modules.script_timing import ScriptTimer, timed_call
 from modules.output_naming import config_name
+from modules.render_selection import riley_enabled
+from modules.analysis_selection import analysis_should_run, mark_analysis_complete
+from modules.analysis_parallel import run_analysis_jobs
 
 
 RILEY_OUTPUT_DIR = exp2_output_dir("exp2_riley_render_texfloat")
@@ -589,7 +592,18 @@ def analyse_pattern(
     return rows
 
 
+def _analyse_pattern_job(item: tuple[str, str, str, list[int], set[str] | None]) -> list[dict[str, object]]:
+    rows = analyse_pattern(*item)
+    release_batch()
+    return rows
+
+
 def main() -> None:
+    if not riley_enabled("texfloat"):
+        print("Experiment 2 Riley texfloat analysis disabled by RILEY_RENDER_CASES; skipping.")
+        return
+    if not analysis_should_run(RESULTS_DIR, "Experiment 2 Riley texfloat analysis"):
+        return
     timer = ScriptTimer(__file__)
     RESULTS_DIR.mkdir(parents=True, exist_ok=True)
     if not WRITE_RECTCONV:
@@ -606,6 +620,7 @@ def main() -> None:
         + (", ".join(sorted(allowed_interpolators)) if allowed_interpolators else "all discovered")
     )
     all_rows: list[dict[str, object]] = []
+    jobs: list[tuple[str, str, str, list[int], set[str] | None]] = []
     for case_name in cases:
         case_name = output_case_name(case_name, TARG_PX_X)
         for pattern_type in ANALYTIC_SPECKLE_TYPES:
@@ -614,12 +629,11 @@ def main() -> None:
                         tag = pattern_tag(
                             pattern_type, black_fraction, distribution, fraction
                         )
-                        all_rows.extend(timed_call(
-                            timer, f"{case_name}_{tag}", analyse_pattern,
-                            case_name, pattern_type, tag, frames, allowed_interpolators,
-                        ))
-                        release_batch()
+                        jobs.append((case_name, pattern_type, tag, frames, allowed_interpolators))
+    for rows in run_analysis_jobs("Experiment 2 Riley texfloat analysis", jobs, _analyse_pattern_job):
+        all_rows.extend(rows)
     _write_rows(RESULTS_DIR / "summary.csv", all_rows)
+    mark_analysis_complete(RESULTS_DIR)
     print(f"\nSaved overall summary: {RESULTS_DIR / 'summary.csv'}")
     print("Experiment 2 Riley floating-texture analysis completed.")
 

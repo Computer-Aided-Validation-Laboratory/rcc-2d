@@ -3,6 +3,10 @@
 CORES: int = 8
 TEST_RUN: bool = True
 FORCE_RENDER_OVER: bool = False
+# Rebuild analysis outputs even when a completed-suite marker exists.  Set
+# false after a full analysis pass to make the all-analysis launcher resume
+# only incomplete suites.
+FORCE_ANALYSIS_OVER: bool = True
 
 # Maximum independent analysis scripts launched by ``expall_analysis.py``.
 ANALYSIS_JOBS: int = CORES

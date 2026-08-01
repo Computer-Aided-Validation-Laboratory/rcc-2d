@@ -36,6 +36,8 @@ from exp1params import (
 )
 from modules.script_timing import ScriptTimer, timed_call
 from modules.output_naming import config_name
+from modules.analysis_selection import analysis_should_run, mark_analysis_complete
+from modules.analysis_parallel import run_analysis_jobs
 from modules.analysis_memory import make_agg_figure, release_batch, release_figure
 
 # Defaults make this base entry point usable directly.  The world, UV, and
@@ -1735,6 +1737,14 @@ def analyse_riley_self_convergence(
         del records, labels
         release_batch()
 
+def _analyse_riley_case_job(item: tuple[str, str, Path | None]) -> None:
+    """Analyse one independent case/interpolator pair in a child process."""
+    case_name, tex_interp, self_convergence_dir = item
+    analyze_riley_case(case_name, tex_interp)
+    if self_convergence_dir is not None:
+        analyse_riley_self_convergence(case_name, tex_interp, self_convergence_dir)
+    release_batch()
+
 
 def main() -> None:
     global ACTIVE_FRAMES
@@ -1750,6 +1760,8 @@ def main() -> None:
         ]
 
     results_dir = RESULTS_DIR_FUNC if ANALYSIS_MODE == "func" else RESULTS_DIR_TEX
+    if not analysis_should_run(results_dir, f"Experiment 1 Riley {ANALYSIS_MODE} analysis"):
+        return
     rectconv_dir = Path(f"{results_dir}_rectconv")
     if CLEAR_DIR and not is_subset_analysis:
         shutil.rmtree(results_dir, ignore_errors=True)
@@ -1779,21 +1791,18 @@ def main() -> None:
         raise ValueError(
             f"Unsupported texture interpolator(s): {', '.join(sorted(invalid))}"
         )
-    for tex_interp in interps:
-        for case_name in cases:
-            timed_call(timer, f"{case_name}_{tex_interp}", analyze_riley_case, case_name, tex_interp)
-            if WRITE_RECTCONV:
-                self_convergence_dir = rectconv_dir if ANALYSIS_MODE == "func" else rectconv_dir / tex_interp
-                timed_call(
-                    timer,
-                    f"{case_name}_{tex_interp}_rectconv",
-                    analyse_riley_self_convergence,
-                    case_name,
-                    tex_interp,
-                    self_convergence_dir,
-                )
-            release_batch()
+    jobs = [
+        (
+            case_name,
+            tex_interp,
+            (rectconv_dir if ANALYSIS_MODE == "func" else rectconv_dir / tex_interp)
+            if WRITE_RECTCONV else None,
+        )
+        for tex_interp in interps for case_name in cases
+    ]
+    run_analysis_jobs(f"Experiment 1 Riley {ANALYSIS_MODE} analysis", jobs, _analyse_riley_case_job)
 
+    mark_analysis_complete(results_dir)
     print("\nRiley analysis completed successfully.")
 
 

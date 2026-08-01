@@ -27,6 +27,9 @@ from modules.exp1common import output_case_name
 from modules.analysis_memory import release_batch
 from modules.expplots import plot_bespoke_four_panel, samples_for_method
 from modules.script_timing import ScriptTimer, timed_call
+from modules.render_selection import custom_enabled
+from modules.analysis_selection import analysis_should_run, mark_analysis_complete
+from modules.analysis_parallel import run_analysis_jobs
 
 RESULTS_DIR = exp1_output_dir("exp1_gridint2d_analysis")
 RENDER_SUFFIX = ""
@@ -219,6 +222,17 @@ def analyse_rectangular_self_convergence(
     return rows
 
 
+def _analyse_case_job(case_dir: Path) -> tuple[list[dict[str, object]], list[dict[str, object]]]:
+    """Process one deformation case independently for the common harness."""
+    rows = analyse_case(case_dir)
+    rect_rows = (
+        analyse_rectangular_self_convergence(case_dir, Path(f"{RESULTS_DIR}_rectconv"))
+        if WRITE_RECTCONV else []
+    )
+    release_batch()
+    return rows, rect_rows
+
+
 def _write_rows(path: Path, rows: list[dict[str, object]]) -> None:
     fields = ["Case", "Frame", "BitDepth", "Method", "Param", "Samples", "Reference", "e_f64", "e_inf", "e_b", "delta_b", "max_eb"]
     with path.open("w", newline="") as file:
@@ -228,6 +242,11 @@ def _write_rows(path: Path, rows: list[dict[str, object]]) -> None:
 
 
 def main() -> None:
+    if not custom_enabled("eggbox"):
+        print("Experiment 1 eggbox analysis disabled by CUSTOM_RENDER_CASES; skipping.")
+        return
+    if not analysis_should_run(RESULTS_DIR, "Experiment 1 eggbox analysis"):
+        return
     timer = ScriptTimer(__file__)
     if CLEAR_DIR:
         shutil.rmtree(RESULTS_DIR, ignore_errors=True)
@@ -241,19 +260,21 @@ def main() -> None:
         rectconv_dir.mkdir(parents=True, exist_ok=True)
     all_rows: list[dict[str, object]] = []
     rectconv_rows: list[dict[str, object]] = []
+    case_dirs: list[Path] = []
     for case_name in DEFORMATION_CASES:
         output_name = output_case_name(case_name, TARG_PX_X)
         case_dir = OUTPUT_DIR / output_name
         if not case_dir.exists():
             print(f"Warning: {case_dir} does not exist. Skipping.")
             continue
-        all_rows.extend(timed_call(timer, output_name, analyse_case, case_dir))
-        if WRITE_RECTCONV:
-            rectconv_rows.extend(timed_call(timer, f"{output_name}_rectconv", analyse_rectangular_self_convergence, case_dir, rectconv_dir))
-        release_batch()
+        case_dirs.append(case_dir)
+    for rows, rect_rows in run_analysis_jobs("Experiment 1 eggbox analysis", case_dirs, _analyse_case_job):
+        all_rows.extend(rows)
+        rectconv_rows.extend(rect_rows)
     _write_rows(RESULTS_DIR / "summary.csv", all_rows)
     if WRITE_RECTCONV:
         _write_rows(rectconv_dir / "summary.csv", rectconv_rows)
+    mark_analysis_complete(RESULTS_DIR)
     print("Experiment 1 grid analysis completed.")
 
 

@@ -11,6 +11,7 @@ import numpy as np
 from matplotlib.ticker import LogFormatterMathtext, LogLocator, MaxNLocator, ScalarFormatter
 
 from modules.exp_common_analysis import release_batch
+from modules.render_selection import analysis_enabled
 
 OUT = Path("out")
 CASE_RE = re.compile(r"(?:pt|plate).*?(?:rig|rigid|aff|affine|qsadd|quadsaddle|chirp)$")
@@ -83,6 +84,9 @@ def numeric_y_axis(axis, values: list[float] | np.ndarray, *, log_when_positive:
 
 def image_frames(directory: Path) -> dict[int, Path]:
     paths = list(directory.glob("frame*.npy")) or list(directory.glob("image_c00_f*.npy"))
+    # Riley float-texture renders retain a diagnostic raw-coverage companion;
+    # all image/DIC analysis uses the post-integration clamped camera image.
+    paths = [path for path in paths if not path.stem.endswith("_raw")]
     result: dict[int, Path] = {}
     for path in paths:
         match = re.search(r"(?:frame|_f)(\d+)", path.stem)
@@ -105,8 +109,11 @@ def discover_renders() -> list[Render]:
         if not CASE_RE.fullmatch(case):
             continue
         config = directory.name
+        pattern = pattern_of(config)
+        if not analysis_enabled(root, pattern):
+            continue
         found.append(Render(
-            case, root, config, directory, pattern_of(config),
+            case, root, config, directory, pattern,
             parameter(config, SS_RE), parameter(config, OS_RE),
             interpolator_of(config), "_analytic_" in config,
         ))
