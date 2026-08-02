@@ -473,13 +473,13 @@ def _analytic_eggbox_affine(px: np.ndarray, py: np.ndarray, pixel_x: float, pixe
     return I0 - GAMMA + .5 * GAMMA * (1.0 + cx + cy + cxy)
 
 
-def _save(image: np.ndarray, root: Path, prefix: str) -> None:
+def _save(image: np.ndarray, root: Path, prefix: str, *, overwrite: bool = False) -> None:
     root.mkdir(parents=True, exist_ok=True)
     # Camera files are top-row-first, matching Riley's saved arrays and the
     # existing Exp1/2 output convention.  Rendering maths uses +Y-up.
     image = np.ascontiguousarray(np.flipud(image), dtype=np.float64)
     save_float_and_depths(
-        root / f"{prefix}.npy", image, bit_depths(), overwrite=force_render(),
+        root / f"{prefix}.npy", image, bit_depths(), overwrite=overwrite,
     )
 
 
@@ -588,7 +588,9 @@ def bespoke_render(case: str, pattern: str, method: str, param: int, *, texture_
             image = gaussian_filter(image, PSF_SIGMA_FINAL_PX, mode="constant", cval=0.0 if pattern != "eggbox" else BACKGROUND, radius=round(PSF_SUPPORT_SIGMAS * PSF_SIGMA_FINAL_PX))
         if pattern != "eggbox":
             image = coverage_to_intensity(image)
-        _save(image, root, prefix)
+        # Reaching this point means the output failed its resumability check,
+        # so replace an existing stale image rather than retaining it.
+        _save(image, root, prefix, overwrite=True)
         print(f"  {case} {prefix}: rendered.")
     mark_case_outputs(root, signature)
     if analytic_speckle:
@@ -672,7 +674,10 @@ def riley_render(case: str, pattern: str, shader: str, ssaa: int, *, texture_os:
                 rendered /= float(2**source_bits - 1)
             save_float_and_depths(
                 root / f"image_c00_f{frame:02d}.npy", rendered, bit_depths(),
-                overwrite=force_render(),
+                # The case/texture signature check above has already marked
+                # this render stale, so an existing float image must be
+                # replaced even when this is not a force-render invocation.
+                overwrite=True,
             )
     mark_case_outputs(root, signature)
     return root
