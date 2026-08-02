@@ -111,7 +111,7 @@ def convergence(rows:list[dict[str,object]])->None:
         by_os=defaultdict(list)
         for row in values:by_os[int(row["OS"])].append(row)
         plotted=[]
-        for osamp,series in sorted(by_os.items()):
+        for osamp,series in sorted(by_os.items(), reverse=True):
             series.sort(key=lambda r:int(r["SSAA"])); y=[r["max_difference_px"] for r in series];axis.plot([r["SSAA"] for r in series],y,"o-",label=f"OS={osamp}" if any(int(r["OS"]) > 1 for r in values) else "SSAA series");plotted.extend(y)
         axis.set_xscale("log",base=2);numeric_y_axis(axis,plotted);axis.set_xticks(sorted({int(r["SSAA"]) for r in values}));axis.set_xlabel("SSAA samples along one pixel axis");axis.set_ylabel("max displacement difference [px]");axis.grid(alpha=.3);axis.legend(fontsize=8);axis.set_title(f"{title_lines(case+': '+pattern+' DIC convergence')} | frame {frame:02d}\nRender series: {title_lines(series_name)}\nReference: {title_lines(str(values[0]['Reference']))}",fontsize=9)
         path=RESULTS/case/series_name/f"{pattern}_frame{frame:02d}_convergence.png";path.parent.mkdir(parents=True,exist_ok=True);fig.savefig(path,dpi=150);fig.clear();release()

@@ -33,6 +33,7 @@ from modules.script_timing import ScriptTimer, timed_call
 from modules.render_selection import custom_enabled
 from modules.analysis_selection import analysis_should_run, mark_analysis_complete
 from modules.analysis_parallel import run_analysis_jobs
+from modules.render_outputs import quantise_camera
 
 
 RESULTS_DIR = exp2_output_dir("exp2_speckint2d_analysis")
@@ -46,11 +47,9 @@ JOB_RE = re.compile(
 def _image_pair(directory: Path, method: str, param: int, bit_depth: int, frame: int):
     prefix = f"targ_px{TARG_PX_X}_int_{method}_param_{param}{RENDER_SUFFIX}_frame{frame:02d}"
     npy_path = directory / f"{prefix}.npy"
-    tiff_path = directory / f"{prefix}_b{bit_depth}.tiff"
-    if npy_path.exists() and tiff_path.exists():
-        with Image.open(tiff_path) as image:
-            digitised = np.asarray(image, dtype=np.float64)
-        return np.load(npy_path), digitised
+    if npy_path.exists():
+        floating = np.asarray(np.load(npy_path), dtype=np.float64)
+        return floating, quantise_camera(floating, bit_depth).astype(np.float64)
 
     # Support output produced before the f64 texture convention, whose NumPy
     # files held digitised code values separately for every bit depth.
@@ -73,7 +72,9 @@ def _discover_jobs() -> dict[str, dict[tuple[str, int], Path]]:
             match = JOB_RE.match(directory.name[len(prefix):])
             if match is None:
                 continue
-            if match.group("suffix") != RENDER_SUFFIX:
+            # ``re`` returns None for an unmatched optional suffix, while
+            # the normal renderer uses the empty-string suffix.
+            if (match.group("suffix") or "") != RENDER_SUFFIX:
                 continue
             group_name = f"{case_name}_{match.group('pattern')}"
             groups[group_name][(match.group("method"), int(match.group("param")))] = directory
@@ -110,6 +111,8 @@ def _reference_job(
 
 
 def _write_rows(path: Path, rows: list[dict[str, object]]) -> None:
+    if not rows:
+        return
     fields = ["Group", "Frame", "BitDepth", "Method", "Param", "Samples", "Reference", "e_f64", "e_inf", "e_b", "delta_b", "max_eb"]
     with path.open("w", newline="") as file:
         writer = csv.DictWriter(file, fieldnames=fields)

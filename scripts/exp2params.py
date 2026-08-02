@@ -131,7 +131,7 @@ TEX_PX_PAD: int = 4
 # sampled, normalised Gaussian kernel.
 PSF_SIGMA_FINAL_PX: float = 1.0
 PSF_SUPPORT_SIGMAS: float = 4.0
-BIT_DEPTHS: List[int] = [8, 12, 16]
+BIT_DEPTHS: List[int] = [8, 10, 12]
 # Limit quadrature points held by each bespoke-renderer worker.  Exp2 keeps
 # additional pattern-coverage temporaries, hence its caps are lower than
 # Exp1's.  Retain the established 2M affine cap and use a lower VTK cap.

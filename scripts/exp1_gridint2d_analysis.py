@@ -7,6 +7,7 @@
 from __future__ import annotations
 
 import csv
+import re
 import shutil
 from pathlib import Path
 
@@ -30,6 +31,19 @@ from modules.script_timing import ScriptTimer, timed_call
 from modules.render_selection import custom_enabled
 from modules.analysis_selection import analysis_should_run, mark_analysis_complete
 from modules.analysis_parallel import run_analysis_jobs
+from modules.render_outputs import quantise_camera
+
+
+def _include_completed_integration_levels() -> None:
+    """Extend parameter defaults with every completed rule found on disk."""
+    global INTEGRATION_METHODS
+    found = set(INTEGRATION_METHODS)
+    pattern = re.compile(r"_int_(analytic|rect|gauss)_param_(\d+)(?:_psf)?_frame\d+\.npy$")
+    for image in OUTPUT_DIR.glob("*/*.npy"):
+        match = pattern.search(image.name)
+        if match:
+            found.add((match.group(1), int(match.group(2))))
+    INTEGRATION_METHODS = tuple(sorted(found, key=lambda item: (item[0], item[1])))
 
 RESULTS_DIR = exp1_output_dir("exp1_gridint2d_analysis")
 RENDER_SUFFIX = ""
@@ -46,14 +60,12 @@ def _paths(directory: Path, method: str, param: int, bit_depth: int, frame: int)
 
 def _load_pair(directory: Path, method: str, param: int, bit_depth: int, frame: int):
     npy_path, tiff_path = _paths(directory, method, param, bit_depth, frame)
-    if not npy_path.exists() or not tiff_path.exists():
+    if not npy_path.exists():
         return None
-    with Image.open(tiff_path) as image:
-        digitised = np.asarray(image, dtype=np.float64)
     floating = np.asarray(np.load(npy_path), dtype=np.float64)
     if floating.size and np.nanmax(np.abs(floating)) > 1.0 + 1e-12:
         floating /= float(2**bit_depth - 1)
-    return floating, digitised
+    return floating, quantise_camera(floating, bit_depth).astype(np.float64)
 
 
 def _empty_float(methods: list[str]) -> dict[str, dict[str, list[float]]]:
@@ -234,6 +246,8 @@ def _analyse_case_job(case_dir: Path) -> tuple[list[dict[str, object]], list[dic
 
 
 def _write_rows(path: Path, rows: list[dict[str, object]]) -> None:
+    if not rows:
+        return
     fields = ["Case", "Frame", "BitDepth", "Method", "Param", "Samples", "Reference", "e_f64", "e_inf", "e_b", "delta_b", "max_eb"]
     with path.open("w", newline="") as file:
         writer = csv.DictWriter(file, fieldnames=fields)
@@ -247,6 +261,7 @@ def main() -> None:
         return
     if not analysis_should_run(RESULTS_DIR, "Experiment 1 eggbox analysis"):
         return
+    _include_completed_integration_levels()
     timer = ScriptTimer(__file__)
     if CLEAR_DIR:
         shutil.rmtree(RESULTS_DIR, ignore_errors=True)

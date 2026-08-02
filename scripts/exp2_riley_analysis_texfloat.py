@@ -40,6 +40,7 @@ from modules.output_naming import config_name
 from modules.render_selection import riley_enabled
 from modules.analysis_selection import analysis_should_run, mark_analysis_complete
 from modules.analysis_parallel import run_analysis_jobs
+from modules.render_outputs import quantise_camera
 
 
 RILEY_OUTPUT_DIR = exp2_output_dir("exp2_riley_render_texfloat")
@@ -241,9 +242,16 @@ def _plot_four_panel(
     line_values = sorted(set(grouped_float) | set(grouped_digitised))
     colors = rcParams["axes.prop_cycle"].by_key()["color"]
     markers = OVERSAMP_MARKERS
-    for index, line_value in enumerate(line_values):
-        color = colors[index % len(colors)]
-        marker = markers[index % len(markers)]
+    # Assign styles in ascending parameter order, then draw the largest
+    # OS/SSAA series first so the lower levels remain visible on top.
+    line_styles = {
+        line_value: (
+            colors[index % len(colors)], markers[index % len(markers)]
+        )
+        for index, line_value in enumerate(line_values)
+    }
+    for line_value in reversed(line_values):
+        color, marker = line_styles[line_value]
         float_group = sorted(grouped_float.get(line_value, []), key=lambda row: int(row[x_key]))
         digitised_group = sorted(grouped_digitised.get(line_value, []), key=lambda row: int(row[x_key]))
         label = f"Riley, Tex, {'OS' if line_key == 'Oversamp' else 'SSAA'}={line_value}"
@@ -317,13 +325,19 @@ def _plot_limit_cuts(
         axes[0].grid(True, which="both", ls="--", alpha=0.4)
         axes[0].legend(loc="lower left", fontsize=7, frameon=True, facecolor="white", edgecolor="none")
         rows = [row for row in digitised_rows if int(row[fixed_key]) == fixed_value]
-        for index, bit_depth in enumerate(BIT_DEPTHS):
+        bit_colors = {
+            bit_depth: INTERPOLATOR_COLORS[index % len(INTERPOLATOR_COLORS)]
+            for index, bit_depth in enumerate(sorted(BIT_DEPTHS))
+        }
+        # Higher precision series go down first; lower bit depths remain
+        # visible when their limiting-cut curves coincide.
+        for bit_depth in sorted(BIT_DEPTHS, reverse=True):
             series = sorted((row for row in rows if int(row["BitDepth"]) == bit_depth), key=lambda row: int(row[x_key]))
             if series:
                 axes[1].plot(
                     [int(row[x_key]) for row in series], [float(row["max_eb"]) for row in series],
                     marker="o", linestyle={8: "-", 12: "--", 16: ":"}.get(bit_depth, "-"),
-                    color="#1f77b4", label=f"Riley, Tex, {fixed_name}={fixed_value}, {bit_depth}-bit",
+                    color=bit_colors[bit_depth], label=f"Riley, Tex, {fixed_name}={fixed_value}, {bit_depth}-bit",
                 )
         _set_max_lsb_axis(axes[1], rows)
         _axis_samples(axes[1], [int(row[x_key]) for row in rows], x_label)
@@ -364,6 +378,8 @@ def _write_analysis_figures(
 
 
 def _write_rows(path: Path, rows: list[dict[str, object]]) -> None:
+    if not rows:
+        return
     fields = [
         "Case", "Pattern", "Interpolator", "Frame", "SSAA", "Oversamp",
         "Samples", "Reference", "ReferenceMethod", "ReferenceParam",
@@ -388,8 +404,7 @@ def _write_digitised_rows(path: Path, rows: list[dict[str, object]]) -> None:
 
 
 def _quantize(image: np.ndarray, bit_depth: int) -> np.ndarray:
-    max_value = float(2**bit_depth - 1)
-    return np.clip(np.rint(image * max_value), 0.0, max_value)
+    return quantise_camera(image, bit_depth)
 
 
 def _load_riley_image(path: Path) -> np.ndarray:
@@ -446,8 +461,11 @@ def _analyse_riley_self_convergence_frame(
                 "e_inf": float(np.max(np.abs(difference))),
             })
             for bit_depth in BIT_DEPTHS:
+                # Camera codes are unsigned.  Promote before subtraction so
+                # a one-code negative error cannot wrap to 255/65535.
                 digitised_difference = (
-                    _quantize(image, bit_depth) - _quantize(reference, bit_depth)
+                    _quantize(image, bit_depth).astype(np.int32)
+                    - _quantize(reference, bit_depth).astype(np.int32)
                 )
                 digitised_by_interpolator[interpolator].append({
                     **base_row,
@@ -461,7 +479,7 @@ def _analyse_riley_self_convergence_frame(
 
     rectconv_root = Path(f"{RESULTS_DIR}_rectconv") / group_name
     for interpolator, rows in rows_by_interpolator.items():
-        output_dir = rectconv_root / interpolator
+        output_dir = rectconv_root / config_name(interpolator)
         output_dir.mkdir(parents=True, exist_ok=True)
         _clear_old_metric_images(output_dir, frame)
         title = (
@@ -532,8 +550,8 @@ def analyse_pattern(
             })
             for bit_depth in BIT_DEPTHS:
                 digitised_difference = (
-                    _quantize(image, bit_depth)
-                    - _quantize(reference_image, bit_depth)
+                    _quantize(image, bit_depth).astype(np.int32)
+                    - _quantize(reference_image, bit_depth).astype(np.int32)
                 )
                 frame_digitised_rows.append({
                     **base_row,
@@ -549,12 +567,12 @@ def analyse_pattern(
             release_batch()
             continue
         for interpolator in sorted({str(row["Interpolator"]) for row in frame_rows}):
-            output_dir = RESULTS_DIR / group_name / interpolator
+            output_dir = RESULTS_DIR / group_name / config_name(interpolator)
             output_dir.mkdir(parents=True, exist_ok=True)
             _clear_old_metric_images(output_dir, frame)
             interp_rows = [row for row in frame_rows if row["Interpolator"] == interpolator]
             title_prefix = (
-                f"Riley, Tex, {interpolator}: analytic convergence | frame {frame:02d}\n"
+                f"Riley, Tex, {interpolator}: convergence | frame {frame:02d}\n"
                 f"Reference: {reference_name}"
             )
             interpolator_digitised_rows = [
@@ -582,7 +600,7 @@ def analyse_pattern(
     _write_rows(group_dir / "summary.csv", rows)
     _write_digitised_rows(group_dir / "summary_digitised.csv", digitised_rows)
     for interpolator, interpolator_rows in rows_by_interpolator.items():
-        output_dir = group_dir / interpolator
+        output_dir = group_dir / config_name(interpolator)
         _write_rows(output_dir / "summary.csv", interpolator_rows)
         _write_digitised_rows(
             output_dir / "summary_digitised.csv",

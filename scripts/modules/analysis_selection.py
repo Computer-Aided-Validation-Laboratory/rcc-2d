@@ -24,5 +24,30 @@ def analysis_should_run(results_dir: Path, label: str) -> bool:
 
 
 def mark_analysis_complete(results_dir: Path) -> None:
-    results_dir.mkdir(parents=True, exist_ok=True)
+    """Mark a suite only when it actually produced analysis data.
+
+    Disabled render families and absent source data previously left a root
+    containing only this marker.  Remove such speculative empty directories
+    so ``out/`` reflects real analysis products only.
+    """
+    if not results_dir.exists():
+        return
+    has_output = any(
+        path.is_file() and path.name != MARKER
+        for path in results_dir.rglob("*")
+    )
+    if not has_output:
+        (results_dir / MARKER).unlink(missing_ok=True)
+        for path in sorted(results_dir.rglob("*"), key=lambda item: len(item.parts), reverse=True):
+            if path.is_dir():
+                try:
+                    path.rmdir()
+                except OSError:
+                    pass
+        try:
+            results_dir.rmdir()
+        except OSError:
+            pass
+        print(f"No analysis files were produced for {results_dir}; removed empty output directory.")
+        return
     (results_dir / MARKER).write_text("complete\n")

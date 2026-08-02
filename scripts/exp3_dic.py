@@ -40,6 +40,7 @@ from modules.exp3_dic_data import load_result, read_pyvale_binary, result_path, 
 from modules.render_selection import analysis_enabled, measurement_enabled
 from modules.output_naming import data_case_name, is_rigid_case
 from modules.analysis_parallel import run_analysis_jobs
+from modules.render_outputs import quantise_camera
 from exp0params_common import DIC_CASES
 from exp3params import (
     DIC_CORRELATION_THRESHOLD,
@@ -104,9 +105,10 @@ def read_uint8(path: Path) -> np.ndarray:
     image = np.load(path, mmap_mode="r")
     # Bespoke float renders are [0, 1], whereas Riley's corresponding NPY
     # output is already in camera-code units.  Preserve both conventions.
-    if float(np.nanmax(image)) > 1.0 + 1e-8:
-        return np.rint(np.clip(image, 0.0, 255.0)).astype(np.uint8)
-    return np.rint(np.clip(image, 0.0, 1.0) * 255.0).astype(np.uint8)
+    values = np.asarray(image, dtype=np.float64)
+    if values.size and float(np.nanmax(np.abs(values))) > 1.0 + 1e-8:
+        values /= 255.0
+    return quantise_camera(values, 8)
 
 
 def field_title(label: str, frame: int, component: str, width: int = 42) -> str:

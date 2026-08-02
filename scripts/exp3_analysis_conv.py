@@ -21,6 +21,7 @@ from exp3params import BIT_DEPTHS
 from modules.exp3_analysis_common import Render, best_reference, discover_renders, image_frames, load_image, numeric_y_axis, release, title_lines
 from modules.analysis_selection import analysis_should_run, mark_analysis_complete
 from modules.analysis_parallel import run_analysis_jobs
+from modules.render_outputs import quantise_camera
 
 RESULTS = Path("out/exp3_analysis_conv")
 RECT_RESULTS = Path("out/exp3_analysis_conv_rectconv")
@@ -39,8 +40,7 @@ def family(item: Render) -> str:
 
 def metrics(image: np.ndarray, reference: np.ndarray, bit_depth: int) -> tuple[float, float, float, float]:
     delta = image - reference
-    maximum = float((1 << bit_depth) - 1)
-    digitised = np.rint(np.clip(image, 0, 1) * maximum) - np.rint(np.clip(reference, 0, 1) * maximum)
+    digitised = quantise_camera(image, bit_depth).astype(np.float64) - quantise_camera(reference, bit_depth).astype(np.float64)
     values = (float(np.sqrt(np.mean(delta * delta))), float(np.max(np.abs(delta))), float(np.max(np.abs(digitised))), float(np.mean(digitised != 0)))
     del delta, digitised
     return values
@@ -55,7 +55,9 @@ def plot(rows: list[dict[str, object]], path: Path, heading: str, reference_name
     texture_series = any("_os" in str(row["Config"]) for row in rows)
     for axis, (field, ylabel) in zip(axes, fields):
         plotted: list[float] = []
-        for osamp, values in sorted(by_os.items()):
+        # Draw high OS first, leaving lower-OS curves visible where they
+        # overlap after the high-OS series has converged.
+        for osamp, values in sorted(by_os.items(), reverse=True):
             values.sort(key=lambda row: int(row["SSAA"]))
             x = [int(row["SSAA"]) for row in values]; y = [float(row[field]) for row in values]
             axis.plot(x, y, "o-", label=f"OS={osamp}" if texture_series else "SSAA series")
@@ -184,7 +186,10 @@ def main() -> None:
     primary: list[dict[str, object]] = []; self_rows: list[dict[str, object]] = []
     for a, b in run_analysis_jobs("Experiment 3 convergence analysis", tasks, analyse_group):
         primary.extend(a); self_rows.extend(b)
-    write_csv(RESULTS, primary); write_csv(RECT_RESULTS, self_rows); comparison_overlays(primary); mark_analysis_complete(RESULTS)
+    write_csv(RESULTS, primary); write_csv(RECT_RESULTS, self_rows)
+    if primary:
+        comparison_overlays(primary)
+    mark_analysis_complete(RESULTS)
     print(f"Wrote {len(primary)} primary and {len(self_rows)} self-convergence rows.")
 
 

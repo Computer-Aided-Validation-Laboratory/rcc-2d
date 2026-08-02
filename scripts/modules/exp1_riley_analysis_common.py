@@ -10,6 +10,7 @@
 import os
 import sys
 import shutil
+import re
 from pathlib import Path
 import numpy as np
 import matplotlib.pyplot as plt
@@ -39,6 +40,7 @@ from modules.output_naming import config_name
 from modules.analysis_selection import analysis_should_run, mark_analysis_complete
 from modules.analysis_parallel import run_analysis_jobs
 from modules.analysis_memory import make_agg_figure, release_batch, release_figure
+from modules.render_outputs import quantise_camera
 
 # Defaults make this base entry point usable directly.  The world, UV, and
 # texture-only wrappers below override these paths for their specific studies.
@@ -51,6 +53,36 @@ RESULTS_DIR_TEX = exp1_output_dir("exp1_riley_analysis_texuint")
 ANALYSIS_MODE = "both"
 CUSTOM_RENDER_SUFFIX = ""
 WRITE_RECTCONV = True
+
+
+def _include_completed_levels() -> None:
+    """Use all completed SSAA/OS/rule levels, not current render defaults.
+
+    Parameter lists control what new renders are launched.  Analysis must be
+    able to consume historical or workstation-produced levels (for example
+    SSAA/OS=1024) even when they are no longer selected for rendering.
+    """
+    global SSAA_LEVELS, TEX_OVERSAMPLES, INTEGRATION_METHODS
+    ssaa = set(SSAA_LEVELS)
+    oversamp = set(TEX_OVERSAMPLES)
+    methods = set(INTEGRATION_METHODS)
+    for directory in RILEY_FUNC_DIR.glob("*/*"):
+        match = re.fullmatch(r"ss(\d+)_f", directory.name)
+        if match:
+            ssaa.add(int(match.group(1)))
+    for directory in RILEY_TEX_DIR.glob("*/*"):
+        match = re.fullmatch(r"ss(\d+)_os(\d+)_f", directory.name)
+        if match:
+            ssaa.add(int(match.group(1)))
+            oversamp.add(int(match.group(2)))
+    rule = re.compile(r"_int_(analytic|rect|gauss)_param_(\d+)(?:_psf)?_frame\d+\.npy$")
+    for image in OUTPUT_DIR.glob("*/*.npy"):
+        match = rule.search(image.name)
+        if match:
+            methods.add((match.group(1), int(match.group(2))))
+    SSAA_LEVELS = sorted(ssaa)
+    TEX_OVERSAMPLES = sorted(oversamp)
+    INTEGRATION_METHODS = tuple(sorted(methods, key=lambda item: (item[0], item[1])))
 
 
 def _make_figure(
@@ -106,13 +138,13 @@ def _load_reference_for_frame(case_dir: Path, frame: int):
                 f"targ_px{TARG_PX_X}_int_{method}_param_{param}"
                 f"{CUSTOM_RENDER_SUFFIX}_frame{frame:02d}.npy"
             )
-            tiff_path = npy_path.with_name(f"{npy_path.stem}_b{bit_depth}.tiff")
-            if not (npy_path.exists() and tiff_path.exists()):
+            if not npy_path.exists():
                 continue
             floating = np.asarray(np.load(npy_path), dtype=np.float64)
+            if floating.size and np.nanmax(np.abs(floating)) > 1.0 + 1e-12:
+                floating /= float(2**bit_depth - 1)
             float_by_bit_depth[bit_depth] = floating
-            with Image.open(tiff_path) as image:
-                digitised_by_bit_depth[bit_depth] = np.asarray(image, dtype=np.float64)
+            digitised_by_bit_depth[bit_depth] = quantise_camera(floating, bit_depth).astype(np.float64)
         if float_by_bit_depth:
             return float_by_bit_depth, digitised_by_bit_depth, label
     return None
@@ -182,8 +214,15 @@ def _plot_texture_oversample_metrics(
     colors = plt.rcParams["axes.prop_cycle"].by_key()["color"]
     bit_styles = {8: "-", 12: "--", 16: ":"}
     plotted_bit_depths = [bit_depth] if bit_depth is not None else BIT_DEPTHS
-    for index, ssaa in enumerate(ssaa_values):
-        color = colors[index % len(colors)]
+    # Keep the colour assigned to each SSAA stable, but draw the largest
+    # integration level first.  Lower SSAA therefore remains visible where
+    # the converged high-SSAA curves overlap it.
+    ssaa_colors = {
+        ssaa: colors[index % len(colors)]
+        for index, ssaa in enumerate(ssaa_values)
+    }
+    for ssaa in reversed(ssaa_values):
+        color = ssaa_colors[ssaa]
         for axis, metric, title, ylabel in (
             (axes[0, 0], "e_f64", "Floating-Point RMSE", "RMSE"),
             (axes[0, 1], "e_inf", "Floating-Point Max Error", "Max error"),
@@ -231,11 +270,11 @@ def _plot_texture_oversample_metrics(
         axis.set_xlim(0.85 * oversamp_values[0], 1.15 * oversamp_values[-1])
         axis.grid(True, which="both", ls="--", alpha=0.4)
     handles = [
-        Line2D([], [], color=colors[index % len(colors)], marker="o", label=f"Riley, Tex, SSAA={ssaa}")
-        for index, ssaa in enumerate(ssaa_values)
+        Line2D([], [], color=ssaa_colors[ssaa], marker="o", label=f"Riley, Tex, SSAA={ssaa}")
+        for ssaa in ssaa_values
     ]
     handles.extend(
-        Line2D([], [], color="black", linestyle=bit_styles[plotted_bit_depth], label=f"{plotted_bit_depth}-bit")
+        Line2D([], [], color="black", linestyle=bit_styles.get(plotted_bit_depth, "-"), label=f"{plotted_bit_depth}-bit")
         for plotted_bit_depth in plotted_bit_depths
     )
     handles.extend(
@@ -285,8 +324,13 @@ def _plot_texture_ssaa_metrics(
     colors = plt.rcParams["axes.prop_cycle"].by_key()["color"]
     bit_styles = {8: "-", 12: "--", 16: ":"}
     plotted_bit_depths = [bit_depth] if bit_depth is not None else BIT_DEPTHS
-    for index, oversamp in enumerate(oversamp_values):
-        color = colors[index % len(colors)]
+    # As above, retain stable colours while layering high OS beneath low OS.
+    oversamp_colors = {
+        oversamp: colors[index % len(colors)]
+        for index, oversamp in enumerate(oversamp_values)
+    }
+    for oversamp in reversed(oversamp_values):
+        color = oversamp_colors[oversamp]
         for axis, metric, title, ylabel in (
             (axes[0, 0], "e_f64", "Floating-Point RMSE", "RMSE"),
             (axes[0, 1], "e_inf", "Floating-Point Max Error", "Max error"),
@@ -328,8 +372,8 @@ def _plot_texture_ssaa_metrics(
         axis.xaxis.set_major_formatter(FixedFormatter([str(value) for value in ssaa_values]))
         axis.set_xlim(0.85 * ssaa_values[0], 1.15 * ssaa_values[-1])
         axis.grid(True, which="both", ls="--", alpha=0.4)
-    handles = [Line2D([], [], color=colors[index % len(colors)], marker="o", label=f"Riley, Tex, OS={oversamp}") for index, oversamp in enumerate(oversamp_values)]
-    handles.extend(Line2D([], [], color="black", linestyle=bit_styles[plotted_bit_depth], label=f"{plotted_bit_depth}-bit") for plotted_bit_depth in plotted_bit_depths)
+    handles = [Line2D([], [], color=oversamp_colors[oversamp], marker="o", label=f"Riley, Tex, OS={oversamp}") for oversamp in oversamp_values]
+    handles.extend(Line2D([], [], color="black", linestyle=bit_styles.get(plotted_bit_depth, "-"), label=f"{plotted_bit_depth}-bit") for plotted_bit_depth in plotted_bit_depths)
     handles.extend([Line2D([], [], color="black", linestyle="--", label="1 LSB"), Line2D([], [], color="red", linestyle=":", label="0 LSB")])
     figure.suptitle(f"Texture SSAA Study ({group_label} OS){f', {bit_depth}-bit' if bit_depth is not None else ''}: {case_name} (Frame {frame:02d})\nReference: {reference_name}", fontweight="bold")
     figure.legend(handles=handles, loc="upper center", bbox_to_anchor=(0.5, 0.93), ncol=3, fontsize=6, frameon=True, facecolor="white", edgecolor="none")
@@ -591,7 +635,9 @@ def analyze_riley_case(case_name: str, tex_interp: str) -> None:
     print(80 * "=")
 
     case_dir = OUTPUT_DIR / case_name
-    results_dir_tex = RESULTS_DIR_TEX / tex_interp
+    # ``tex_interp`` is the Riley enum key; analysis outputs use the same
+    # portable canonical token as render directories (cubiccm, line, near).
+    results_dir_tex = RESULTS_DIR_TEX / config_name(tex_interp)
     results_dir_tex.mkdir(parents=True, exist_ok=True)
     ssaa_ticks = sorted(SSAA_LEVELS)
 
@@ -648,9 +694,7 @@ def analyze_riley_case(case_name: str, tex_interp: str) -> None:
                         f"targ_px{TARG_PX_X}_int_{method}_param_{param}"
                         f"{CUSTOM_RENDER_SUFFIX}_frame{ff:02d}.npy"
                     )
-                    tiff_path = npy_path.with_name(f"{npy_path.stem}_b{bb}.tiff")
-
-                    if npy_path.exists() and tiff_path.exists():
+                    if npy_path.exists():
                         # Float metrics
                         img_float = np.asarray(np.load(npy_path), dtype=np.float64)
                         diff = img_float - ref_float_by_bb[bb]
@@ -658,8 +702,7 @@ def analyze_riley_case(case_name: str, tex_interp: str) -> None:
                         e_inf = np.max(np.abs(diff))
 
                         # Digitised metrics
-                        with Image.open(tiff_path) as img:
-                            img_dig = np.array(img, dtype=np.float64)
+                        img_dig = quantise_camera(img_float, bb).astype(np.float64)
                         diff_dig = img_dig - ref_dig_by_bb[bb]
                         delta_b = np.mean(img_dig != ref_dig_by_bb[bb])
                         max_eb = np.max(np.abs(diff_dig))
@@ -695,14 +738,15 @@ def analyze_riley_case(case_name: str, tex_interp: str) -> None:
                 max_val = float(2**bb - 1)
                 npy_path, tiff_path = _riley_function_paths(case_name, ss, bb, ff)
 
-                if npy_path.exists() and tiff_path.exists():
-                    img_float = np.load(npy_path) / max_val
+                if npy_path.exists():
+                    img_float = np.asarray(np.load(npy_path), dtype=np.float64)
+                    if img_float.size and np.nanmax(np.abs(img_float)) > 1.0 + 1e-12:
+                        img_float /= max_val
                     diff = img_float - ref_float_by_bb[bb]
                     e_f64 = np.sqrt(np.mean(diff**2))
                     e_inf = np.max(np.abs(diff))
 
-                    with Image.open(tiff_path) as img:
-                        img_dig = np.array(img, dtype=np.float64)
+                    img_dig = quantise_camera(img_float, bb).astype(np.float64)
                     diff_dig = img_dig - ref_dig_by_bb[bb]
                     delta_b = np.mean(img_dig != ref_dig_by_bb[bb])
                     max_eb = np.max(np.abs(diff_dig))
@@ -744,14 +788,15 @@ def analyze_riley_case(case_name: str, tex_interp: str) -> None:
                         case_name, tex_interp, ss, oversamp, bb, ff
                     )
 
-                    if npy_path.exists() and tiff_path.exists():
-                        img_float = np.load(npy_path) / max_val
+                    if npy_path.exists():
+                        img_float = np.asarray(np.load(npy_path), dtype=np.float64)
+                        if img_float.size and np.nanmax(np.abs(img_float)) > 1.0 + 1e-12:
+                            img_float /= max_val
                         diff = img_float - ref_float_by_bb[bb]
                         e_f64 = np.sqrt(np.mean(diff**2))
                         e_inf = np.max(np.abs(diff))
 
-                        with Image.open(tiff_path) as img:
-                            img_dig = np.array(img, dtype=np.float64)
+                        img_dig = quantise_camera(img_float, bb).astype(np.float64)
                         diff_dig = img_dig - ref_dig_by_bb[bb]
                         delta_b = np.mean(img_dig != ref_dig_by_bb[bb])
                         max_eb = np.max(np.abs(diff_dig))
@@ -1526,16 +1571,14 @@ def analyze_riley_case(case_name: str, tex_interp: str) -> None:
 
 def _load_riley_pair(npy_path: Path, tiff_path: Path, bit_depth: int):
     """Load one Riley render in normalised float and digitised form."""
-    if not npy_path.exists() or not tiff_path.exists():
+    if not npy_path.exists():
         return None
-    with Image.open(tiff_path) as image:
-        digitised = np.asarray(image, dtype=np.float64)
     floating = np.asarray(np.load(npy_path), dtype=np.float64)
     # Canonical float renders are already normalised; historical bit-labelled
     # Riley outputs stored code-scaled arrays.
     if floating.size and np.nanmax(np.abs(floating)) > 1.0 + 1e-12:
         floating /= float(2**bit_depth - 1)
-    return floating, digitised
+    return floating, quantise_camera(floating, bit_depth).astype(np.float64)
 
 
 def _riley_texture_paths(
@@ -1583,7 +1626,10 @@ def analyse_riley_self_convergence(
         sources = (
             [("Riley, Func", None)]
             if mode == "func"
-            else [(f"Riley, Tex, OS={oversamp}", oversamp) for oversamp in TEX_OVERSAMPLES]
+            else [
+                (f"Riley, Tex, OS={oversamp}", oversamp)
+                for oversamp in sorted(TEX_OVERSAMPLES, reverse=True)
+            ]
         )
         labels = [label for label, _ in sources]
         records = []
@@ -1622,6 +1668,7 @@ def analyse_riley_self_convergence(
                         {
                             "label": label,
                             "bit_depth": bit_depth,
+                            "oversamp": oversamp,
                             "ssaa": ssaa,
                             "ref_ssaa": ref_ssaa,
                             "e_f64": float(np.sqrt(np.mean(float_diff**2))),
@@ -1638,102 +1685,46 @@ def analyse_riley_self_convergence(
             release_batch()
             continue
 
-        fig, axes = _make_figure(figsize=(14, 10))
-        preferred_bit_depth = 16 if 16 in BIT_DEPTHS else max(BIT_DEPTHS)
-        colors = plt.rcParams["axes.prop_cycle"].by_key()["color"]
-        for index, label in enumerate(labels):
-            color = colors[index % len(colors)]
-            float_records = [
-                record for record in records
-                if record["label"] == label and record["bit_depth"] == preferred_bit_depth
-            ]
-            if float_records:
-                float_records.sort(key=lambda record: record["ssaa"])
-                ref_ssaa = float_records[0]["ref_ssaa"]
-                samples = [record["ssaa"] for record in float_records]
-                axes[0, 0].loglog(samples, [record["e_f64"] for record in float_records], marker="o", color=color, label=f"{label}, ref SSAA={ref_ssaa}")
-                axes[0, 1].loglog(samples, [record["e_inf"] for record in float_records], marker="o", color=color, label=f"{label}, ref SSAA={ref_ssaa}")
-            for bit_depth in BIT_DEPTHS:
-                digitised_records = [
-                    record for record in records
-                    if record["label"] == label and record["bit_depth"] == bit_depth
-                ]
-                if not digitised_records:
-                    continue
-                digitised_records.sort(key=lambda record: record["ssaa"])
-                samples = [record["ssaa"] for record in digitised_records]
-                axes[1, 0].semilogx(samples, [record["delta_b"] for record in digitised_records], marker="o", color=color, linestyle={8: "-", 12: "--", 16: ":"}.get(bit_depth, "-"), label=f"{label}, {bit_depth}-bit")
-                axes[1, 1].loglog(samples, np.maximum(0.2, [record["max_eb"] for record in digitised_records]), marker="o", color=color, linestyle={8: "-", 12: "--", 16: ":"}.get(bit_depth, "-"), label=f"{label}, {bit_depth}-bit")
-
-        for bit_depth in BIT_DEPTHS:
-            max_value = float(2**bit_depth - 1)
-            axes[0, 0].axhline(1.0 / max_value, color="black", linestyle={8: "-", 12: "--", 16: ":"}.get(bit_depth, "-"), alpha=0.35)
-            axes[0, 1].axhline(0.5 / max_value, color="red", linestyle={8: "-", 12: "--", 16: ":"}.get(bit_depth, "-"), alpha=0.35)
-        axes[1, 1].axhline(1.0, color="black", linestyle="--", alpha=0.6, label="1 LSB")
-        axes[1, 1].axhline(0.2, color="red", linestyle=":", alpha=0.6, label="0 LSB")
-        titles = ("Floating-Point RMSE", "Floating-Point Max Error", "Digitised Mismatch Fraction", "Maximum Digitised Mismatch")
-        ylabels = ("RMSE", "Max error", "Fraction of differing pixels", "LSB levels")
-        sample_ticks = sorted(
-            {
-                record["ssaa"]
-                for record in records
+        reference_name = "Highest available SSAA at each series"
+        if mode == "tex":
+            # Reuse the normal texture-analysis writer exactly: only the
+            # reference changes for self-convergence.
+            riley_tex = {
+                bit_depth: {
+                    osamp: {key: [] for key in ("samples", "e_f64", "e_inf", "delta_b", "max_eb")}
+                    for osamp in TEX_OVERSAMPLES
+                }
+                for bit_depth in BIT_DEPTHS
             }
-            | {
-                record["ref_ssaa"]
-                for record in records
+            for record in records:
+                slot = riley_tex[record["bit_depth"]][record["oversamp"]]
+                slot["samples"].append(record["ssaa"])
+                for key in ("e_f64", "e_inf", "delta_b", "max_eb"):
+                    slot[key].append(record[key])
+            _write_texture_analysis_figures(riley_tex, case_name, frame, output_dir, reference_name)
+            del riley_tex
+        else:
+            # Function-shader self convergence uses the same four-panel
+            # function writer as the analytic-reference study.
+            empty = {key: [] for key in ("samples", "e_f64", "e_inf", "delta_b", "max_eb")}
+            custom_data = {
+                bit_depth: {"rect": empty.copy(), "gauss": empty.copy()}
+                for bit_depth in BIT_DEPTHS
             }
-        )
-        for axis, title, ylabel in zip(axes.flat, titles, ylabels):
-            axis.set_title(title)
-            axis.set_xlabel("Samples Along One Pixel Axis")
-            axis.set_ylabel(ylabel)
-            axis.xaxis.set_major_locator(FixedLocator(sample_ticks))
-            axis.xaxis.set_major_formatter(FixedFormatter([str(tick) for tick in sample_ticks]))
-            axis.set_xlim(
-                0.85,
-                1.15 * max(
-                    max(record["ssaa"], record["ref_ssaa"]) for record in records
-                ),
+            riley_func = {
+                bit_depth: {key: [] for key in empty}
+                for bit_depth in BIT_DEPTHS
+            }
+            for record in records:
+                slot = riley_func[record["bit_depth"]]
+                slot["samples"].append(record["ssaa"])
+                for key in ("e_f64", "e_inf", "delta_b", "max_eb"):
+                    slot[key].append(record[key])
+            _write_function_analysis_figure(
+                custom_data, riley_func, case_name, frame, output_dir,
+                16 if 16 in BIT_DEPTHS else max(BIT_DEPTHS), reference_name,
             )
-            axis.grid(True, which="both", ls="--", alpha=0.4)
-        handles = []
-        for index, label in enumerate(labels):
-            reference_ssaa = max(
-                record["ref_ssaa"] for record in records if record["label"] == label
-            )
-            handles.append(
-                Line2D(
-                    [], [], color=colors[index % len(colors)], marker="o",
-                    label=f"{label}, ref SSAA={reference_ssaa}",
-                )
-            )
-        handles.extend(
-            Line2D([], [], color="black", linestyle=style, label=f"{bit_depth}-bit")
-            for bit_depth, style in ((8, "-"), (12, "--"), (16, ":"))
-            if bit_depth in BIT_DEPTHS
-        )
-        handles.extend(
-            [
-                Line2D([], [], color="black", linestyle="--", label="1 LSB"),
-                Line2D([], [], color="red", linestyle=":", label="0 LSB"),
-            ]
-        )
-        fig.legend(
-            handles=handles,
-            loc="upper center",
-            bbox_to_anchor=(0.5, 0.93),
-            ncol=3,
-            fontsize=6,
-            frameon=True,
-            facecolor="white",
-            edgecolor="none",
-        )
-        axes[1, 1].set_ylim(0.16, None)
-        fig.suptitle(f"Riley Self-Convergence: {case_name} (Frame {frame:02d})\nReference: highest available SSAA per series", fontweight="bold")
-        fig.tight_layout(rect=(0, 0, 1, 0.86))
-        prefix = "func" if mode == "func" else "tex"
-        fig.savefig(output_dir / f"{case_name}_{prefix}_self_convergence_frame{frame:02d}.png", dpi=150)
-        _release_figure(fig)
+            del custom_data, riley_func
         del records, labels
         release_batch()
 
@@ -1762,6 +1753,7 @@ def main() -> None:
     results_dir = RESULTS_DIR_FUNC if ANALYSIS_MODE == "func" else RESULTS_DIR_TEX
     if not analysis_should_run(results_dir, f"Experiment 1 Riley {ANALYSIS_MODE} analysis"):
         return
+    _include_completed_levels()
     rectconv_dir = Path(f"{results_dir}_rectconv")
     if CLEAR_DIR and not is_subset_analysis:
         shutil.rmtree(results_dir, ignore_errors=True)
@@ -1795,7 +1787,11 @@ def main() -> None:
         (
             case_name,
             tex_interp,
-            (rectconv_dir if ANALYSIS_MODE == "func" else rectconv_dir / tex_interp)
+            (
+                rectconv_dir
+                if ANALYSIS_MODE == "func"
+                else rectconv_dir / config_name(tex_interp)
+            )
             if WRITE_RECTCONV else None,
         )
         for tex_interp in interps for case_name in cases
