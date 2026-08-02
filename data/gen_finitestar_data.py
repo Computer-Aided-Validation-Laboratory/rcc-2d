@@ -1,7 +1,10 @@
 import os
 import sys
 import numpy as np
-import gmsh
+try:
+    import gmsh
+except ImportError:  # Manual mesh generation does not require Gmsh.
+    gmsh = None
 
 # -----------------------------------------------------------------------------
 # Configurable constants
@@ -41,7 +44,9 @@ CHIRP_A0 = 0.5  # Peak displacement in pixels
 # intervals (four elements) per shortest effective wavelength.
 MIN_Q2_INTERVALS_PER_WAVELENGTH = 8
 
-# Calculate physical pixel size (based on X direction)
+# ``CAMERA_PIXELS`` is retained solely for the legacy data-case label and ROI
+# convention.  Prescribed amplitudes and wavelengths are expressed in final
+# rendered-image pixels, so conversions must use the final camera pitch.
 PIXEL_SIZE = ROI_SIZE_X / CAMERA_PIXELS
 FINAL_PIXEL_SIZE = ROI_SIZE_X / FINAL_CAMERA_PIXELS_X
 CHIRP_LAMBDA_MIN = CHIRP_LAMBDA_MIN_FINAL_PX * FINAL_PIXEL_SIZE
@@ -212,6 +217,8 @@ def generate_manual_chirp(a0_phys, vis_fn, vis_dir):
 
 def generate_gmsh_chirp(a0_phys, vis_fn, vis_dir):
     """Generate the chirp mesh using the Gmsh Python API."""
+    if gmsh is None:
+        raise ImportError("Gmsh generation was requested but the gmsh package is unavailable.")
     gmsh.initialize()
     gmsh.model.add("chirp_gmsh")
 
@@ -302,7 +309,9 @@ def generate_gmsh_chirp(a0_phys, vis_fn, vis_dir):
 
 
 def main():
-    a0_phys = CHIRP_A0 * PIXEL_SIZE
+    # CHIRP_A0 is specified in final-camera pixels.  This remains correct if
+    # the final image resolution changes while the physical ROI is retained.
+    a0_phys = CHIRP_A0 * FINAL_PIXEL_SIZE
 
     # Import visualizer function dynamically
     script_dir = os.path.dirname(os.path.abspath(__file__))

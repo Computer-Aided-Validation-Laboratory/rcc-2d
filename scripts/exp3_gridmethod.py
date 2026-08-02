@@ -31,7 +31,7 @@ if str(HERE) not in sys.path:
     sys.path.insert(0, str(HERE))
 
 from exp0params_common import GRIDMETHOD_CASES
-from exp3params import EGGBOX_PERIOD_FINAL_PX
+from exp3params import EGGBOX_PERIOD_FINAL_PX, GRIDMETHOD_WINDOW, GRIDMETHOD_WINDOW_WIDTH_PERIODS
 from modules.gridmethod import GridMethodConfig, analyse_sequence
 from modules.render_selection import analysis_enabled, measurement_enabled
 from modules.output_naming import data_case_name, is_rigid_case
@@ -42,6 +42,8 @@ OUT_ROOT = Path("out")
 RESULT_ROOT = OUT_ROOT / "exp3_gridmethod"
 CASE_FILTER = os.environ.get("EXP3_GRIDMETHOD_CASE")
 LIMIT = int(os.environ.get("EXP3_GRIDMETHOD_LIMIT", "0"))
+FIELD_PLOT_LAYOUT_VERSION = "stacked-finite-star-v1"
+GRIDMETHOD_RESULT_VERSION = f"window-{GRIDMETHOD_WINDOW}-{GRIDMETHOD_WINDOW_WIDTH_PERIODS:g}-v2"
 
 
 def image_frames(directory: Path) -> list[Path]:
@@ -88,11 +90,38 @@ def sequence_complete(case: str, root: str, directory: Path, frame_count: int) -
     )
     if not fields_complete:
         return False
+    config_marker = out_dir / ".gridmethod_result_version"
+    if not config_marker.is_file() or config_marker.read_text().strip() != GRIDMETHOD_RESULT_VERSION:
+        return False
     return (
         not is_rigid_case(case)
         or ((out_dir / "rigid_motion_summary.csv").is_file()
             and (out_dir / "rigid_motion_summary.png").is_file())
     )
+
+
+def field_plot_marker(out_dir: Path) -> Path:
+    return out_dir / ".field_plot_layout"
+
+
+def refresh_field_figures(case: str, root: str, directory: Path, frame_count: int) -> bool:
+    """Regenerate field PNGs from stored results when only styling changed."""
+    out_dir = result_dir(case, root, directory)
+    marker = field_plot_marker(out_dir)
+    if marker.is_file() and marker.read_text().strip() == FIELD_PLOT_LAYOUT_VERSION:
+        return False
+    paths = [out_dir / f"displacement_frame{frame:02d}.npz" for frame in range(frame_count)]
+    if not all(path.is_file() for path in paths):
+        return False
+    for frame, path in enumerate(paths):
+        with np.load(path) as data:
+            save_field(
+                out_dir / f"displacement_frame{frame:02d}.png",
+                np.asarray(data["ux"]), np.asarray(data["uy"]), frame,
+                EGGBOX_PERIOD_FINAL_PX, directory.name,
+            )
+    marker.write_text(f"{FIELD_PLOT_LAYOUT_VERSION}\n")
+    return True
 
 
 def clear_generated_artifacts(case: str, root: str, directory: Path) -> None:
@@ -101,6 +130,7 @@ def clear_generated_artifacts(case: str, root: str, directory: Path) -> None:
     for pattern in (
         "displacement_frame*.png", "displacement_frame*.npz",
         "rigid_motion_summary.csv", "rigid_motion_summary.png",
+        ".gridmethod_result_version",
     ):
         for path in out_dir.glob(pattern):
             path.unlink()
@@ -131,8 +161,15 @@ def field_title(label: str, frame: int, component: str, width: int = 42) -> str:
 
 
 def save_field(path: Path, ux: np.ndarray, uy: np.ndarray, frame: int, pitch: float, label: str) -> None:
-    fig, axes = plt.subplots(1, 2, figsize=(10, 4.4), constrained_layout=True)
-    for axis, field, name in zip(axes, (ux, uy), ("$u_x$", "$u_y$")):
+    # The finite-star image is about 4:1.  Stack its components, matching the
+    # DIC presentation, rather than squeezing two wide maps side by side.
+    stack_fields = ux.shape[1] / ux.shape[0] > 2.0
+    fig, axes = (
+        plt.subplots(2, 1, figsize=(10, 7.0), constrained_layout=True)
+        if stack_fields
+        else plt.subplots(1, 2, figsize=(10, 4.4), constrained_layout=True)
+    )
+    for axis, field, name in zip(np.ravel(axes), (ux, uy), ("$u_x$", "$u_y$")):
         # Natural per-field limits expose variation about the nominal motion.
         image = axis.imshow(field, cmap="coolwarm", origin="upper")
         rows, cols = field.shape
@@ -164,7 +201,11 @@ def save_rigid_summary(path: Path, rows: list[dict[str, float | int]], label: st
 def analyse(case: str, root: str, directory: Path) -> None:
     files = image_frames(directory)
     images = np.stack([np.load(path, mmap_mode="r") for path in files]).astype(np.float64, copy=False)
-    config = GridMethodConfig(period_px=EGGBOX_PERIOD_FINAL_PX, window_width_periods=2.0, window="gaussian", displacement_method="iterative", unwrap="reliability")
+    config = GridMethodConfig(
+        period_px=EGGBOX_PERIOD_FINAL_PX,
+        window_width_periods=GRIDMETHOD_WINDOW_WIDTH_PERIODS,
+        window=GRIDMETHOD_WINDOW, displacement_method="iterative", unwrap="reliability",
+    )
     result = analyse_sequence(images, config)
     out_dir = result_dir(case, root, directory)
     out_dir.mkdir(parents=True, exist_ok=True)
@@ -184,6 +225,8 @@ def analyse(case: str, root: str, directory: Path) -> None:
             writer = csv.DictWriter(stream, fieldnames=list(rows[0]))
             writer.writeheader(); writer.writerows(rows)
         save_rigid_summary(out_dir / "rigid_motion_summary.png", rows, directory.name)
+    field_plot_marker(out_dir).write_text(f"{FIELD_PLOT_LAYOUT_VERSION}\n")
+    (out_dir / ".gridmethod_result_version").write_text(f"{GRIDMETHOD_RESULT_VERSION}\n")
     del images, result, crosscheck
     gc.collect()
 
@@ -205,6 +248,8 @@ def main() -> None:
     for index, (case, root, directory) in enumerate(jobs, start=1):
         print(f"[{index}/{len(jobs)}] {root}/{case}/{directory.name}")
         frame_count = len(image_frames(directory))
+        if refresh_field_figures(case, root, directory, frame_count):
+            print("  refreshed displacement figures from stored fields")
         if sequence_complete(case, root, directory, frame_count):
             print("  complete: Grid Method fields and diagnostics already exist; skipping")
             continue

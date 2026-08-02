@@ -478,7 +478,9 @@ def _save(image: np.ndarray, root: Path, prefix: str) -> None:
     # Camera files are top-row-first, matching Riley's saved arrays and the
     # existing Exp1/2 output convention.  Rendering maths uses +Y-up.
     image = np.ascontiguousarray(np.flipud(image), dtype=np.float64)
-    save_float_and_depths(root / f"{prefix}.npy", image, bit_depths())
+    save_float_and_depths(
+        root / f"{prefix}.npy", image, bit_depths(), overwrite=force_render(),
+    )
 
 
 def bespoke_render(case: str, pattern: str, method: str, param: int, *, texture_os: int | None = None, interp: str = "linear", psf: bool = False) -> Path:
@@ -668,6 +670,9 @@ def riley_render(case: str, pattern: str, shader: str, ssaa: int, *, texture_os:
                 rendered /= float(2**source_bits - 1)
             else:
                 rendered /= float(2**source_bits - 1)
-            save_float_and_depths(root/f"image_c00_f{frame:02d}.npy", rendered, bit_depths())
+            save_float_and_depths(
+                root / f"image_c00_f{frame:02d}.npy", rendered, bit_depths(),
+                overwrite=force_render(),
+            )
     mark_case_outputs(root, signature)
     return root

@@ -44,6 +44,12 @@ DIC_CORRELATION_THRESHOLD = 0.8
 # independent processes import them and generate displacement figures.
 DIC_POSTPROCESS_JOBS = CORES
 
+# Grid-method local-spectrum window.  The bi-triangular window has compact,
+# symmetric support of one grid pitch either side of its centre, avoiding the
+# broad Gaussian window that spatially averaged the 32-pixel finite-star wave.
+GRIDMETHOD_WINDOW = "triangular"
+GRIDMETHOD_WINDOW_WIDTH_PERIODS = 1.0
+
 if TEST_RUN:
     SSAA_LEVELS = [1, 2, 4, 8, 16]
     TEX_OVERSAMPLES = [1, 2, 4, 8, 16]
