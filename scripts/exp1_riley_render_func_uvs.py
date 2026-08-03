@@ -42,6 +42,7 @@ from modules.psf_riley_common import camera_kwargs, enabled as psf_enabled
 from modules.render_selection import riley_enabled
 from modules.render_outputs import save_float_and_depths, float_and_depths_complete
 from modules.render_logging import case_label, render_log
+from modules.exp12_geometry import roi_corners
 
 OUTPUT_ROOT = exp1_output_dir("exp1_riley_render_func_uvs_psf" if psf_enabled() else "exp1_riley_render_func_uvs")
 
@@ -145,15 +146,7 @@ def main() -> None:
         )
 
         # Auto-placement of camera
-        roi_coords = np.array(
-            [
-                [-128.0, -128.0, 0.0],
-                [128.0, -128.0, 0.0],
-                [128.0, 128.0, 0.0],
-                [-128.0, 128.0, 0.0],
-            ],
-            dtype=np.float64,
-        )
+        roi_coords = roi_corners()
 
         pixels_num = (TARG_PX_X, TARG_PX_Y)
         pixels_size = (1.0, 1.0)

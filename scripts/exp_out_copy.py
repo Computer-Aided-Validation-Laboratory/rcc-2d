@@ -2,7 +2,7 @@
 """Safely import completed non-test Exp render/measurement outputs.
 
 This copier is intentionally source-driven: a workstation export may contain
-only a subset of the TEST_RUN=False matrix.  Every source output file absent
+only a subset of the ``RUN_MODE = ALL`` matrix.  Every source output file absent
 from the local output tree is copied with its directory structure preserved;
 an existing destination file is never overwritten.
 """

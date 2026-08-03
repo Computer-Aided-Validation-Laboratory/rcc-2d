@@ -1,14 +1,20 @@
 import os
 import sys
+from pathlib import Path
 import numpy as np
 
-# Configurable constants
-PLATE_SIZE = 260.0
-CAMERA_PIXELS = 256
-ROI_SIZE = 256.0
+REPO_ROOT = Path(__file__).resolve().parents[1]
+SCRIPTS_DIR = REPO_ROOT / "scripts"
+if str(SCRIPTS_DIR) not in sys.path:
+    sys.path.insert(0, str(SCRIPTS_DIR))
+from modules.exp12_geometry import FRAME_STEP_PIXELS, PLATE_PIXELS, ROI_PIXELS
 
-# Calculate physical pixel size
-PIXEL_SIZE = ROI_SIZE / CAMERA_PIXELS
+# Configurable constants
+# Exp1/2 work directly in final-image pixel units.  The data-case ``cam``
+# label now names the actual final camera ROI, rather than a historical scale.
+PLATE_SIZE = float(PLATE_PIXELS)
+CAMERA_PIXELS = ROI_PIXELS
+ROI_SIZE = float(ROI_PIXELS)
 
 
 def save_csv(path, data, is_int=False):
@@ -122,13 +128,16 @@ def generate_quad9_saddle_case():
     num_frames = 11
     coords, connect = get_mesh("quad9", PLATE_SIZE)
     uvs = compute_uvs(coords, ROI_SIZE)
-    disp_vals = np.arange(num_frames, dtype=np.float64) * 0.1 * PIXEL_SIZE
+    disp_vals = (
+        np.arange(num_frames, dtype=np.float64)
+        * FRAME_STEP_PIXELS
+    )
     half_plate = PLATE_SIZE / 2.0
     xi = coords[:, 0] / half_plate
     eta = coords[:, 1] / half_plate
 
     # u_x = d/2 (xi^2 - eta^2), u_y = d xi eta.  The corner magnitude
-    # is exactly d, so this shares the 0--1 physical-pixel ramp of the
+    # is exactly d, so this shares the 0--1 final-image-pixel ramp of the
     # rigid and affine cases.
     disp_x = np.outer(0.5 * (xi**2 - eta**2), disp_vals)
     disp_y = np.outer(xi * eta, disp_vals)
@@ -151,8 +160,9 @@ def generate_cases():
     os.makedirs(vis_dir, exist_ok=True)
 
     # Precompute frames and displacement scales
-    disp_pixels = np.arange(num_frames) * 0.1
-    disp_vals = disp_pixels * PIXEL_SIZE
+    # Coordinates and displacements are final-image pixels: frame 10 is an
+    # exact one-pixel translation of the reference material.
+    disp_vals = np.arange(num_frames) * FRAME_STEP_PIXELS
 
     for etype in etypes:
         coords, connect = get_mesh(etype, PLATE_SIZE)
@@ -210,6 +220,10 @@ def generate_cases():
 
 
 if __name__ == "__main__":
+    print(
+        "Generating single-element deformation data in final-image pixels: "
+        f"plate={PLATE_PIXELS}, ROI={ROI_PIXELS}."
+    )
     if len(sys.argv) > 1 and sys.argv[1] == "--quadsaddle-only":
         generate_quad9_saddle_case()
     else:

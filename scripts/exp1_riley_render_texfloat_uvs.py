@@ -40,6 +40,8 @@ from modules.render_outputs import float_and_depths_complete, save_float_and_dep
 from modules.render_selection import float_textures_enabled
 from modules.render_logging import case_label, render_log
 from modules.output_naming import config_name
+from modules.exp12_geometry import ROI_PIXELS, TEXTURE_PAD_PIXELS, roi_corners, texture_world_uvs
+from exp0params_common import EXP12_TEST_SAMPLE_LEVELS, RUN_MODE, RunMode
 
 OUTPUT_ROOT = exp1_output_dir("exp1_riley_render_texfloat_psf" if psf_enabled() else "exp1_riley_render_texfloat")
 
@@ -48,7 +50,8 @@ def get_ssaa_levels() -> list[int]:
     """Return configured SSAA levels, optionally restricted by the env."""
     levels_str = os.environ.get("EXP1_SSAA_LEVELS")
     if not levels_str:
-        return SSAA_LEVELS
+        levels = list(SSAA_LEVELS)
+        return sorted(set(levels) | set(EXP12_TEST_SAMPLE_LEVELS)) if RUN_MODE is RunMode.BIG else levels
     return [int(value.strip()) for value in levels_str.split(",") if value.strip()]
 
 
@@ -64,7 +67,12 @@ def get_texture_oversamples() -> list[int]:
     """Return configured texture oversamples, optionally restricted by env."""
     oversamp_str = os.environ.get("EXP1_TEX_OVERSAMPLES")
     if not oversamp_str:
-        return TEX_OVERSAMPLES
+        levels = list(TEX_OVERSAMPLES)
+        return sorted(set(levels) | set(EXP12_TEST_SAMPLE_LEVELS)) if RUN_MODE is RunMode.BIG else levels
+
+
+def should_render_pair(ssaa: int, oversamp: int) -> bool:
+    return not (RUN_MODE is RunMode.BIG and ssaa in EXP12_TEST_SAMPLE_LEVELS and oversamp in EXP12_TEST_SAMPLE_LEVELS)
     return [int(value.strip()) for value in oversamp_str.split(",") if value.strip()]
 
 
@@ -107,18 +115,10 @@ def compute_texture_world_uvs(
     pad: int,
     oversamp: int,
 ) -> np.ndarray:
-    """Map world coordinates to centres of the generated texture texels."""
-    tex_w = oversamp * (texture_pixels + 2 * pad)
-    tex_h = oversamp * (texture_pixels + 2 * pad)
-    pixel_size = roi_size / texture_pixels
-    texel_size = pixel_size / oversamp
-    x_start = -0.5 * roi_size - pad * pixel_size
-    y_end = 0.5 * roi_size + pad * pixel_size
-
-    uvs = np.empty((coords.shape[0], 2), dtype=np.float64)
-    uvs[:, 0] = ((coords[:, 0] - x_start) / texel_size - 0.5) / (tex_w - 1.0)
-    uvs[:, 1] = ((y_end - coords[:, 1]) / texel_size - 0.5) / (tex_h - 1.0)
-    return np.ascontiguousarray(uvs)
+    """Map reference material coordinates using the shared pixel convention."""
+    if roi_size != ROI_PIXELS or texture_pixels != ROI_PIXELS or pad != TEXTURE_PAD_PIXELS:
+        raise ValueError("Exp1 texture UVs require the shared final-pixel geometry.")
+    return texture_world_uvs(coords, oversamp)
 
 
 def render_exists(case_out: Path, num_frames: int) -> bool:
@@ -201,15 +201,7 @@ def main() -> None:
 
         _camera_pixels, roi_size = parse_case_params(case_path)
         texture_pixels = max(TARG_PX_X, TARG_PX_Y)
-        roi_coords = np.array(
-            [
-                [-128.0, -128.0, 0.0],
-                [128.0, -128.0, 0.0],
-                [128.0, 128.0, 0.0],
-                [-128.0, 128.0, 0.0],
-            ],
-            dtype=np.float64,
-        )
+        roi_coords = roi_corners()
         camera_pos = riley.pos_fill_frame_from_rot(
             roi_coords,
             (TARG_PX_X, TARG_PX_Y),
@@ -225,6 +217,8 @@ def main() -> None:
             tex_sample = RILEY_TEXTURE_SAMPLERS[tex_interp]
             for ssaa in get_ssaa_levels():
                     for oversamp in get_texture_oversamples():
+                        if not should_render_pair(ssaa, oversamp):
+                            continue
                         case_out = OUTPUT_ROOT / f"{case_name}_{config_name(tex_interp)}" / config_name(f"ss{ssaa}_oversamp{oversamp}_f")
                         float_paths = [case_out / f"image_c00_f{frame:02d}.npy" for frame in range(num_frames)]
                         if all(path.exists() for path in float_paths) and not FORCE_RENDER_OVER:

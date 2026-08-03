@@ -52,12 +52,14 @@ from exp2_riley_render_texfloat import (
     get_texture_oversamples,
     intensity_from_coverage,
     pattern_tag,
+    should_render_pair,
 )
 from exp2params import additive_jitter_for
 from modules.script_timing import ScriptTimer, timed_call
 from modules.render_selection import riley_enabled
 from modules.render_logging import case_label, render_log
 from modules.output_naming import config_name
+from modules.exp12_geometry import roi_corners
 
 
 # Exp2 deliberately creates large oversampled textures.  They are local,
@@ -128,11 +130,7 @@ def main() -> None:
         disp[:, :, 1] = disp_y.T
         frames = range(num_frames)
         _camera_pixels, roi_size = parse_case_params(case_path)
-        roi_coords = np.array(
-            [[-128.0, -128.0, 0.0], [128.0, -128.0, 0.0],
-             [128.0, 128.0, 0.0], [-128.0, 128.0, 0.0]],
-            dtype=np.float64,
-        )
+        roi_coords = roi_corners()
         camera_pos = riley.pos_fill_frame_from_rot(
             roi_coords, (TARG_PX_X, TARG_PX_Y), (1.0, 1.0), 1000.0,
             (0.0, 0.0, 0.0), 1.0,
@@ -151,6 +149,8 @@ def main() -> None:
                         for bit_depth in get_bit_depths():
                             maximum = float(2**bit_depth - 1)
                             for oversamp in get_texture_oversamples():
+                                if not should_render_pair(ssaa, oversamp):
+                                    continue
                                 case_out = (
                                     OUTPUT_ROOT / f"{case_name}_{tag}_{config_name(interp_name)}"
                                     / config_name(f"ss{ssaa}_b{bit_depth}_oversamp{oversamp}")

@@ -13,8 +13,9 @@ from typing import List, Tuple
 
 import riley
 from exp0params_common import (
-    CORES, FORCE_RENDER_OVER, NUM_PROCESSES, RILEY_RASTER_THREADS, TEST_RUN,
+    CORES, FORCE_RENDER_OVER, NUM_PROCESSES, RILEY_RASTER_THREADS, RUN_MODE, RunMode,
 )
+from modules.exp12_geometry import ROI_PIXELS, TEXTURE_PAD_PIXELS
 
 # Full sampler vocabulary exposed by the currently bound Riley build.  Keep
 # ``TEX_INTERPOLATORS`` below as the default run matrix; any of these names can
@@ -31,7 +32,7 @@ RILEY_TEXTURE_SAMPLERS: dict[str, riley.TextureSample] = {
 }
 
 
-if TEST_RUN:
+if RUN_MODE is RunMode.TEST:
     # SSAA levels to render with Riley
     SSAA_LEVELS = [1, 2, 4, 8, 16, 32, 64, 128]
     TEX_OVERSAMPLES: List[int] = [1, 2, 4, 8, 16, 32, 64, 128]
@@ -100,11 +101,18 @@ else:
         ("gauss", 128),
         ("analytic", 0),
     ]
+
+if RUN_MODE is RunMode.BIG:
+    _test_levels = {1, 2, 4, 8, 16, 32, 64, 128}
+    SSAA_LEVELS = [level for level in SSAA_LEVELS if level not in _test_levels]
+    TEX_OVERSAMPLES = [level for level in TEX_OVERSAMPLES if level not in _test_levels]
+    _test_rules = {("rect", n) for n in _test_levels} | {("gauss", n) for n in _test_levels if n >= 2} | {("analytic", 0)}
+    INTEGRATION_METHODS = [rule for rule in INTEGRATION_METHODS if rule not in _test_rules]
             
 
 #-------------------------------------------------------------------------------
-TARG_PX_X: int = 32
-TARG_PX_Y: int = 32
+TARG_PX_X: int = ROI_PIXELS
+TARG_PX_Y: int = ROI_PIXELS
 
 def exp1_output_dir(name: str) -> Path:
     """Return the canonical Experiment 1 output root.
@@ -122,7 +130,7 @@ CLEAR_DIR: bool = False
 # Re-render existing outputs instead of skipping completed render frames.
 
 BACKGROUND: float = 0.5
-TEX_PX_PAD: int = 4
+TEX_PX_PAD: int = TEXTURE_PAD_PIXELS
 # Image-plane camera PSF, expressed in final rendered-image pixels.  The
 # finite support is explicit so the bespoke raster and Riley use the same
 # sampled, normalised Gaussian kernel.
@@ -150,9 +158,9 @@ GAMMA: float = 0.4
 
 # List of deformation cases to process (e.g. rigid, affine)
 DEFORMATION_CASES: List[str] = [
-    "plate260_cam256_quad9_rigid",
-    "plate260_cam256_quad9_affine",
-    "plate260_cam256_quad9_quadsaddle",
+    "plate42_cam32_quad9_rigid",
+    "plate42_cam32_quad9_affine",
+    "plate42_cam32_quad9_quadsaddle",
 ]
 
 # Mapping from a deformed camera/image-plane point back to its reference
@@ -162,9 +170,9 @@ DEFORMATION_CASES: List[str] = [
 # an accurate 2D inverse map for the current single Quad9 saddle; it remains
 # explicit until other element-specific shape functions are added.
 DEFORMATION_MAPPING_MODES: dict[str, str] = {
-    "plate260_cam256_quad9_rigid": "affine",
-    "plate260_cam256_quad9_affine": "affine",
-    "plate260_cam256_quad9_quadsaddle": "newton",
+    "plate42_cam32_quad9_rigid": "affine",
+    "plate42_cam32_quad9_affine": "affine",
+    "plate42_cam32_quad9_quadsaddle": "newton",
 }
 
 

@@ -1,5 +1,8 @@
 # Repo Specific Excludes
 *.csv
+# Generated finite-element input meshes, connectivity, UVs, and displacement
+# fields are part of the reproducible experiment definition.
+!data/**/*.csv
 *.e
 *.msh
 *.bmp

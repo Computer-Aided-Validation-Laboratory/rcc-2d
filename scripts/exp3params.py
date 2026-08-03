@@ -8,7 +8,7 @@ from typing import Final
 
 import riley
 
-from exp0params_common import CORES, FORCE_RENDER_OVER, NUM_PROCESSES, RILEY_RASTER_THREADS, TEST_RUN
+from exp0params_common import CORES, FORCE_RENDER_OVER, NUM_PROCESSES, RILEY_RASTER_THREADS, RUN_MODE, RunMode
 
 BIT_DEPTHS = [8]
 TEX_PX_PAD = 4
@@ -50,7 +50,7 @@ DIC_POSTPROCESS_JOBS = CORES
 GRIDMETHOD_WINDOW = "triangular"
 GRIDMETHOD_WINDOW_WIDTH_PERIODS = 1.0
 
-if TEST_RUN:
+if RUN_MODE is RunMode.TEST:
     SSAA_LEVELS = [1, 2, 4, 8, 16]
     TEX_OVERSAMPLES = [1, 2, 4, 8, 16]
 else:
@@ -58,6 +58,11 @@ else:
     # a higher SSAA reference once their streamed texture path is available.
     SSAA_LEVELS = [1, 2, 4, 8, 16, 32, 64]
     TEX_OVERSAMPLES = [1, 2, 4, 8, 16, 32, 64]
+
+if RUN_MODE is RunMode.BIG:
+    _test_levels = {1, 2, 4, 8, 16}
+    SSAA_LEVELS = [level for level in SSAA_LEVELS if level not in _test_levels]
+    TEX_OVERSAMPLES = [level for level in TEX_OVERSAMPLES if level not in _test_levels]
 
 RILEY_TEXTURE_SAMPLERS = {
     "nearest": riley.TextureSample.nearest,

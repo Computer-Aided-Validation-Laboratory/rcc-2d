@@ -13,8 +13,9 @@ from typing import List, Tuple
 
 import riley
 from exp0params_common import (
-    CORES, FORCE_RENDER_OVER, NUM_PROCESSES, RILEY_RASTER_THREADS, TEST_RUN,
+    CORES, FORCE_RENDER_OVER, NUM_PROCESSES, RILEY_RASTER_THREADS, RUN_MODE, RunMode,
 )
+from modules.exp12_geometry import ROI_PIXELS, TEXTURE_PAD_PIXELS
 
 # All samplers available in the bound Riley build.  ``TEX_INTERPOLATORS`` is
 # retained below as the conservative default matrix, while an environment
@@ -31,7 +32,7 @@ RILEY_TEXTURE_SAMPLERS: dict[str, riley.TextureSample] = {
 }
 
 
-if TEST_RUN:
+if RUN_MODE is RunMode.TEST:
     TEX_SSAA_LEVELS: List[int] = [1, 2, 4, 8, 16, 32, 64, 128] 
     RILEY_SSAA_LEVLES: List[int] = [1, 2, 4, 8, 16, 32, 64, 128]
     TEX_OVERSAMPLES: List[int] = [1, 2, 4, 8, 16, 32, 64, 128]
@@ -68,7 +69,7 @@ else:
     TEX_OVERSAMPLES: List[int] = [1, 2, 4, 8, 16, 32, 64, 128, 256, 512]
     # Per-texel SSAA levels for the analytic speckle texture generator.
     # Used for digitised input texture creation
-    TEX_SSAA_LEVELS: List[int] = [1, 2, 4, 8, 16, 64, 128, 256, 512] 
+    TEX_SSAA_LEVELS: List[int] = [1, 2, 4, 8, 16, 32, 64, 128, 256, 512]
     # Actually used for riley renders
     RILEY_SSAA_LEVLES: List[int] = [1, 2, 4, 8, 16, 32, 64, 128, 256, 512] 
     TEX_INTERPOLATORS: dict[str, riley.TextureSample] = {
@@ -105,10 +106,18 @@ else:
         #("gauss", 1024),
         ("analytic", 0),
     ]
+
+if RUN_MODE is RunMode.BIG:
+    _test_levels = {1, 2, 4, 8, 16, 32, 64, 128}
+    TEX_SSAA_LEVELS = [level for level in TEX_SSAA_LEVELS if level not in _test_levels]
+    RILEY_SSAA_LEVLES = [level for level in RILEY_SSAA_LEVLES if level not in _test_levels]
+    TEX_OVERSAMPLES = [level for level in TEX_OVERSAMPLES if level not in _test_levels]
+    _test_rules = {("rect", n) for n in _test_levels} | {("gauss", n) for n in _test_levels if n >= 2} | {("analytic", 0)}
+    INTEGRATION_METHODS = [rule for rule in INTEGRATION_METHODS if rule not in _test_rules]
     
     
-TARG_PX_X: int = 32
-TARG_PX_Y: int = 32
+TARG_PX_X: int = ROI_PIXELS
+TARG_PX_Y: int = ROI_PIXELS
 
 def exp2_output_dir(name: str) -> Path:
     """Return the canonical Experiment 2 output root.
@@ -125,7 +134,7 @@ TEXTURE_OUTPUT_DIR: Path = exp2_output_dir("exp2_analytic_speckle_textures")
 # Re-render existing outputs instead of skipping completed render frames.
 
 BACKGROUND: float = 0.5
-TEX_PX_PAD: int = 4
+TEX_PX_PAD: int = TEXTURE_PAD_PIXELS
 # Image-plane camera PSF, expressed in final rendered-image pixels.  The
 # finite support is explicit so the bespoke raster and Riley use the same
 # sampled, normalised Gaussian kernel.
@@ -187,9 +196,9 @@ GAUSSIAN_CONTINUOUS_TAIL_SIGMAS: float = 8.0
 
 # List of deformation cases to process (e.g. rigid, affine)
 DEFORMATION_CASES: List[str] = [
-    "plate260_cam256_quad9_rigid",
-    "plate260_cam256_quad9_affine",
-    "plate260_cam256_quad9_quadsaddle",
+    "plate42_cam32_quad9_rigid",
+    "plate42_cam32_quad9_affine",
+    "plate42_cam32_quad9_quadsaddle",
 ]
 
 # ``affine`` is a four-corner inverse-map approximation, exact only for the
@@ -197,9 +206,9 @@ DEFORMATION_CASES: List[str] = [
 # the current single Quad9 saddle; it remains explicit until other
 # element-specific shape functions are added.
 DEFORMATION_MAPPING_MODES: dict[str, str] = {
-    "plate260_cam256_quad9_rigid": "affine",
-    "plate260_cam256_quad9_affine": "affine",
-    "plate260_cam256_quad9_quadsaddle": "newton",
+    "plate42_cam32_quad9_rigid": "affine",
+    "plate42_cam32_quad9_affine": "affine",
+    "plate42_cam32_quad9_quadsaddle": "newton",
 }
 
 

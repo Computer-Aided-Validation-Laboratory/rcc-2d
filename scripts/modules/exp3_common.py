@@ -500,7 +500,7 @@ def bespoke_render(case: str, pattern: str, method: str, param: int, *, texture_
     if pattern != "eggbox" and texture is None:
         distribution, jitter = additive_jitter_for(pattern)
         # The pattern is deterministic for a case.  Construct it once per
-        # render, not once per pixel chunk (the latter dominated TEST_RUN).
+        # render, not once per pixel chunk (the latter dominated test mode).
         speckles = make_speckle_pattern(
             pattern, 5 * roi_x / width, BLACK_AREA_FRACTIONS[0], distribution,
             jitter, RANDOM_SEED, GAUSSIAN_CUTOFF_SIGMAS,

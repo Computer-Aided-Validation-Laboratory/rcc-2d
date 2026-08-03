@@ -1,7 +1,22 @@
 """Machine-wide run controls shared by every experiment."""
 
+from enum import Enum
+
+
+class RunMode(str, Enum):
+    """Render-matrix selection.
+
+    ``BIG`` is the strict set difference ``ALL - TEST`` so a fast test pass
+    followed by BIG completes the full matrix without repeating test levels.
+    """
+
+    TEST = "test"
+    ALL = "all"
+    BIG = "big"
+
 CORES: int = 8
-TEST_RUN: bool = True
+RUN_MODE = RunMode.TEST
+EXP12_TEST_SAMPLE_LEVELS: tuple[int, ...] = (1, 2, 4, 8, 16, 32, 64, 128)
 FORCE_RENDER_OVER: bool = False
 # Rebuild analysis outputs even when a completed-suite marker exists.  Set
 # false after a full analysis pass to make the all-analysis launcher resume

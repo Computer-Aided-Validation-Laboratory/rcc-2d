@@ -440,7 +440,6 @@ def generate_grid_images(case_dir: Path, method: str, param: int) -> None:
     num_frames: int = disp_x.shape[1]
 
     uvs = compute_riley_bbox_uvs(coords, TARG_PX_X, TEX_PX_PAD)
-    np.savetxt(case_dir / "uvs_exp1_sin_grid_uvs.csv", uvs, delimiter=",")
 
     case_out_dir: Path = OUTPUT_DIR / case_name
     case_out_dir.mkdir(parents=True, exist_ok=True)
