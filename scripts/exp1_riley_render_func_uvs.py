@@ -94,8 +94,7 @@ def main() -> None:
 
     for case_path in cases:
         if not case_path.exists():
-            print(f"Warning: {case_path} does not exist. Skipping.")
-            continue
+            raise FileNotFoundError(f"Required deformation case does not exist: {case_path}")
 
         case_name = output_case_name(case_path.name, TARG_PX_X)
         print(f"\nProcessing case: {case_name}")

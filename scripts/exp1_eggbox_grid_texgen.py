@@ -147,7 +147,7 @@ def generate_texture(
     required_bytes = float_bytes + 2 * texture_bytes
     if free_bytes < required_bytes:
         print(
-            "  WARNING: free disk space may be insufficient for staging and "
+            "  Disk-space check: free space may be insufficient for staging and "
             f"saving {output_path.name}: need about {required_bytes / 2**30:.2f} GiB, "
             f"have {free_bytes / 2**30:.2f} GiB."
         )

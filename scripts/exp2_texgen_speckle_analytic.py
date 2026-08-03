@@ -129,6 +129,7 @@ def generate_texture(
     distribution: str,
     fraction: float,
     oversample: int,
+    bit_depths: tuple[int, ...] | None = None,
 ) -> None:
     """Generate exact axis-aligned texel averages for one analytic model."""
     prefix = config_name(
@@ -136,7 +137,10 @@ def generate_texture(
         f"{tag(pattern_type, black_fraction, distribution, fraction)}"
         f"_pad{TEX_PX_PAD}_oversamp{oversample}_analytic"
     )
-    texture_bits = BIT_DEPTHS if uint_textures_enabled() else ()
+    texture_bits = (
+        (BIT_DEPTHS if uint_textures_enabled() else ())
+        if bit_depths is None else bit_depths
+    )
     float_path = TEXTURE_OUTPUT_DIR / f"{prefix}.npy"
     preview_path = TEXTURE_OUTPUT_DIR / f"{prefix}_preview_b8.tiff"
     # The durable Exp2 f64 asset is coverage, not display intensity.
@@ -144,10 +148,27 @@ def generate_texture(
         I0 + GAMMA * (2.0 * (1.0 - np.clip(coverage, 0.0, 1.0)) - 1.0),
         0.0, 1.0,
     )
-    if not FORCE_RENDER_OVER and image_outputs_complete(TEXTURE_OUTPUT_DIR, prefix, texture_bits):
+    required_paths = [float_path] + [
+        TEXTURE_OUTPUT_DIR / f"{prefix}_b{bits}.tiff" for bits in texture_bits
+    ]
+    if not FORCE_RENDER_OVER and all(path.exists() for path in required_paths):
         if oversample == 1 and write_preview_b8(float_path, preview_path, coverage_to_intensity):
             print(f"    wrote texture preview: {preview_path.name}")
         print("    outputs exist; skipping.")
+        return
+    if float_path.exists() and not FORCE_RENDER_OVER:
+        # A float texture is the expensive, canonical asset.  A newly requested
+        # uint depth must be derived from it, never trigger another analytic
+        # texture evaluation.
+        raw_coverage = np.ascontiguousarray(np.flipud(np.load(float_path)), dtype=np.float64)
+        image = coverage_to_intensity(raw_coverage)
+        save_image(
+            image, TEXTURE_OUTPUT_DIR, prefix,
+            float_texture=raw_coverage, bit_depths=texture_bits,
+        )
+        if oversample == 1 and write_preview_b8(float_path, preview_path, coverage_to_intensity):
+            print(f"    wrote texture preview: {preview_path.name}")
+        print("    generated missing digitised texture assets from the existing f64 texture.")
         return
     roi_size = float(max(TARG_PX_X, TARG_PX_Y))
     pixel_size = roi_size / max(TARG_PX_X, TARG_PX_Y)

@@ -73,11 +73,22 @@ def get_texture_oversamples() -> list[int]:
     if not oversamp_str:
         levels = list(TEX_OVERSAMPLES)
         return sorted(set(levels) | set(EXP12_TEST_SAMPLE_LEVELS)) if RUN_MODE is RunMode.BIG else levels
+    return [int(val.strip()) for val in oversamp_str.split(",") if val.strip()]
 
 
 def should_render_pair(ssaa: int, oversamp: int) -> bool:
     return not (RUN_MODE is RunMode.BIG and ssaa in EXP12_TEST_SAMPLE_LEVELS and oversamp in EXP12_TEST_SAMPLE_LEVELS)
-    return [int(val.strip()) for val in oversamp_str.split(",") if val.strip()]
+
+
+def ensure_uint_texture(path: Path, bit_depth: int, oversamp: int) -> None:
+    """Generate one missing digitised eggbox texture dependency on demand."""
+    if not path.exists():
+        print(f"  Generating missing texture dependency: {path.name}")
+        from exp1_eggbox_grid_texgen import generate_texture
+
+        generate_texture("analytic", 0, bit_depth, oversamp, write_uint=True)
+    if not path.exists():
+        raise FileNotFoundError(f"Required uint texture was not generated: {path}")
 
 
 def get_texture_interpolators() -> list[str]:
@@ -155,8 +166,7 @@ def main() -> None:
 
     for case_path in cases:
         if not case_path.exists():
-            print(f"Warning: {case_path} does not exist. Skipping.")
-            continue
+            raise FileNotFoundError(f"Required deformation case does not exist: {case_path}")
 
         case_name = output_case_name(case_path.name, TARG_PX_X)
         print(f"\nProcessing case: {case_name}")
@@ -245,8 +255,7 @@ def main() -> None:
                         )
                         tex_path = tex_dir / tex_filename
                         if not tex_path.exists():
-                            print(f"Warning: {tex_path.name} does not exist. Skipping.")
-                            continue
+                            ensure_uint_texture(tex_path, bb, oversamp)
                         with Image.open(tex_path) as img_in:
                             if img_in.mode in ("I;16", "I;16B", "I;16L", "I"):
                                 texture = np.ascontiguousarray(

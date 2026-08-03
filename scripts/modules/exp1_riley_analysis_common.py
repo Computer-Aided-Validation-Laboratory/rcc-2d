@@ -647,7 +647,7 @@ def analyze_riley_case(case_name: str, tex_interp: str) -> None:
         reference = _load_reference_for_frame(case_dir, ff)
         if reference is None:
             print(
-                f"Warning: no analytic or Gauss reference for Frame {ff:02d}. "
+                f"No analytic or Gauss reference for Frame {ff:02d}. "
                 "Skipping."
             )
             release_batch()
@@ -812,7 +812,7 @@ def analyze_riley_case(case_name: str, tex_interp: str) -> None:
 
         if ANALYSIS_MODE == "tex" and riley_texture_sample_count == 0:
             print(
-                "Warning: No Riley texture render samples found for "
+                "No Riley texture render samples found for "
                 f"{case_name} ({tex_interp}); plots contain only the custom baseline."
             )
 
@@ -1680,7 +1680,7 @@ def analyse_riley_self_convergence(
                     del image_float, image_digitised, float_diff, digitised_diff
                 del ref_float, ref_digitised
         if not records:
-            print(f"Warning: {case_name}, frame {frame:02d}: insufficient Riley SSAA data for self convergence.")
+            print(f"Insufficient Riley SSAA data for self convergence: {case_name}, frame {frame:02d}.")
             del records, labels
             release_batch()
             continue

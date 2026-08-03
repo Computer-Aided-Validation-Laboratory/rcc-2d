@@ -439,7 +439,7 @@ def _analyse_riley_self_convergence_frame(
                 continue
             image = _load_riley_image(image_path)
             if image.shape != reference.shape:
-                print(f"Warning: {image_path} shape {image.shape} does not match self reference.")
+                print(f"Skipping image with shape mismatch against self reference: {image_path}.")
                 del image
                 continue
             difference = image - reference
@@ -502,7 +502,7 @@ def analyse_pattern(
     runs = _discover_riley_runs(case_name, tag, allowed_interpolators)
     group_name = f"{case_name}_{tag}"
     if not runs:
-        print(f"  Warning: no Riley renders for {group_name}.")
+        print(f"  No Riley renders for {group_name}.")
         return []
     print(f"\nAnalysing {group_name}: {len(runs)} Riley run configurations")
     rows: list[dict[str, object]] = []
@@ -527,7 +527,7 @@ def analyse_pattern(
                 continue
             image = _load_riley_image(image_path)
             if image.shape != reference_image.shape:
-                print(f"Warning: {image_path} shape {image.shape} does not match reference.")
+                print(f"Skipping image with shape mismatch against reference: {image_path}.")
                 del image
                 continue
             difference = image - reference_image

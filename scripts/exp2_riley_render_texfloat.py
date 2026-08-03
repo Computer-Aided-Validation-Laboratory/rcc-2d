@@ -52,6 +52,7 @@ from modules.render_logging import case_label, render_log
 from modules.output_naming import config_name
 from modules.exp12_geometry import ROI_PIXELS, TEXTURE_PAD_PIXELS, roi_corners, texture_world_uvs
 from exp0params_common import EXP12_TEST_SAMPLE_LEVELS, RUN_MODE, RunMode
+from exp2_texgen_speckle_analytic import generate_texture
 
 OUTPUT_ROOT = exp2_output_dir("exp2_riley_render_texfloat_psf" if psf_enabled() else "exp2_riley_render_texfloat")
 
@@ -69,11 +70,22 @@ def get_texture_oversamples() -> list[int]:
     if not value:
         levels = list(TEX_OVERSAMPLES)
         return sorted(set(levels) | set(EXP12_TEST_SAMPLE_LEVELS)) if RUN_MODE is RunMode.BIG else levels
+    return [int(item.strip()) for item in value.split(",") if item.strip()]
 
 
 def should_render_pair(ssaa: int, oversamp: int) -> bool:
     return not (RUN_MODE is RunMode.BIG and ssaa in EXP12_TEST_SAMPLE_LEVELS and oversamp in EXP12_TEST_SAMPLE_LEVELS)
-    return [int(item.strip()) for item in value.split(",") if item.strip()]
+
+
+def ensure_float_texture(path: Path, pattern_type: str, black_fraction: float,
+                         distribution: str, fraction: float, oversamp: int) -> None:
+    """Generate one missing raw-coverage texture dependency on demand."""
+    if not path.exists():
+        print(f"  Generating missing texture dependency: {path.name}")
+        generate_texture(pattern_type, black_fraction, distribution, fraction,
+                         oversamp, bit_depths=())
+    if not path.exists():
+        raise FileNotFoundError(f"Required float texture was not generated: {path}")
 
 
 def get_texture_interpolators() -> list[str]:
@@ -189,8 +201,7 @@ def main() -> None:
     p_val = max(TARG_PX_X, TARG_PX_Y)
     for case_path in cases:
         if not case_path.exists():
-            print(f"Warning: {case_path} does not exist. Skipping.")
-            continue
+            raise FileNotFoundError(f"Required deformation case does not exist: {case_path}")
         coords = np.loadtxt(case_path / "coords.csv", delimiter=",")
         connect = np.loadtxt(
             case_path / "connectivity.csv", delimiter=",", dtype=np.uintp
@@ -253,8 +264,10 @@ def main() -> None:
                                         f"_oversamp{oversamp}_analytic.npy"
                                     )
                                     if not texture_path.exists():
-                                        print(f"Warning: {texture_path.name} does not exist. Skipping.")
-                                        continue
+                                        ensure_float_texture(
+                                            texture_path, pattern_type, black_fraction,
+                                            distribution, fraction, oversamp,
+                                        )
                                     tex_size = oversamp * (texture_pixels + 2 * TEX_PX_PAD)
                                     texture = load_raw_texture(
                                         texture_path, (tex_size, tex_size)

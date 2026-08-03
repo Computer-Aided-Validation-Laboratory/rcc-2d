@@ -42,6 +42,7 @@ from modules.render_logging import case_label, render_log
 from modules.output_naming import config_name
 from modules.exp12_geometry import ROI_PIXELS, TEXTURE_PAD_PIXELS, roi_corners, texture_world_uvs
 from exp0params_common import EXP12_TEST_SAMPLE_LEVELS, RUN_MODE, RunMode
+from exp1_eggbox_grid_texgen import generate_texture
 
 OUTPUT_ROOT = exp1_output_dir("exp1_riley_render_texfloat_psf" if psf_enabled() else "exp1_riley_render_texfloat")
 
@@ -69,11 +70,20 @@ def get_texture_oversamples() -> list[int]:
     if not oversamp_str:
         levels = list(TEX_OVERSAMPLES)
         return sorted(set(levels) | set(EXP12_TEST_SAMPLE_LEVELS)) if RUN_MODE is RunMode.BIG else levels
+    return [int(value.strip()) for value in oversamp_str.split(",") if value.strip()]
 
 
 def should_render_pair(ssaa: int, oversamp: int) -> bool:
     return not (RUN_MODE is RunMode.BIG and ssaa in EXP12_TEST_SAMPLE_LEVELS and oversamp in EXP12_TEST_SAMPLE_LEVELS)
-    return [int(value.strip()) for value in oversamp_str.split(",") if value.strip()]
+
+
+def ensure_float_texture(path: Path, oversamp: int) -> None:
+    """Generate one missing f64 eggbox texture dependency on demand."""
+    if not path.exists():
+        print(f"  Generating missing texture dependency: {path.name}")
+        generate_texture("analytic", 0, 8, oversamp, write_uint=False)
+    if not path.exists():
+        raise FileNotFoundError(f"Required float texture was not generated: {path}")
 
 
 def get_texture_interpolators() -> list[str]:
@@ -161,8 +171,7 @@ def main() -> None:
     p_val = max(TARG_PX_X, TARG_PX_Y)
     for case_path in cases:
         if not case_path.exists():
-            print(f"Warning: {case_path} does not exist. Skipping.")
-            continue
+            raise FileNotFoundError(f"Required deformation case does not exist: {case_path}")
 
         case_name = output_case_name(case_path.name, TARG_PX_X)
         print(f"\nProcessing case: {case_name}")
@@ -235,8 +244,7 @@ def main() -> None:
                             f"_pad{TEX_PX_PAD}_oversamp{oversamp}.npy"
                         )
                         if not tex_path.exists():
-                            print(f"Warning: {tex_path.name} does not exist. Skipping.")
-                            continue
+                            ensure_float_texture(tex_path, oversamp)
                         tex_size = oversamp * (texture_pixels + 2 * TEX_PX_PAD)
                         texture = load_float_texture(tex_path, (tex_size, tex_size))
                         uvs = compute_texture_world_uvs(

@@ -128,7 +128,7 @@ def analyse_group(group_name: str, jobs: dict[tuple[str, int], Path]) -> list[di
     for frame in ACTIVE_FRAMES:
         selected = _reference_job(group_name, jobs, frame)
         if selected is None:
-            print(f"Warning: {group_name}, frame {frame:02d}: no analytic or Gaussian reference.")
+            print(f"No analytic or Gaussian reference: {group_name}, frame {frame:02d}.")
             continue
         (ref_method, ref_param), ref_directory, ref_name = selected
         references = {bit_depth: _image_pair(ref_directory, ref_method, ref_param, bit_depth, frame) for bit_depth in BIT_DEPTHS}
@@ -193,7 +193,7 @@ def analyse_rectangular_self_convergence(
             None,
         )
         if ref_param is None:
-            print(f"Warning: {group_name}, frame {frame:02d}: no rectangular reference.")
+            print(f"No rectangular reference: {group_name}, frame {frame:02d}.")
             continue
         ref_directory = jobs[("rect", ref_param)]
         references = {

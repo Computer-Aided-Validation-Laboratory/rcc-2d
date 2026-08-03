@@ -119,7 +119,7 @@ def analyse_case(case_dir: Path) -> list[dict[str, object]]:
     for frame in ACTIVE_FRAMES:
         selected = _reference_for_frame(case_dir, frame)
         if selected is None:
-            print(f"Warning: {case_dir.name}, frame {frame:02d}: no analytic or Gauss reference.")
+            print(f"No analytic or Gauss reference: {case_dir.name}, frame {frame:02d}.")
             continue
         (ref_method, ref_param), references, ref_label = selected
         float_data = _empty_float(methods)
@@ -179,7 +179,7 @@ def analyse_rectangular_self_convergence(
             None,
         )
         if ref_param is None:
-            print(f"Warning: {case_dir.name}, frame {frame:02d}: no rectangular reference.")
+            print(f"No rectangular reference: {case_dir.name}, frame {frame:02d}.")
             continue
         references = {
             bit_depth: _load_pair(case_dir, "rect", ref_param, bit_depth, frame)
@@ -280,7 +280,7 @@ def main() -> None:
         output_name = output_case_name(case_name, TARG_PX_X)
         case_dir = OUTPUT_DIR / output_name
         if not case_dir.exists():
-            print(f"Warning: {case_dir} does not exist. Skipping.")
+            print(f"Skipping unavailable analysis directory: {case_dir}.")
             continue
         case_dirs.append(case_dir)
     for rows, rect_rows in run_analysis_jobs("Experiment 1 eggbox analysis", case_dirs, _analyse_case_job):

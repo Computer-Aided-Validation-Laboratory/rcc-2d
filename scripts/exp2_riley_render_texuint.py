@@ -55,6 +55,7 @@ from exp2_riley_render_texfloat import (
     should_render_pair,
 )
 from exp2params import additive_jitter_for
+from exp2_texgen_speckle_analytic import generate_texture
 from modules.script_timing import ScriptTimer, timed_call
 from modules.render_selection import riley_enabled
 from modules.render_logging import case_label, render_log
@@ -73,6 +74,26 @@ def get_bit_depths() -> list[int]:
     if not value:
         return list(BIT_DEPTHS)
     return [int(item.strip()) for item in value.split(",") if item.strip()]
+
+
+def ensure_uint_texture(
+    path: Path,
+    pattern_type: str,
+    black_fraction: float,
+    distribution: str,
+    fraction: float,
+    oversamp: int,
+    bit_depth: int,
+) -> None:
+    """Generate one missing digitised coverage texture dependency on demand."""
+    if not path.exists():
+        print(f"  Generating missing texture dependency: {path.name}")
+        generate_texture(
+            pattern_type, black_fraction, distribution, fraction, oversamp,
+            bit_depths=(bit_depth,),
+        )
+    if not path.exists():
+        raise FileNotFoundError(f"Required uint texture was not generated: {path}")
 
 
 def load_uint_texture(path: Path, expected_shape: tuple[int, int]) -> tuple[np.ndarray, riley.TextureStorage]:
@@ -111,8 +132,7 @@ def main() -> None:
 
     for case_path in cases:
         if not case_path.exists():
-            print(f"Warning: {case_path} does not exist. Skipping.")
-            continue
+            raise FileNotFoundError(f"Required deformation case does not exist: {case_path}")
         coords = np.loadtxt(case_path / "coords.csv", delimiter=",")
         connect = np.loadtxt(case_path / "connectivity.csv", delimiter=",", dtype=np.uintp)
         disp_x = np.loadtxt(case_path / "field_disp_x.csv", delimiter=",")
@@ -163,8 +183,10 @@ def main() -> None:
                                     f"_oversamp{oversamp}_analytic_b{bit_depth}.tiff"
                                 )
                                 if not texture_path.exists():
-                                    print(f"Warning: {texture_path.name} does not exist. Skipping.")
-                                    continue
+                                    ensure_uint_texture(
+                                        texture_path, pattern_type, black_fraction,
+                                        distribution, fraction, oversamp, bit_depth,
+                                    )
                                 tex_size = oversamp * (texture_pixels + 2 * TEX_PX_PAD)
                                 texture, texture_storage = load_uint_texture(
                                     texture_path, (tex_size, tex_size)

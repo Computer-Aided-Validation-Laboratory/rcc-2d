@@ -535,11 +535,7 @@ def main() -> None:
 
     for case_path in cases:
         if not case_path.exists():
-            print(
-                f"Warning: Case directory {case_path} "
-                "does not exist. Skipping."
-            )
-            continue
+            raise FileNotFoundError(f"Required deformation case does not exist: {case_path}")
         mapping_mode = os.environ.get(
             "EXP1_MAPPING_MODE", mapping_mode_for_case(case_path.name)
         )

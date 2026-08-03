@@ -828,7 +828,8 @@ def save_image(
     flipped = np.ascontiguousarray(np.flipud(image), dtype=np.float64)
     raw_flipped = np.ascontiguousarray(np.flipud(float_texture), dtype=np.float64)
     np.save(output_dir / f"{prefix}.npy", raw_flipped)
-    for bits in (8,):
+    depths = (8,) if bit_depths is None else tuple(bit_depths)
+    for bits in depths:
         max_value = float(2**bits - 1)
         quantized = np.clip(np.round(flipped * max_value), 0.0, max_value)
         image_data = quantized.astype(

@@ -46,8 +46,7 @@ def main() -> None:
     force_render = FORCE_RENDER_OVER or os.environ.get("EXP1_FORCE_RENDER_OVER") == "1"
     for case_path in cases:
         if not case_path.exists():
-            print(f"Warning: {case_path} does not exist; skipping.")
-            continue
+            raise FileNotFoundError(f"Required deformation case does not exist: {case_path}")
         coords = np.loadtxt(case_path / "coords.csv", delimiter=",")
         connect = np.loadtxt(case_path / "connectivity.csv", delimiter=",", dtype=int)
         disp_x = np.loadtxt(case_path / "field_disp_x.csv", delimiter=",")

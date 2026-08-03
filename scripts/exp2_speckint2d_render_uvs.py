@@ -81,8 +81,7 @@ def main() -> None:
 
     for case_dir in cases:
         if not case_dir.exists():
-            print(f"Warning: {case_dir} does not exist. Skipping.")
-            continue
+            raise FileNotFoundError(f"Required deformation case does not exist: {case_dir}")
         _case_camera_pixels, roi_size = parse_case_params(case_dir)
         if TARG_PX_X != TARG_PX_Y:
             raise ValueError("Experiment 2 currently requires square target dimensions.")
