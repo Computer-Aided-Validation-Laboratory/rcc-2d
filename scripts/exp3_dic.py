@@ -24,6 +24,7 @@ import os
 import re
 import subprocess
 import sys
+import tempfile
 import textwrap
 from pathlib import Path
 
@@ -31,6 +32,7 @@ import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 import numpy as np
+from PIL import Image
 
 HERE = Path(__file__).resolve().parent
 if str(HERE) not in sys.path:
@@ -47,6 +49,7 @@ from exp3params import (
     DIC_SHAPE_FUNCTION,
     DIC_SUBSET_SIZE_PX,
     DIC_SUBSET_STEP_PX,
+    MEASUREMENT_BIT_DEPTHS,
 )
 
 
@@ -100,15 +103,20 @@ def image_frames(directory: Path) -> list[Path]:
     return sorted(files, key=frame_number)
 
 
-def read_uint8(path: Path) -> np.ndarray:
-    """DIC receives the actual clamped 8-bit camera image, not a float view."""
+def measurement_bit_depths() -> list[int]:
+    value = os.environ.get("EXP3_MEASUREMENT_BIT_DEPTHS")
+    return list(MEASUREMENT_BIT_DEPTHS) if not value else [int(item) for item in value.split(",") if item.strip()]
+
+
+def read_camera_codes(path: Path, bit_depth: int) -> np.ndarray:
+    """Digitise the canonical float camera image for one DIC bit depth."""
     image = np.load(path, mmap_mode="r")
     # Bespoke float renders are [0, 1], whereas Riley's corresponding NPY
     # output is already in camera-code units.  Preserve both conventions.
     values = np.asarray(image, dtype=np.float64)
     if values.size and float(np.nanmax(np.abs(values))) > 1.0 + 1e-8:
         values /= 255.0
-    return quantise_camera(values, 8)
+    return quantise_camera(values, bit_depth)
 
 
 def field_title(label: str, frame: int, component: str, width: int = 42) -> str:
@@ -172,34 +180,43 @@ def save_rigid_bias(path: Path, rows: list[dict[str, float | int]], title: str) 
     plt.close(fig)
 
 
-def run_pair(config_dir: Path, output_dir: Path, index: int) -> None:
+def run_pair(config_dir: Path, output_dir: Path, index: int, bit_depth: int) -> None:
     """Run one native-engine call; intended to execute in a fresh process."""
     # Keep the optional PyVale/Blender import out of spawned postprocess
     # workers.  Those workers only read the documented ``.dic2d`` format.
     import pyvale.dic as dic
     frames = image_frames(config_dir)
-    reference = read_uint8(frames[0])
+    reference = read_camera_codes(frames[0], bit_depth)
+    deformed = read_camera_codes(frames[index], bit_depth)
     prefix = f"dic_frame{index:02d}_"
-    dic.calculate_2d(
-        reference=reference,
-        deformed=read_uint8(frames[index]),
-        roi_mask=np.ones(reference.shape, dtype=np.uint8),
-        seed=[reference.shape[1] // 2, reference.shape[0] // 2],
-        subset_size=DIC_SUBSET_SIZE_PX,
-        subset_step=DIC_SUBSET_STEP_PX,
-        shape_function=DIC_SHAPE_FUNCTION,
-        correlation_criteria="ZNSSD",
-        threshold=DIC_CORRELATION_THRESHOLD,
-        max_displacement=8,
-        method="MULTIWINDOW_RG",
-        num_threads=DIC_NUM_THREADS,
-        output_basepath=output_dir,
-        output_prefix=prefix,
-        output_binary=True,
-        output_delimiter=",",
-        output_below_threshold=True,
-        debug_level=0,
-    )
+    # PyVale's ndarray convenience path converts each deformed image to an
+    # 8-bit ``L`` TIFF internally.  Use temporary, explicitly uint16 TIFFs
+    # instead, so a requested >8-bit DIC analysis truly reaches its backend.
+    with tempfile.TemporaryDirectory(prefix="exp3_dic_") as temp:
+        temp_dir = Path(temp)
+        reference_path, deformed_path = temp_dir / "reference.tiff", temp_dir / "deformed.tiff"
+        Image.fromarray(reference).save(reference_path)
+        Image.fromarray(deformed).save(deformed_path)
+        dic.calculate_2d(
+            reference=reference_path,
+            deformed=deformed_path,
+            roi_mask=np.ones(reference.shape, dtype=np.uint8),
+            seed=[reference.shape[1] // 2, reference.shape[0] // 2],
+            subset_size=DIC_SUBSET_SIZE_PX,
+            subset_step=DIC_SUBSET_STEP_PX,
+            shape_function=DIC_SHAPE_FUNCTION,
+            correlation_criteria="ZNSSD",
+            threshold=DIC_CORRELATION_THRESHOLD,
+            max_displacement=8,
+            method="MULTIWINDOW_RG",
+            num_threads=DIC_NUM_THREADS,
+            output_basepath=output_dir,
+            output_prefix=prefix,
+            output_binary=True,
+            output_delimiter=",",
+            output_below_threshold=True,
+            debug_level=0,
+        )
 
 
 def frame_csv(output_dir: Path, index: int) -> list[Path]:
@@ -234,14 +251,14 @@ def import_raw(path: Path) -> dict[str, np.ndarray]:
     }
 
 
-def output_dir_for(case: str, render_root: str, config_dir: Path) -> Path:
-    return RESULT_ROOT / case / render_root / config_dir.name
+def output_dir_for(case: str, render_root: str, config_dir: Path, bit_depth: int) -> Path:
+    return RESULT_ROOT / case / render_root / config_dir.name / f"b{bit_depth:02d}"
 
 
-def run_dic_stage(case: str, render_root: str, config_dir: Path) -> Path:
+def run_dic_stage(case: str, render_root: str, config_dir: Path, bit_depth: int) -> Path:
     """Stage 1: calculate only missing temporary PyVale binary results."""
     frames = image_frames(config_dir)
-    output_dir = output_dir_for(case, render_root, config_dir)
+    output_dir = output_dir_for(case, render_root, config_dir, bit_depth)
     output_dir.mkdir(parents=True, exist_ok=True)
     for index in range(1, len(frames)):
         compact = result_path(output_dir, index)
@@ -261,6 +278,7 @@ def run_dic_stage(case: str, render_root: str, config_dir: Path) -> Path:
             "EXP3_DIC_WORKER_DIR": str(config_dir.resolve()),
             "EXP3_DIC_WORKER_OUT": str(output_dir.resolve()),
             "EXP3_DIC_WORKER_FRAME": str(index),
+            "EXP3_DIC_WORKER_BITS": str(bit_depth),
         }
         subprocess.run([sys.executable, str(Path(__file__).resolve())], check=True, env=worker_env)
     return output_dir
@@ -313,23 +331,25 @@ def rigid_rows(case: str, output_dir: Path, frame_count: int) -> list[dict[str, 
     return rows
 
 
-def run_postprocess_stage(sequences: list[tuple[str, str, Path]]) -> None:
+def run_postprocess_stage(sequences: list[tuple[str, str, Path]], bit_depths: list[int]) -> None:
     """Stage 2: compact raw results in parallel, then write figures/summaries."""
     tasks: list[tuple[str | None, str, str, str, int]] = []
     summaries: list[tuple[str, Path, int, str]] = []
     for case, render_root, config_dir in sequences:
         frames = image_frames(config_dir)
-        output_dir = output_dir_for(case, render_root, config_dir)
-        for index in range(1, len(frames)):
-            compact = result_path(output_dir, index)
-            raw = raw_result(output_dir, index)
-            if not compact.is_file() and raw is None:
-                raise RuntimeError(f"Stage 1 did not produce a DIC result for frame {index:02d} in {output_dir}")
-            image_path = output_dir / f"displacement_frame{index:02d}.png"
-            if not compact.is_file() or not image_path.is_file():
-                tasks.append((str(raw) if raw is not None else None, str(compact), str(image_path), config_dir.name, index))
-        if is_rigid_case(case):
-            summaries.append((case, output_dir, len(frames), config_dir.name))
+        for bit_depth in bit_depths:
+            output_dir = output_dir_for(case, render_root, config_dir, bit_depth)
+            label = f"{config_dir.name}, {bit_depth}-bit"
+            for index in range(1, len(frames)):
+                compact = result_path(output_dir, index)
+                raw = raw_result(output_dir, index)
+                if not compact.is_file() and raw is None:
+                    raise RuntimeError(f"Stage 1 did not produce a DIC result for frame {index:02d} in {output_dir}")
+                image_path = output_dir / f"displacement_frame{index:02d}.png"
+                if not compact.is_file() or not image_path.is_file():
+                    tasks.append((str(raw) if raw is not None else None, str(compact), str(image_path), label, index))
+            if is_rigid_case(case):
+                summaries.append((case, output_dir, len(frames), label))
 
     if tasks:
         # Spawn avoids inheriting PyVale's native state from the DIC controller.
@@ -360,6 +380,7 @@ def main() -> None:
             Path(os.environ["EXP3_DIC_WORKER_DIR"]),
             Path(os.environ["EXP3_DIC_WORKER_OUT"]),
             int(os.environ["EXP3_DIC_WORKER_FRAME"]),
+            int(os.environ["EXP3_DIC_WORKER_BITS"]),
         )
         return
     sequences = render_sequences()
@@ -367,11 +388,13 @@ def main() -> None:
         sequences = sequences[:LIMIT]
     if not sequences:
         raise FileNotFoundError("No completed additive Exp3 render sequences matched the requested filter.")
-    print(f"Exp3 DIC stage 1: {len(sequences)} completed sequences; families={','.join(DIC_CASES)}; subset={DIC_SUBSET_SIZE_PX}, step={DIC_SUBSET_STEP_PX}, shape={DIC_SHAPE_FUNCTION}, threshold={DIC_CORRELATION_THRESHOLD}, threads={DIC_NUM_THREADS}")
+    bit_depths = measurement_bit_depths()
+    print(f"Exp3 DIC stage 1: {len(sequences)} completed sequences; bits={bit_depths}; families={','.join(DIC_CASES)}; subset={DIC_SUBSET_SIZE_PX}, step={DIC_SUBSET_STEP_PX}, shape={DIC_SHAPE_FUNCTION}, threshold={DIC_CORRELATION_THRESHOLD}, threads={DIC_NUM_THREADS}")
     for index, (case, root, directory) in enumerate(sequences, start=1):
         print(f"[{index}/{len(sequences)}] {root}/{case}/{directory.name}")
-        run_dic_stage(case, root, directory)
-    run_postprocess_stage(sequences)
+        for bit_depth in bit_depths:
+            run_dic_stage(case, root, directory, bit_depth)
+    run_postprocess_stage(sequences, bit_depths)
 
 
 if __name__ == "__main__":

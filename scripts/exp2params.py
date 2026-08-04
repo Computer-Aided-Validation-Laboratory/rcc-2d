@@ -41,8 +41,8 @@ if RUN_MODE is RunMode.TEST:
         # "nearest": riley.TextureSample.nearest,
         "linear": riley.TextureSample.linear,
         "cubic_catmull_rom": riley.TextureSample.cubic_catmull_rom,
-        # "cubic_mitchell_netravali": riley.TextureSample.cubic_mitchell_netravali,
-        # "lanczos3": riley.TextureSample.lanczos3,
+        "cubic_bspline": riley.TextureSample.cubic_bspline,
+        "lanczos3": riley.TextureSample.lanczos3,
     }
     # Integration methods and parameters
     INTEGRATION_METHODS: List[Tuple[str, int]] = [
@@ -76,10 +76,8 @@ else:
         #"nearest": riley.TextureSample.nearest,
         "linear": riley.TextureSample.linear,
         "cubic_catmull_rom": riley.TextureSample.cubic_catmull_rom,
-        # "cubic_mitchell_netravali": riley.TextureSample.cubic_mitchell_netravali,
-        # "cubic_bspline": : riley.TextureSample.cubic_bspline,
-        # "lanczos3": riley.TextureSample.lanczos3,
-        # "quintic_bspline": : riley.TextureSample.quintic_bspline,
+        "cubic_bspline": riley.TextureSample.cubic_bspline,
+        "lanczos3": riley.TextureSample.lanczos3,
     }
     # Integration methods and parameters
     INTEGRATION_METHODS: List[Tuple[str, int]] = [

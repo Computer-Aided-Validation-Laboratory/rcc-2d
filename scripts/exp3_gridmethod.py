@@ -31,11 +31,12 @@ if str(HERE) not in sys.path:
     sys.path.insert(0, str(HERE))
 
 from exp0params_common import GRIDMETHOD_CASES
-from exp3params import EGGBOX_PERIOD_FINAL_PX, GRIDMETHOD_WINDOW, GRIDMETHOD_WINDOW_WIDTH_PERIODS
+from exp3params import EGGBOX_PERIOD_FINAL_PX, GRIDMETHOD_WINDOW, GRIDMETHOD_WINDOW_WIDTH_PERIODS, MEASUREMENT_BIT_DEPTHS
 from modules.gridmethod import GridMethodConfig, analyse_sequence
 from modules.render_selection import analysis_enabled, measurement_enabled
 from modules.output_naming import data_case_name, is_rigid_case
 from modules.analysis_parallel import run_analysis_jobs
+from modules.render_outputs import quantise_camera
 
 
 OUT_ROOT = Path("out")
@@ -43,7 +44,7 @@ RESULT_ROOT = OUT_ROOT / "exp3_gridmethod"
 CASE_FILTER = os.environ.get("EXP3_GRIDMETHOD_CASE")
 LIMIT = int(os.environ.get("EXP3_GRIDMETHOD_LIMIT", "0"))
 FIELD_PLOT_LAYOUT_VERSION = "stacked-finite-star-v1"
-GRIDMETHOD_RESULT_VERSION = f"window-{GRIDMETHOD_WINDOW}-{GRIDMETHOD_WINDOW_WIDTH_PERIODS:g}-v2"
+GRIDMETHOD_RESULT_VERSION = f"window-{GRIDMETHOD_WINDOW}-{GRIDMETHOD_WINDOW_WIDTH_PERIODS:g}-v3-bit-depth"
 
 
 def image_frames(directory: Path) -> list[Path]:
@@ -56,6 +57,22 @@ def image_frames(directory: Path) -> list[Path]:
             raise ValueError(f"Cannot determine frame number from {path}")
         return int(match.group(1))
     return sorted(files, key=number)
+
+
+def measurement_bit_depths() -> list[int]:
+    """Allow a focused depth run without changing Exp3's parameter file."""
+    value = os.environ.get("EXP3_MEASUREMENT_BIT_DEPTHS")
+    return list(MEASUREMENT_BIT_DEPTHS) if not value else [int(item) for item in value.split(",") if item.strip()]
+
+
+def read_quantised_images(files: list[Path], bit_depth: int) -> np.ndarray:
+    """Digitise canonical [0, 1] camera floats for one measurement depth."""
+    images = np.stack([np.load(path, mmap_mode="r") for path in files]).astype(np.float64, copy=False)
+    # Keep compatibility with historical Riley NPY outputs expressed in 8-bit
+    # codes.  Current canonical outputs are already normalised floats.
+    if images.size and float(np.nanmax(np.abs(images))) > 1.0 + 1e-8:
+        images /= 255.0
+    return quantise_camera(images, bit_depth).astype(np.float64, copy=False) / float((1 << bit_depth) - 1)
 
 
 def sequences() -> list[tuple[str, str, Path]]:
@@ -75,14 +92,14 @@ def sequences() -> list[tuple[str, str, Path]]:
     return sorted(found, key=lambda item: tuple(str(x) for x in item))
 
 
-def result_dir(case: str, root: str, directory: Path) -> Path:
+def result_dir(case: str, root: str, directory: Path, bit_depth: int) -> Path:
     """Return this render sequence's dedicated Grid Method result directory."""
-    return RESULT_ROOT / case / root / directory.name
+    return RESULT_ROOT / case / root / directory.name / f"b{bit_depth:02d}"
 
 
-def sequence_complete(case: str, root: str, directory: Path, frame_count: int) -> bool:
+def sequence_complete(case: str, root: str, directory: Path, frame_count: int, bit_depth: int) -> bool:
     """Require all fields and rigid diagnostics before skipping a sequence."""
-    out_dir = result_dir(case, root, directory)
+    out_dir = result_dir(case, root, directory, bit_depth)
     fields_complete = all(
         (out_dir / f"displacement_frame{frame:02d}.png").is_file()
         and (out_dir / f"displacement_frame{frame:02d}.npz").is_file()
@@ -104,9 +121,9 @@ def field_plot_marker(out_dir: Path) -> Path:
     return out_dir / ".field_plot_layout"
 
 
-def refresh_field_figures(case: str, root: str, directory: Path, frame_count: int) -> bool:
+def refresh_field_figures(case: str, root: str, directory: Path, frame_count: int, bit_depth: int) -> bool:
     """Regenerate field PNGs from stored results when only styling changed."""
-    out_dir = result_dir(case, root, directory)
+    out_dir = result_dir(case, root, directory, bit_depth)
     marker = field_plot_marker(out_dir)
     if marker.is_file() and marker.read_text().strip() == FIELD_PLOT_LAYOUT_VERSION:
         return False
@@ -118,15 +135,15 @@ def refresh_field_figures(case: str, root: str, directory: Path, frame_count: in
             save_field(
                 out_dir / f"displacement_frame{frame:02d}.png",
                 np.asarray(data["ux"]), np.asarray(data["uy"]), frame,
-                EGGBOX_PERIOD_FINAL_PX, directory.name,
+                EGGBOX_PERIOD_FINAL_PX, f"{directory.name}, {bit_depth}-bit",
             )
     marker.write_text(f"{FIELD_PLOT_LAYOUT_VERSION}\n")
     return True
 
 
-def clear_generated_artifacts(case: str, root: str, directory: Path) -> None:
+def clear_generated_artifacts(case: str, root: str, directory: Path, bit_depth: int) -> None:
     """Clear only Grid Method artifacts owned by an incomplete sequence."""
-    out_dir = result_dir(case, root, directory)
+    out_dir = result_dir(case, root, directory, bit_depth)
     for pattern in (
         "displacement_frame*.png", "displacement_frame*.npz",
         "rigid_motion_summary.csv", "rigid_motion_summary.png",
@@ -198,23 +215,23 @@ def save_rigid_summary(path: Path, rows: list[dict[str, float | int]], label: st
     plt.close(fig)
 
 
-def analyse(case: str, root: str, directory: Path) -> None:
+def analyse(case: str, root: str, directory: Path, bit_depth: int) -> None:
     files = image_frames(directory)
-    images = np.stack([np.load(path, mmap_mode="r") for path in files]).astype(np.float64, copy=False)
+    images = read_quantised_images(files, bit_depth)
     config = GridMethodConfig(
         period_px=EGGBOX_PERIOD_FINAL_PX,
         window_width_periods=GRIDMETHOD_WINDOW_WIDTH_PERIODS,
         window=GRIDMETHOD_WINDOW, displacement_method="iterative", unwrap="reliability",
     )
     result = analyse_sequence(images, config)
-    out_dir = result_dir(case, root, directory)
+    out_dir = result_dir(case, root, directory, bit_depth)
     out_dir.mkdir(parents=True, exist_ok=True)
     expected = expected_motion(case, len(files))
     rows: list[dict[str, float | int]] = []
     crosscheck = analyse_sequence(images, replace(config, unwrap="skimage")) if expected is not None else None
     for frame in range(len(files)):
         ux, uy = result.displacement_x[frame], -result.displacement_y[frame]
-        save_field(out_dir / f"displacement_frame{frame:02d}.png", ux, uy, frame, config.period_px, directory.name)
+        save_field(out_dir / f"displacement_frame{frame:02d}.png", ux, uy, frame, config.period_px, f"{directory.name}, {bit_depth}-bit")
         np.savez_compressed(out_dir / f"displacement_frame{frame:02d}.npz", ux=ux, uy=uy)
         if expected is not None:
             ux_roi, uy_roi = crop(ux, config), crop(uy, config)
@@ -224,17 +241,17 @@ def analyse(case: str, root: str, directory: Path) -> None:
         with (out_dir / "rigid_motion_summary.csv").open("w", newline="") as stream:
             writer = csv.DictWriter(stream, fieldnames=list(rows[0]))
             writer.writeheader(); writer.writerows(rows)
-        save_rigid_summary(out_dir / "rigid_motion_summary.png", rows, directory.name)
+        save_rigid_summary(out_dir / "rigid_motion_summary.png", rows, f"{directory.name}, {bit_depth}-bit")
     field_plot_marker(out_dir).write_text(f"{FIELD_PLOT_LAYOUT_VERSION}\n")
     (out_dir / ".gridmethod_result_version").write_text(f"{GRIDMETHOD_RESULT_VERSION}\n")
     del images, result, crosscheck
     gc.collect()
 
 
-def _analyse_job(item: tuple[str, str, Path]) -> tuple[str, str, str]:
-    case, root, directory = item
-    analyse(case, root, directory)
-    return case, root, directory.name
+def _analyse_job(item: tuple[str, str, Path, int]) -> tuple[str, str, str, int]:
+    case, root, directory, bit_depth = item
+    analyse(case, root, directory, bit_depth)
+    return case, root, directory.name, bit_depth
 
 
 def main() -> None:
@@ -243,27 +260,29 @@ def main() -> None:
         jobs = jobs[:LIMIT]
     if not jobs:
         raise FileNotFoundError("No completed Exp3 eggbox sequences matched the requested filter.")
-    print(f"Exp3 grid method: {len(jobs)} sequences; families={','.join(GRIDMETHOD_CASES)}")
-    pending: list[tuple[str, str, Path]] = []
+    bit_depths = measurement_bit_depths()
+    print(f"Exp3 grid method: {len(jobs)} sequences; bits={bit_depths}; families={','.join(GRIDMETHOD_CASES)}")
+    pending: list[tuple[str, str, Path, int]] = []
     for index, (case, root, directory) in enumerate(jobs, start=1):
-        print(f"[{index}/{len(jobs)}] {root}/{case}/{directory.name}")
         frame_count = len(image_frames(directory))
-        if refresh_field_figures(case, root, directory, frame_count):
-            print("  refreshed displacement figures from stored fields")
-        if sequence_complete(case, root, directory, frame_count):
-            print("  complete: Grid Method fields and diagnostics already exist; skipping")
-            continue
-        print("  incomplete: clearing generated Grid Method artifacts and reprocessing all frames")
-        clear_generated_artifacts(case, root, directory)
-        pending.append((case, root, directory))
+        for bit_depth in bit_depths:
+            print(f"[{index}/{len(jobs)}] {root}/{case}/{directory.name}/b{bit_depth:02d}")
+            if refresh_field_figures(case, root, directory, frame_count, bit_depth):
+                print("  refreshed displacement figures from stored fields")
+            if sequence_complete(case, root, directory, frame_count, bit_depth):
+                print("  complete: Grid Method fields and diagnostics already exist; skipping")
+                continue
+            print("  incomplete: clearing generated Grid Method artifacts and reprocessing all frames")
+            clear_generated_artifacts(case, root, directory, bit_depth)
+            pending.append((case, root, directory, bit_depth))
     if not pending:
         return
     # Sequences share no output files, so each process owns a full
     # load/analyse/write/release lifecycle without synchronisation.
-    for index, (case, root, name) in enumerate(
+    for index, (case, root, name, bit_depth) in enumerate(
         run_analysis_jobs("Exp3 Grid Method", pending, _analyse_job), start=1
     ):
-        print(f"  completed [{index}/{len(pending)}] {root}/{case}/{name}", flush=True)
+        print(f"  completed [{index}/{len(pending)}] {root}/{case}/{name}/b{bit_depth:02d}", flush=True)
 
 
 if __name__ == "__main__":

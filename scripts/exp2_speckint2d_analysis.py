@@ -212,11 +212,20 @@ def analyse_rectangular_self_convergence(
         preferred_bit_depth = 16 if 16 in references else max(references)
         frame_rows = []
         for param in rect_params:
-            if param == ref_param:
-                continue
             directory = jobs[("rect", param)]
             samples = samples_for_method("rect", param)
             for bit_depth, (ref_float, ref_digitised) in references.items():
+                if param == ref_param:
+                    e_f64 = e_inf = e_b = delta_b = max_eb = 0.0
+                    digitised_data[bit_depth]["rect"]["samples"].append(samples)
+                    digitised_data[bit_depth]["rect"]["max_eb"].append(max_eb)
+                    digitised_data[bit_depth]["rect"]["delta_b"].append(delta_b)
+                    if bit_depth == preferred_bit_depth:
+                        float_data["rect"]["samples"].append(samples)
+                        float_data["rect"]["e_f64"].append(e_f64)
+                        float_data["rect"]["e_inf"].append(e_inf)
+                    frame_rows.append({"Group": group_name, "Frame": frame, "BitDepth": bit_depth, "Method": "rect", "Param": param, "Samples": samples, "Reference": f"rect:{ref_param}", "e_f64": e_f64, "e_inf": e_inf, "e_b": e_b, "delta_b": delta_b, "max_eb": max_eb})
+                    continue
                 image = _image_pair(directory, "rect", param, bit_depth, frame)
                 if image is None:
                     continue

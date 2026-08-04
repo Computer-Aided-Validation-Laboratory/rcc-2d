@@ -11,6 +11,9 @@ import riley
 from exp0params_common import CORES, FORCE_RENDER_OVER, NUM_PROCESSES, RILEY_RASTER_THREADS, RUN_MODE, RunMode
 
 BIT_DEPTHS = [8]
+# Measurement analyses re-quantise the canonical post-integration float image;
+# adding a depth here never triggers a rerender or regenerates non-preview TIFFs.
+MEASUREMENT_BIT_DEPTHS = [8, 12]
 TEX_PX_PAD = 4
 BACKGROUND = 0.5
 I0 = 0.5
@@ -56,8 +59,8 @@ if RUN_MODE is RunMode.TEST:
 else:
     # Needed for the 8-bit convergence study; sharp texture cases may need
     # a higher SSAA reference once their streamed texture path is available.
-    SSAA_LEVELS = [1, 2, 4, 8, 16, 32, 64]
-    TEX_OVERSAMPLES = [1, 2, 4, 8, 16, 32, 64]
+    SSAA_LEVELS = [1, 2, 4, 8, 16, 32, 64, 128]
+    TEX_OVERSAMPLES = [1, 2, 4, 8, 16, 32, 64, 128]
 
 if RUN_MODE is RunMode.BIG:
     _test_levels = {1, 2, 4, 8, 16}
@@ -76,7 +79,10 @@ RILEY_TEXTURE_SAMPLERS = {
 }
 # Conservative default run matrix.  Set EXP3_TEX_INTERPOLATORS to a
 # comma-separated subset of RILEY_TEXTURE_SAMPLERS to enable others.
-TEX_INTERPOLATORS = {name: RILEY_TEXTURE_SAMPLERS[name] for name in ("linear", "cubic_catmull_rom")}
+TEX_INTERPOLATORS = {name: RILEY_TEXTURE_SAMPLERS[name] for name in (
+    #"linear",
+    "cubic_catmull_rom",
+    "cubic_bspline",)}
 
 CASE_CAMERA_PIXELS: Final[dict[str, tuple[int, int]]] = {
     "plate516_cam512_quad9_rigid": (512, 512),

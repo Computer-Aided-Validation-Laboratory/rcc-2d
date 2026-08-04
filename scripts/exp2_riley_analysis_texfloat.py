@@ -436,6 +436,26 @@ def _analyse_riley_self_convergence_frame(
         reference = _load_riley_image(by_ssaa[reference_ssaa])
         for ssaa, image_path in by_ssaa.items():
             if ssaa == reference_ssaa:
+                base_row = {
+                    "Case": group_name,
+                    "Pattern": group_name,
+                    "Interpolator": interpolator,
+                    "Frame": frame,
+                    "SSAA": ssaa,
+                    "Oversamp": oversamp,
+                    "Samples": ssaa * ssaa,
+                    "Reference": f"Riley SSAA {reference_ssaa}x{reference_ssaa}",
+                    "ReferenceMethod": "riley_ssaa",
+                    "ReferenceParam": reference_ssaa,
+                }
+                rows_by_interpolator[interpolator].append({
+                    **base_row, "e_f64": 0.0, "e_inf": 0.0,
+                })
+                for bit_depth in BIT_DEPTHS:
+                    digitised_by_interpolator[interpolator].append({
+                        **base_row, "BitDepth": bit_depth,
+                        "delta_b": 0.0, "max_eb": 0.0,
+                    })
                 continue
             image = _load_riley_image(image_path)
             if image.shape != reference.shape:

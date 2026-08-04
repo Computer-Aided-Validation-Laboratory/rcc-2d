@@ -109,6 +109,14 @@ def _set_explicit_sample_ticks(axis, values) -> None:
     axis.set_xlim(0.85 * ticks[0], 1.15 * ticks[-1])
 
 
+def _set_zero_inclusive_float_axis(axis, values) -> None:
+    """Use a precision-aware scale that preserves exact zero endpoints."""
+    floor = 0.5 / float(2 ** max(BIT_DEPTHS) - 1)
+    finite = [float(value) for value in values if np.isfinite(value) and value >= 0.0]
+    axis.set_yscale("symlog", linthresh=floor, linscale=0.8)
+    axis.set_ylim(0.0, 1.15 * max(finite + [floor]))
+
+
 def _load_reference_for_frame(case_dir: Path, frame: int):
     """Prefer the closed-form image, otherwise the highest completed Gauss rule."""
     if CUSTOM_RENDER_SUFFIX:
@@ -230,10 +238,8 @@ def _plot_texture_oversample_metrics(
             points = values_for(float_bit_depth, ssaa, metric)
             if points:
                 x, y = zip(*points)
-                valid = np.asarray(y) > 0.0
-                if np.any(valid):
-                    axis.loglog(np.asarray(x)[valid], np.asarray(y)[valid], color=color,
-                                marker="o", linewidth=1.6)
+                axis.semilogx(np.asarray(x), np.asarray(y), color=color,
+                              marker="o", linewidth=1.6)
             axis.set_title(title)
             axis.set_ylabel(ylabel)
         for plotted_bit_depth in plotted_bit_depths:
@@ -258,6 +264,11 @@ def _plot_texture_oversample_metrics(
         style = bit_styles.get(plotted_bit_depth, "-")
         axes[0, 0].axhline(1.0 / maximum, color="black", linestyle=style, alpha=0.35)
         axes[0, 1].axhline(0.5 / maximum, color="red", linestyle=style, alpha=0.35)
+    for axis, metric in ((axes[0, 0], "e_f64"), (axes[0, 1], "e_inf")):
+        _set_zero_inclusive_float_axis(
+            axis,
+            [value for ssaa in ssaa_values for _, value in values_for(float_bit_depth, ssaa, metric)],
+        )
     axes[1, 0].set_ylim(-0.05, 1.05)
     axes[1, 1].axhline(1.0, color="black", linestyle="--", alpha=0.6)
     axes[1, 1].axhline(0.2, color="red", linestyle=":", alpha=0.6)
@@ -338,9 +349,7 @@ def _plot_texture_ssaa_metrics(
             points = values_for(float_bit_depth, oversamp, metric)
             if points:
                 x, y = zip(*points)
-                valid = np.asarray(y) > 0.0
-                if np.any(valid):
-                    axis.loglog(np.asarray(x)[valid], np.asarray(y)[valid], color=color, marker="o", linewidth=1.6)
+                axis.semilogx(np.asarray(x), np.asarray(y), color=color, marker="o", linewidth=1.6)
             axis.set_title(title)
             axis.set_ylabel(ylabel)
         for plotted_bit_depth in plotted_bit_depths:
@@ -362,6 +371,11 @@ def _plot_texture_ssaa_metrics(
         style = bit_styles.get(plotted_bit_depth, "-")
         axes[0, 0].axhline(1.0 / maximum, color="black", linestyle=style, alpha=0.35)
         axes[0, 1].axhline(0.5 / maximum, color="red", linestyle=style, alpha=0.35)
+    for axis, metric in ((axes[0, 0], "e_f64"), (axes[0, 1], "e_inf")):
+        _set_zero_inclusive_float_axis(
+            axis,
+            [value for oversamp in oversamp_values for _, value in values_for(float_bit_depth, oversamp, metric)],
+        )
     axes[1, 0].set_ylim(-0.05, 1.05)
     axes[1, 1].axhline(1.0, color="black", linestyle="--", alpha=0.6)
     axes[1, 1].axhline(0.2, color="red", linestyle=":", alpha=0.6)
@@ -576,11 +590,9 @@ def _write_function_analysis_figure(
             points = series(method, float_bit_depth, metric)
             if points:
                 x, y = zip(*points)
-                positive = np.asarray(y) > 0.0
-                if np.any(positive):
-                    axis.loglog(np.asarray(x)[positive], np.asarray(y)[positive], color=color,
-                                marker=marker, linestyle=linestyle, linewidth=1.6,
-                                markersize=6, label=label)
+                axis.semilogx(np.asarray(x), np.asarray(y), color=color,
+                              marker=marker, linestyle=linestyle, linewidth=1.6,
+                              markersize=6, label=label)
     for bit_depth in BIT_DEPTHS:
         maximum = float(2**bit_depth - 1)
         style = {8: "-", 12: "--", 16: ":"}.get(bit_depth, "-")
@@ -605,6 +617,16 @@ def _write_function_analysis_figure(
     axes[1, 1].axhline(1.0, color="black", linestyle="--", alpha=0.6, label="1 LSB")
     axes[1, 1].axhline(0.2, color="red", linestyle=":", alpha=0.6, label="0 LSB")
     axes[1, 1].set_ylim(0.16, None)
+    # A self-convergence curve must include its exact-zero reference endpoint.
+    # ``symlog`` preserves that endpoint while still resolving sub-LSB errors.
+    float_limit = 0.5 / float(2 ** max(BIT_DEPTHS) - 1)
+    float_ceiling = max(
+        [float(value) for metric in ("e_f64", "e_inf") for values in riley_func.values() for value in values[metric]]
+        + [float_limit]
+    )
+    for axis in axes[0, :]:
+        axis.set_yscale("symlog", linthresh=float_limit, linscale=0.8)
+        axis.set_ylim(0.0, 1.15 * float_ceiling)
     for axis, title, ylabel in (
         (axes[0, 0], "Floating-Point RMSE", "RMSE"),
         (axes[0, 1], "Floating-Point Max Error", "Max error"),
@@ -1644,9 +1666,12 @@ def analyse_riley_self_convergence(
                             bit_depth, frame,
                         )
 
+                # Analysis digitises the canonical float image on demand; the
+                # optional TIFF is only a visualisation artefact and must not
+                # silently remove bit depths or the highest SSAA reference.
                 available_ssaa = [
                     ssaa for ssaa in SSAA_LEVELS
-                    if all(path.exists() for path in pair_paths(ssaa))
+                    if pair_paths(ssaa)[0].exists()
                 ]
                 if len(available_ssaa) < 2:
                     continue
@@ -1657,6 +1682,19 @@ def analyse_riley_self_convergence(
                 ref_float, ref_digitised = reference
                 for ssaa in available_ssaa:
                     if ssaa == ref_ssaa:
+                        records.append(
+                            {
+                                "label": label,
+                                "bit_depth": bit_depth,
+                                "oversamp": oversamp,
+                                "ssaa": ssaa,
+                                "ref_ssaa": ref_ssaa,
+                                "e_f64": 0.0,
+                                "e_inf": 0.0,
+                                "delta_b": 0.0,
+                                "max_eb": 0.0,
+                            }
+                        )
                         continue
                     image = _load_riley_pair(*pair_paths(ssaa), bit_depth)
                     if image is None:

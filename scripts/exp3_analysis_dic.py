@@ -24,16 +24,18 @@ RESULTS = OUT / "exp3_analysis_dic"
 
 @dataclass(frozen=True)
 class Record:
-    case: str; root: str; config: str; directory: Path; pattern: str; ssaa: int; osamp: int; interpolator: str; analytic: bool
+    case: str; root: str; config: str; directory: Path; bit_depth: int; pattern: str; ssaa: int; osamp: int; interpolator: str; analytic: bool
 
 
 def discover() -> list[Record]:
     rows=[]
-    for directory in (OUT / "exp3_dic").glob("*/*/*"):
+    for directory in (OUT / "exp3_dic").glob("*/*/*/b*"):
         if not directory.is_dir() or not list(directory.glob("dic_frame*.npz")): continue
-        case, root, config = directory.parent.parent.name, directory.parent.name, directory.name
+        try: bit_depth = int(directory.name.removeprefix("b"))
+        except ValueError: continue
+        case, root, config = directory.parent.parent.parent.name, directory.parent.parent.name, directory.parent.name
         pattern = pattern_of(config)
-        rows.append(Record(case, root, config, directory, pattern, parameter(config, SS_RE), parameter(config, OS_RE), interpolator_of(config), "_analytic_" in config))
+        rows.append(Record(case, root, config, directory, bit_depth, pattern, parameter(config, SS_RE), parameter(config, OS_RE), interpolator_of(config), "_analytic_" in config))
     return rows
 
 
@@ -58,10 +60,10 @@ def reference(records: list[Record]) -> tuple[Record | None,str]:
 def reference_candidates(record: Record, records: list[Record]) -> list[Record]:
     """Keep texture reconstruction convergence separate from the continuum."""
     if "riley_render_tex" not in record.root:
-        return [item for item in records if item.case == record.case and item.pattern == record.pattern and ("_psf" in item.root or "_psf" in item.config) == ("_psf" in record.root or "_psf" in record.config)]
+        return [item for item in records if item.case == record.case and item.bit_depth == record.bit_depth and item.pattern == record.pattern and ("_psf" in item.root or "_psf" in item.config) == ("_psf" in record.root or "_psf" in record.config)]
     return [
         item for item in records
-        if item.case == record.case and item.root == record.root
+        if item.case == record.case and item.bit_depth == record.bit_depth and item.root == record.root
         and item.pattern == record.pattern and item.interpolator == record.interpolator
         and item.osamp == record.osamp
         and ("_psf" in item.root or "_psf" in item.config) == ("_psf" in record.root or "_psf" in record.config)
@@ -84,7 +86,7 @@ def field_plot(path: Path, rec: Record, frame: int, ref: Record, ref_name: str, 
         for axis,field,part in zip(axes[row],(ref_field,current,diff),("reference","current","difference")):
             im=axis.imshow(field,extent=(x.min(),x.max(),y.max(),y.min()),cmap="coolwarm",aspect="auto")
             axis.set_title(f"{name}: {part}",fontsize=9); axis.set_xlabel("column [px]");axis.set_ylabel("row [px]");fig.colorbar(im,ax=axis,label="px")
-    fig.suptitle(f"{title_lines(rec.case + ': ' + rec.config)} | frame {frame:02d}\nReference: {title_lines(ref.config)} ({ref_name}); max difference={maximum:.4g} px",fontsize=10,fontweight="bold")
+    fig.suptitle(f"{title_lines(rec.case + ': ' + rec.config)} | {rec.bit_depth}-bit, frame {frame:02d}\nReference: {title_lines(ref.config)} ({ref_name}); max difference={maximum:.4g} px",fontsize=10,fontweight="bold")
     path.parent.mkdir(parents=True,exist_ok=True);fig.savefig(path,dpi=150);fig.clear();release();return maximum,rms
 
 
@@ -97,24 +99,24 @@ def analyse(payload: tuple[Record,list[Record]]) -> list[dict[str,object]]:
         if a is None or b is None: continue
         x,y,ru,rv=a; _,_,cu,cv=b
         if ru.shape!=cu.shape: continue
-        maximum,rms=field_plot(RESULTS/rec.case/rec.root/rec.config/f"frame{frame:02d}_difference.png",rec,frame,ref,ref_name,(x,y,ru,rv,cu,cv))
-        rows.append({"Case":rec.case,"Root":rec.root,"Series":series_label(rec),"Config":rec.config,"Pattern":rec.pattern,"Frame":frame,"SSAA":rec.ssaa or 1,"OS":rec.osamp or 1,"Reference":ref_name,"max_difference_px":maximum,"rms_difference_px":rms})
+        maximum,rms=field_plot(RESULTS/rec.case/rec.root/rec.config/f"b{rec.bit_depth:02d}"/f"frame{frame:02d}_difference.png",rec,frame,ref,ref_name,(x,y,ru,rv,cu,cv))
+        rows.append({"Case":rec.case,"Root":rec.root,"Series":series_label(rec),"Config":rec.config,"BitDepth":rec.bit_depth,"Pattern":rec.pattern,"Frame":frame,"SSAA":rec.ssaa or 1,"OS":rec.osamp or 1,"Reference":ref_name,"max_difference_px":maximum,"rms_difference_px":rms})
         del a,b,x,y,ru,rv,cu,cv;release()
     return rows
 
 
 def convergence(rows:list[dict[str,object]])->None:
     groups=defaultdict(list)
-    for row in rows: groups[(row["Case"],row["Pattern"],row["Series"],row["Frame"])].append(row)
-    for (case,pattern,series_name,frame),values in groups.items():
+    for row in rows: groups[(row["Case"],row["Pattern"],row["Series"],row["BitDepth"],row["Frame"])].append(row)
+    for (case,pattern,series_name,bit_depth,frame),values in groups.items():
         fig=Figure(figsize=(7,4.5),constrained_layout=True);FigureCanvasAgg(fig);axis=fig.subplots()
         by_os=defaultdict(list)
         for row in values:by_os[int(row["OS"])].append(row)
         plotted=[]
         for osamp,series in sorted(by_os.items(), reverse=True):
             series.sort(key=lambda r:int(r["SSAA"])); y=[r["max_difference_px"] for r in series];axis.plot([r["SSAA"] for r in series],y,"o-",label=f"OS={osamp}" if any(int(r["OS"]) > 1 for r in values) else "SSAA series");plotted.extend(y)
-        axis.set_xscale("log",base=2);numeric_y_axis(axis,plotted);axis.set_xticks(sorted({int(r["SSAA"]) for r in values}));axis.set_xlabel("SSAA samples along one pixel axis");axis.set_ylabel("max displacement difference [px]");axis.grid(alpha=.3);axis.legend(fontsize=8);axis.set_title(f"{title_lines(case+': '+pattern+' DIC convergence')} | frame {frame:02d}\nRender series: {title_lines(series_name)}\nReference: {title_lines(str(values[0]['Reference']))}",fontsize=9)
-        path=RESULTS/case/series_name/f"{pattern}_frame{frame:02d}_convergence.png";path.parent.mkdir(parents=True,exist_ok=True);fig.savefig(path,dpi=150);fig.clear();release()
+        axis.set_xscale("log",base=2);numeric_y_axis(axis,plotted);axis.set_xticks(sorted({int(r["SSAA"]) for r in values}));axis.set_xlabel("SSAA samples along one pixel axis");axis.set_ylabel("max displacement difference [px]");axis.grid(alpha=.3);axis.legend(fontsize=8);axis.set_title(f"{title_lines(case+': '+pattern+' DIC convergence')} | {bit_depth}-bit, frame {frame:02d}\nRender series: {title_lines(series_name)}\nReference: {title_lines(str(values[0]['Reference']))}",fontsize=9)
+        path=RESULTS/case/series_name/f"b{int(bit_depth):02d}"/f"{pattern}_frame{frame:02d}_convergence.png";path.parent.mkdir(parents=True,exist_ok=True);fig.savefig(path,dpi=150);fig.clear();release()
 
 
 def main()->None:

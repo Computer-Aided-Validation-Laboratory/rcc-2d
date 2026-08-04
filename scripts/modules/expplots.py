@@ -58,6 +58,26 @@ def _set_sample_axis(axis, samples: Sequence[float]) -> None:
     explicit_log_ticks(axis, ticks)
 
 
+def _set_float_error_axis(axis, values: Sequence[float], bit_depths: Sequence[int]) -> None:
+    """Show exact zero errors without hiding the finite convergence curve.
+
+    Self-convergence includes its reference sample explicitly.  A log y-axis
+    cannot represent that zero endpoint, so use a precision-aware symlog axis
+    while retaining the log sample axis.
+    """
+    depths = list(bit_depths)
+    finest_half_lsb = 0.5 / float(2 ** max(depths) - 1)
+    coarsest_lsb = 1.0 / float(2 ** min(depths) - 1)
+    finite = np.asarray(values, dtype=float)
+    finite = finite[np.isfinite(finite) & (finite >= 0.0)]
+    axis.set_yscale("symlog", linthresh=finest_half_lsb, linscale=0.8)
+    for bit_depth in depths:
+        maximum = float(2**bit_depth - 1)
+        axis.axhline(1.0 / maximum, color="black", linestyle=BIT_LINESTYLES.get(bit_depth, "-."), alpha=0.4)
+        axis.axhline(0.5 / maximum, color="red", linestyle=BIT_LINESTYLES.get(bit_depth, "-."), alpha=0.35)
+    axis.set_ylim(0.0, 1.15 * max(float(np.max(finite)) if finite.size else 0.0, coarsest_lsb))
+
+
 def plot_bespoke_four_panel(
     case_name: str,
     frame: int,
@@ -87,22 +107,18 @@ def plot_bespoke_four_panel(
         ("e_f64", axes[0, 0], "Floating-Point RMSE", "RMSE ($e_{f64}$)"),
         ("e_inf", axes[0, 1], "Floating-Point Max Error", "Max error ($e_{∞}$)"),
     ):
+        metric_values: list[float] = []
         for method, values in float_data.items():
             if not values["samples"]:
                 continue
             order = np.argsort(values["samples"])
             samples = samples_per_pixel_axis(np.asarray(values["samples"])[order])
             errors = np.asarray(values[metric])[order]
-            valid = errors > 0.0
-            if np.any(valid):
-                color, marker, label = _style(method)
-                axis.loglog(samples[valid], errors[valid], color=color, marker=marker,
-                            label=label, linewidth=1.8, markersize=7)
-        for bit_depth in bit_depths:
-            maximum = float(2**bit_depth - 1)
-            style = BIT_LINESTYLES.get(bit_depth, "-.")
-            axis.axhline(1.0 / maximum, color="black", linestyle=style, alpha=0.4)
-            axis.axhline(0.5 / maximum, color="red", linestyle=style, alpha=0.35)
+            color, marker, label = _style(method)
+            axis.semilogx(samples, errors, color=color, marker=marker,
+                          label=label, linewidth=1.8, markersize=7)
+            metric_values.extend(errors.tolist())
+        _set_float_error_axis(axis, metric_values, bit_depths)
         axis.set_title(title)
         axis.set_ylabel(ylabel)
 
