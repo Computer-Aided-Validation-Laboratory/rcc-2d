@@ -37,6 +37,7 @@ def camera_kwargs(sigma_px: float, support_sigmas: float) -> dict[str, object]:
 def configure_raster_config(
     config: riley.RasterConfig, *, psf: bool | None = None,
     buffer_mode: str = "global_subpx_full",
+    workers: int | None = None,
 ) -> None:
     """Select an explicit Riley global sub-pixel buffer for PSF rasterisation.
 
@@ -45,6 +46,13 @@ def configure_raster_config(
     path in Riley's PSF implementation.  Fail loudly if an older Riley build
     is used instead of silently changing the PSF algorithm.
     """
+    if workers is not None:
+        worker_count = max(1, int(workers))
+        # Riley's global-buffer paths read these two limits directly.  Set
+        # both after construction so an API-default change cannot silently
+        # reduce a PSF render to one raster worker.
+        config.total_threads = worker_count
+        config.max_raster_workers_per_job = worker_count
     if psf is None:
         psf = enabled()
     if not psf:

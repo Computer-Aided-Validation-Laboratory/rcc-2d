@@ -42,16 +42,16 @@ RILEY_RASTER_THREADS: int = CORES
 # studies, add ``"texuint"`` (and, if wanted, ``"texuint_psf"``) below.
 CUSTOM_RENDER_CASES: tuple[str, ...] = (
     "eggbox",
-    # "eggbox_psf",
+    "eggbox_psf",
     "disk",
     "gauss",
-    # "disk_psf",
+    "disk_psf",
 )
 RILEY_RENDER_CASES: tuple[str, ...] = (
     "func",
     "texfloat",
-    # "func_psf",
-    # "texfloat_psf",
+    "func_psf",
+    "texfloat_psf",
     # "texuint",       # Re-enable digitised texture source studies here.
     # "texuint_psf",   # Re-enable digitised PSF texture source studies here.
 )

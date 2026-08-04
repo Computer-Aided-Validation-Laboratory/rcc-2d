@@ -662,7 +662,10 @@ def riley_render(case: str, pattern: str, shader: str, ssaa: int, *, texture_os:
     # mode preserves a global PSF accumulation while bounding peak RAM by the
     # configured stripe height, unlike the full global sub-pixel buffer used
     # safely by the 32x32 Exp1/2 cameras.
-    configure_raster_config(config, psf=psf, buffer_mode="global_subpx_stripe")
+    configure_raster_config(
+        config, psf=psf, buffer_mode="global_subpx_stripe",
+        workers=RILEY_RASTER_THREADS,
+    )
     detail = f"pattern={pattern}; shader={shader}; SSAA={ssaa}; psf={psf}"
     if texture_os is not None:
         detail += f"; interp={interp}; OS={texture_os}; storage={storage}"

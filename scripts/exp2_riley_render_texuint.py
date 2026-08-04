@@ -225,7 +225,7 @@ def main() -> None:
                                 config.max_geom_workers_per_job = 1
                                 config.max_raster_workers_per_job = RILEY_RASTER_THREADS
                                 config.tile_size_min = 1
-                                configure_raster_config(config)
+                                configure_raster_config(config, workers=RILEY_RASTER_THREADS)
                                 images = timed_call(timer, str(case_out), riley.raster, [mesh], [camera], config)
                                 if images is None:
                                     raise RuntimeError("Riley returned no in-memory image data.")
