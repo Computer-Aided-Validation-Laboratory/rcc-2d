@@ -665,6 +665,7 @@ def riley_render(case: str, pattern: str, shader: str, ssaa: int, *, texture_os:
     configure_raster_config(
         config, psf=psf, buffer_mode="global_subpx_stripe",
         workers=RILEY_RASTER_THREADS,
+        sub_sample=ssaa,
     )
     detail = f"pattern={pattern}; shader={shader}; SSAA={ssaa}; psf={psf}"
     if texture_os is not None:
