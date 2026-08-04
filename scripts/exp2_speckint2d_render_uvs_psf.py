@@ -22,8 +22,9 @@ from modules.ortho_psf_common import render_psf_frame
 from modules.render_selection import custom_enabled
 from modules.render_logging import case_label, render_log
 from modules.output_naming import config_name
+from modules.psf_riley_common import output_name as psf_output_name
 
-OUTPUT_DIR = exp2_output_dir("exp2_speckint2d_render_uvs_psf")
+OUTPUT_DIR = exp2_output_dir(psf_output_name("exp2_speckint2d_render_uvs_psf"))
 
 
 def _active_frames() -> set[int]:

@@ -16,6 +16,7 @@ import numpy as np
 from PIL import Image
 import pyvista as pv
 import riley
+from modules.psf_riley_common import configure_raster_config
 from scipy.ndimage import gaussian_filter, map_coordinates
 
 from modules.exp1common import build_pv_mesh
@@ -657,6 +658,11 @@ def riley_render(case: str, pattern: str, shader: str, ssaa: int, *, texture_os:
     psf_kwargs = ({"psf_type": riley.PsfType.gaussian, "psf_sigma_x": PSF_SIGMA_FINAL_PX, "psf_sigma_y": PSF_SIGMA_FINAL_PX, "psf_support_rad": PSF_SIGMA_FINAL_PX * PSF_SUPPORT_SIGMAS, "psf_separable": 1} if psf else {})
     camera=riley.Camera(pixels_num=(width,height),pixels_size=(roi_x/width,roi_y/height),pos_world=riley.pos_fill_frame_from_rot(roi,(width,height),(roi_x/width,roi_y/height),1000.,(0,0,0),1.),rot_world=(0,0,0),roi_cent_world=tuple(riley.roi_cent_from_coords(roi)),focal_length=1000.,sub_sample=ssaa,coord_sys=riley.CameraCoordSys.opengl,**psf_kwargs)
     config=riley.create_raster_config(num_frames=ux.shape[1],total_threads=RILEY_RASTER_THREADS,save_strategy=riley.SaveStrategy.memory); config.frame_batch_size_per_group=1;config.max_geom_jobs_in_flight_per_group=1;config.max_geom_workers_per_job=1;config.max_raster_workers_per_job=RILEY_RASTER_THREADS;config.tile_size_min=1
+    # Exp3 camera buffers can be thousands of pixels wide.  The global stripe
+    # mode preserves a global PSF accumulation while bounding peak RAM by the
+    # configured stripe height, unlike the full global sub-pixel buffer used
+    # safely by the 32x32 Exp1/2 cameras.
+    configure_raster_config(config, psf=psf, buffer_mode="global_subpx_stripe")
     detail = f"pattern={pattern}; shader={shader}; SSAA={ssaa}; psf={psf}"
     if texture_os is not None:
         detail += f"; interp={interp}; OS={texture_os}; storage={storage}"

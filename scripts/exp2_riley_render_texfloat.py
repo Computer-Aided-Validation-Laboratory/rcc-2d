@@ -46,7 +46,7 @@ from exp2params import (
     BIT_DEPTHS,
     exp2_output_dir,
 )
-from modules.psf_riley_common import camera_kwargs, enabled as psf_enabled
+from modules.psf_riley_common import camera_kwargs, configure_raster_config, enabled as psf_enabled, output_name as psf_output_name
 from modules.render_selection import float_textures_enabled
 from modules.render_logging import case_label, render_log
 from modules.output_naming import config_name
@@ -54,7 +54,7 @@ from modules.exp12_geometry import ROI_PIXELS, TEXTURE_PAD_PIXELS, roi_corners, 
 from exp0params_common import EXP12_TEST_SAMPLE_LEVELS, RUN_MODE, RunMode
 from exp2_texgen_speckle_analytic import generate_texture
 
-OUTPUT_ROOT = exp2_output_dir("exp2_riley_render_texfloat_psf" if psf_enabled() else "exp2_riley_render_texfloat")
+OUTPUT_ROOT = exp2_output_dir(psf_output_name("exp2_riley_render_texfloat_psf") if psf_enabled() else "exp2_riley_render_texfloat")
 
 
 def get_ssaa_levels() -> list[int]:
@@ -315,6 +315,7 @@ def main() -> None:
                                     config.max_geom_workers_per_job = 1
                                     config.max_raster_workers_per_job = RILEY_RASTER_THREADS
                                     config.tile_size_min = 1
+                                    configure_raster_config(config)
                                     images = timed_call(
                                         timer, str(case_out), riley.raster,
                                         [mesh], [camera], config,

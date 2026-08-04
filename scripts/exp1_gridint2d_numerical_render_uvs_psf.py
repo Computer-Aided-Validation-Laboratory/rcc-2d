@@ -19,8 +19,9 @@ from modules.ortho_psf_common import render_psf_frame
 from modules.render_outputs import save_float_and_depths, write_camera_depths, float_and_depths_complete
 from modules.render_selection import custom_enabled
 from modules.render_logging import case_label, render_log
+from modules.psf_riley_common import output_name as psf_output_name
 
-OUTPUT_DIR = exp1_output_dir("exp1_gridint2d_render_uvs_psf")
+OUTPUT_DIR = exp1_output_dir(psf_output_name("exp1_gridint2d_render_uvs_psf"))
 
 
 def _active_frames() -> set[int]:

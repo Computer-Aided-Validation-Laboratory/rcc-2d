@@ -43,7 +43,7 @@ from exp2params import (
     TARG_PX_Y,
     exp2_output_dir,
 )
-from modules.psf_riley_common import camera_kwargs, enabled as psf_enabled
+from modules.psf_riley_common import camera_kwargs, configure_raster_config, enabled as psf_enabled, output_name as psf_output_name
 from exp2_riley_render_texfloat import (
     compute_texture_world_uvs,
     get_riley_mesh_type,
@@ -66,7 +66,10 @@ from modules.exp12_geometry import roi_corners
 # Exp2 deliberately creates large oversampled textures.  They are local,
 # trusted data, so Pillow's decompression-bomb safeguard is not applicable.
 Image.MAX_IMAGE_PIXELS = None
-OUTPUT_ROOT = exp2_output_dir("exp2_riley_render_texuint_psf" if psf_enabled() else "exp2_riley_render_texuint")
+OUTPUT_ROOT = exp2_output_dir(
+    psf_output_name("exp2_riley_render_texuint_psf")
+    if psf_enabled() else "exp2_riley_render_texuint"
+)
 
 
 def get_bit_depths() -> list[int]:
@@ -222,6 +225,7 @@ def main() -> None:
                                 config.max_geom_workers_per_job = 1
                                 config.max_raster_workers_per_job = RILEY_RASTER_THREADS
                                 config.tile_size_min = 1
+                                configure_raster_config(config)
                                 images = timed_call(timer, str(case_out), riley.raster, [mesh], [camera], config)
                                 if images is None:
                                     raise RuntimeError("Riley returned no in-memory image data.")

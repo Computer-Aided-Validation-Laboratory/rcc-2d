@@ -38,13 +38,13 @@ from exp1params import (
     SSAA_LEVELS,
     exp1_output_dir,
 )
-from modules.psf_riley_common import camera_kwargs, enabled as psf_enabled
+from modules.psf_riley_common import camera_kwargs, configure_raster_config, enabled as psf_enabled, output_name as psf_output_name
 from modules.render_selection import riley_enabled
 from modules.render_outputs import save_float_and_depths, float_and_depths_complete
 from modules.render_logging import case_label, render_log
 from modules.exp12_geometry import roi_corners
 
-OUTPUT_ROOT = exp1_output_dir("exp1_riley_render_func_uvs_psf" if psf_enabled() else "exp1_riley_render_func_uvs")
+OUTPUT_ROOT = exp1_output_dir(psf_output_name("exp1_riley_render_func_uvs_psf") if psf_enabled() else "exp1_riley_render_func_uvs")
 
 
 def get_ssaa_levels() -> list[int]:
@@ -220,6 +220,7 @@ def main() -> None:
                 config.max_geom_workers_per_job = 1
                 config.max_raster_workers_per_job = RILEY_RASTER_THREADS
                 config.tile_size_min = 1
+                configure_raster_config(config)
                 images = timed_call(timer, str(case_out), riley.raster,
                     [mesh],
                     [camera],
