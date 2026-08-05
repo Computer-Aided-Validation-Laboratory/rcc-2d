@@ -140,10 +140,8 @@ I want to
     - Rigid body motion
     - Affine deformation
     - Finite star
-    - Plate with hole
 
 ## Instructions
 There is a uv venv in the .venv directory you can use.
 
-## To Implement    
-
+## To Implement
