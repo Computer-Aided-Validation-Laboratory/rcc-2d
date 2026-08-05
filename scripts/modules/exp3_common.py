@@ -56,6 +56,23 @@ def coverage_to_intensity(coverage: np.ndarray) -> np.ndarray:
     return np.clip(I0 + GAMMA * (1.0 - 2.0 * clipped), 0.0, 1.0)
 
 
+def speckle_pattern_bounds(case: str) -> tuple[float, float, float, float]:
+    """Fixed padded world rectangle for one Exp3 speckle realisation.
+
+    The seeded jittered lattice depends on its construction bounds.  Thus the
+    analytic renderer and every texture OS must use this *same* rectangle;
+    only the sampling of that field changes with OS.  The extent is the camera
+    ROI plus the texture halo.  ``make_speckle_pattern`` itself supplies the
+    extra disc/Gaussian support margin needed outside this requested region.
+    """
+    width, height = CASE_CAMERA_PIXELS[case]
+    roi_x, roi_y = CASE_ROI_SIZES[case]
+    pad_x = TEX_PX_PAD * roi_x / width
+    pad_y = TEX_PX_PAD * roi_y / height
+    return (-roi_x / 2 - pad_x, roi_x / 2 + pad_x,
+            -roi_y / 2 - pad_y, roi_y / 2 + pad_y)
+
+
 def _levels(name: str, defaults: list[int]) -> list[int]:
     value = os.environ.get(name)
     return defaults if not value else [int(v) for v in value.split(",") if v.strip()]
@@ -258,10 +275,10 @@ def texture_owner_case(case: str) -> str:
     return next((candidate for candidate in matches if "rigid" in candidate), case)
 
 
-def _link_texture_asset(source: Path, destination: Path) -> None:
+def _link_texture_asset(source: Path, destination: Path, *, replace_existing: bool = False) -> None:
     """Create a verified same-filesystem hard link for one shared asset."""
     destination.parent.mkdir(parents=True, exist_ok=True)
-    if destination.exists():
+    if destination.exists() and not replace_existing:
         if destination.stat().st_size != source.stat().st_size:
             raise RuntimeError(f"Shared texture size mismatch: {destination}")
         return
@@ -293,8 +310,9 @@ def generate_texture(case: str, pattern: str, oversamp: int) -> Path:
     """
     path = texture_path(case, pattern, oversamp)
     texture_signature = hashlib.sha256(repr((
-        "raw_coverage_texel_integral_v2", case, pattern, oversamp,
+        "raw_coverage_texel_integral_v3_fixed_pattern_bounds", case, pattern, oversamp,
         CASE_CAMERA_PIXELS[case], CASE_ROI_SIZES[case], EGGBOX_PERIOD_FINAL_PX,
+        speckle_pattern_bounds(case) if pattern != "eggbox" else None,
     )).encode()).hexdigest()
     marker = path.with_suffix(".sha256")
     width, height = CASE_CAMERA_PIXELS[case]
@@ -306,18 +324,19 @@ def generate_texture(case: str, pattern: str, oversamp: int) -> Path:
         # case-local logical path.  The marker remains case-local so existing
         # resumable Riley render signatures stay valid.
         owner_path = generate_texture(owner, pattern, oversamp)
-        if not path.exists():
-            _link_texture_asset(owner_path, path)
+        stale_link = marker_value != texture_signature
+        if not path.exists() or stale_link:
+            _link_texture_asset(owner_path, path, replace_existing=stale_link)
         owner_preview = owner_path.with_name(f"{owner_path.stem}_preview_b8.tiff")
         preview = path.with_name(f"{path.stem}_preview_b8.tiff")
-        if owner_preview.exists() and not preview.exists():
-            _link_texture_asset(owner_preview, preview)
+        if owner_preview.exists() and (not preview.exists() or stale_link):
+            _link_texture_asset(owner_preview, preview, replace_existing=stale_link)
         for bits in bit_depths() if uint_textures_enabled() else ():
             owner_uint = texture_path(owner, pattern, oversamp, "uint", bits)
             current_uint = texture_path(case, pattern, oversamp, "uint", bits)
-            if owner_uint.exists() and not current_uint.exists():
-                _link_texture_asset(owner_uint, current_uint)
-        if not marker.exists():
+            if owner_uint.exists() and (not current_uint.exists() or stale_link):
+                _link_texture_asset(owner_uint, current_uint, replace_existing=stale_link)
+        if marker_value != texture_signature:
             marker.write_text(f"{texture_signature}\n")
         return path
     if path.exists() and marker_value == texture_signature and not force_render():
@@ -401,7 +420,9 @@ def generate_texture(case: str, pattern: str, oversamp: int) -> Path:
         )
         initargs = (
             pattern, 5.0 * roi_x / width, BLACK_AREA_FRACTIONS[0],
-            distribution, jitter, (x[0], x[-1], y[-1], y[0]), x_start,
+            # Keep the seeded field fixed as OS changes.  ``x``/``y`` are
+            # texel centres and therefore must not define the field bounds.
+            distribution, jitter, speckle_pattern_bounds(case), x_start,
             roi_y / 2 + TEX_PX_PAD * roi_y / height, sx, sy,
         )
         if workers == 1:
@@ -507,6 +528,12 @@ def bespoke_render(case: str, pattern: str, method: str, param: int, *, texture_
     """Chunked custom ortho renderer.  Its frame mapping is independent of Riley."""
     coords, connect, ux, uy = load_case(case)
     signature = case_signature(coords, connect, ux, uy)
+    if pattern != "eggbox":
+        # Version the shared analytic/texture speckle realisation convention.
+        # This invalidates images made when texgen used OS-dependent bounds.
+        signature = hashlib.sha256(
+            f"{signature}:speckle_bounds_v3:{speckle_pattern_bounds(case)}".encode()
+        ).hexdigest()
     width, height = CASE_CAMERA_PIXELS[case]; roi_x, roi_y = CASE_ROI_SIZES[case]
     root = output_root(
         f"exp3_{'gridint2d' if pattern == 'eggbox' else 'speckint2d'}_render_{method}{'_psf' if psf else ''}"
@@ -524,7 +551,7 @@ def bespoke_render(case: str, pattern: str, method: str, param: int, *, texture_
         speckles = make_speckle_pattern(
             pattern, 5 * roi_x / width, BLACK_AREA_FRACTIONS[0], distribution,
             jitter, RANDOM_SEED, GAUSSIAN_CUTOFF_SIGMAS,
-            (-roi_x / 2 - 8, roi_x / 2 + 8, -roi_y / 2 - 8, roi_y / 2 + 8),
+            speckle_pattern_bounds(case),
             I0, GAMMA, GAUSSIAN_EQUIVALENT_DISK_EDGE_FRACTION,
             GAUSSIAN_CONTINUOUS_TAIL_SIGMAS,
         )
