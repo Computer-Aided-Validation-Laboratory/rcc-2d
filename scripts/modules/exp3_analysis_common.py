@@ -48,7 +48,11 @@ def parameter(config: str, regex: re.Pattern[str]) -> int:
 
 
 def interpolator_of(config: str) -> str:
-    for name in ("cubiccm", "cubic_catmull_rom", "line", "linear", "func"):
+    for name in (
+        "cubiccm", "cubic_catmull_rom", "cubic_bspline",
+        "cubic_mitchell_netravali", "quintic_bspline", "lanczos2",
+        "lanczos3", "near", "nearest", "line", "linear", "func",
+    ):
         if f"_{name}_" in config or config.startswith(f"eggb_{name}_") or config.startswith(f"eggbox_{name}_"):
             return name
     return "bespoke"

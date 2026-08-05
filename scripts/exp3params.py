@@ -53,19 +53,41 @@ DIC_POSTPROCESS_JOBS = CORES
 GRIDMETHOD_WINDOW = "triangular"
 GRIDMETHOD_WINDOW_WIDTH_PERIODS = 1.0
 
-if RUN_MODE is RunMode.TEST:
-    SSAA_LEVELS = [1, 2, 4, 8, 16]
-    TEX_OVERSAMPLES = [1, 2, 4, 8, 16]
-else:
-    # Needed for the 8-bit convergence study; sharp texture cases may need
-    # a higher SSAA reference once their streamed texture path is available.
-    SSAA_LEVELS = [1, 2, 4, 8, 16, 32, 64, 128]
-    TEX_OVERSAMPLES = [1, 2, 4, 8, 16, 32, 64, 128]
+TEST_SSAA_LEVELS = [1, 2, 4, 8, 16]
+TEST_TEX_OVERSAMPLES = [1, 2, 4, 8, 16]
+# Needed for the 8-bit convergence study; sharp texture cases may need a
+# higher SSAA reference once their streamed texture path is available.
+ALL_SSAA_LEVELS = [1, 2, 4, 8, 16, 32, 64, 128]
+ALL_TEX_OVERSAMPLES = [1, 2, 4, 8, 16, 32, 64, 128]
 
-if RUN_MODE is RunMode.BIG:
-    _test_levels = {1, 2, 4, 8, 16}
-    SSAA_LEVELS = [level for level in SSAA_LEVELS if level not in _test_levels]
-    TEX_OVERSAMPLES = [level for level in TEX_OVERSAMPLES if level not in _test_levels]
+if RUN_MODE is RunMode.TEST:
+    SSAA_LEVELS = list(TEST_SSAA_LEVELS)
+    TEX_OVERSAMPLES = list(TEST_TEX_OVERSAMPLES)
+elif RUN_MODE is RunMode.BIG:
+    # One-dimensional studies (bespoke and function shader) need only the
+    # levels omitted by TEST.  Texture studies use ``TEXTURE_SSAA_OS_PAIRS``
+    # below, which is the full Cartesian difference rather than this product.
+    SSAA_LEVELS = [level for level in ALL_SSAA_LEVELS if level not in TEST_SSAA_LEVELS]
+    TEX_OVERSAMPLES = [level for level in ALL_TEX_OVERSAMPLES if level not in TEST_TEX_OVERSAMPLES]
+else:
+    SSAA_LEVELS = list(ALL_SSAA_LEVELS)
+    TEX_OVERSAMPLES = list(ALL_TEX_OVERSAMPLES)
+
+_test_texture_pairs = {
+    (ssaa, oversamp)
+    for ssaa in TEST_SSAA_LEVELS
+    for oversamp in TEST_TEX_OVERSAMPLES
+}
+TEXTURE_SSAA_OS_PAIRS = (
+    [(ssaa, oversamp) for ssaa in TEST_SSAA_LEVELS for oversamp in TEST_TEX_OVERSAMPLES]
+    if RUN_MODE is RunMode.TEST else
+    [
+        (ssaa, oversamp)
+        for ssaa in ALL_SSAA_LEVELS
+        for oversamp in ALL_TEX_OVERSAMPLES
+        if RUN_MODE is not RunMode.BIG or (ssaa, oversamp) not in _test_texture_pairs
+    ]
+)
 
 RILEY_TEXTURE_SAMPLERS = {
     "nearest": riley.TextureSample.nearest,

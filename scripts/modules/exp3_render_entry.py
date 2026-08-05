@@ -4,8 +4,8 @@ from __future__ import annotations
 import os
 
 from modules.exp3_common import (
-    bespoke_render, bit_depths, oversamples, riley_render, selected_cases,
-    ssaa_levels,
+    bespoke_render, bit_depths, riley_render, selected_cases,
+    ssaa_levels, texture_oversamples, texture_ssaa_oversample_pairs,
 )
 from exp3params import RILEY_TEXTURE_SAMPLERS, TEX_INTERPOLATORS
 from modules.render_selection import custom_enabled, float_textures_enabled, riley_enabled, uint_textures_enabled
@@ -22,7 +22,7 @@ def run(kind: str) -> None:
             return
         from modules.exp3_common import generate_texture
         for case in cases:
-            for osamp in oversamples(): generate_texture(case, "eggbox", osamp)
+            for osamp in texture_oversamples(): generate_texture(case, "eggbox", osamp)
         return
     if kind == "texgen_speckle":
         if not float_textures_enabled() and not uint_textures_enabled():
@@ -31,7 +31,7 @@ def run(kind: str) -> None:
         from modules.exp3_common import generate_texture
         for case in cases:
             for pattern in ("diskaddsat", "gausscont"):
-                for osamp in oversamples(): generate_texture(case, pattern, osamp)
+                for osamp in texture_oversamples(): generate_texture(case, pattern, osamp)
         return
     if kind == "gridint2d_analytic":
         if not custom_enabled("eggbox"):
@@ -94,8 +94,7 @@ def run(kind: str) -> None:
         interps = os.environ.get("EXP3_TEX_INTERPOLATORS", ",".join(TEX_INTERPOLATORS)).split(",")
         for case in cases:
             for pattern in ("eggbox", "diskaddsat", "gausscont"):
-                for ss in ssaa_levels():
-                    for osamp in oversamples():
+                for ss, osamp in texture_ssaa_oversample_pairs():
                         for interp in interps:
                             if interp.strip() not in RILEY_TEXTURE_SAMPLERS:
                                 raise ValueError(f"Unsupported Riley sampler {interp.strip()!r}; choose from {', '.join(RILEY_TEXTURE_SAMPLERS)}")
@@ -113,8 +112,7 @@ def run(kind: str) -> None:
             return
         interps = os.environ.get("EXP3_TEX_INTERPOLATORS", ",".join(TEX_INTERPOLATORS)).split(",")
         for case in cases:
-            for ss in ssaa_levels():
-                for osamp in oversamples():
+            for ss, osamp in texture_ssaa_oversample_pairs():
                     for interp in interps:
                         if interp.strip() not in RILEY_TEXTURE_SAMPLERS:
                             raise ValueError(f"Unsupported Riley sampler {interp.strip()!r}; choose from {', '.join(RILEY_TEXTURE_SAMPLERS)}")

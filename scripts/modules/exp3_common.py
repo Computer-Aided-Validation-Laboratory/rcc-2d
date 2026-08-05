@@ -10,6 +10,7 @@ from __future__ import annotations
 import os
 import hashlib
 import multiprocessing
+from itertools import product
 from pathlib import Path
 
 import numpy as np
@@ -37,6 +38,7 @@ from exp3params import (
     DEFORMATION_CASES, EGGBOX_PERIOD_FINAL_PX, FORCE_RENDER_OVER, GAMMA, I0,
     MAPPING_MODES, PSF_SIGMA_FINAL_PX, PSF_SUPPORT_SIGMAS, RILEY_RASTER_THREADS,
     SSAA_LEVELS, RILEY_TEXTURE_SAMPLERS, TEX_OVERSAMPLES, TEX_PX_PAD,
+    TEXTURE_SSAA_OS_PAIRS,
     additive_jitter_for, BLACK_AREA_FRACTIONS, RANDOM_SEED,
     GAUSSIAN_CUTOFF_SIGMAS, GAUSSIAN_EQUIVALENT_DISK_EDGE_FRACTION,
     GAUSSIAN_CONTINUOUS_TAIL_SIGMAS,
@@ -62,6 +64,23 @@ def _levels(name: str, defaults: list[int]) -> list[int]:
 def ssaa_levels() -> list[int]: return _levels("EXP3_SSAA_LEVELS", SSAA_LEVELS)
 def oversamples() -> list[int]: return _levels("EXP3_TEX_OVERSAMPLES", TEX_OVERSAMPLES)
 def bit_depths() -> list[int]: return _levels("EXP3_BIT_DEPTHS", BIT_DEPTHS)
+
+
+def texture_ssaa_oversample_pairs() -> list[tuple[int, int]]:
+    """Return the texture render matrix for the current run mode.
+
+    BIG is the Cartesian set difference ``ALL × ALL - TEST × TEST``.  If a
+    caller explicitly sets either level environment variable, that explicit
+    request intentionally takes precedence and uses its Cartesian product.
+    """
+    if "EXP3_SSAA_LEVELS" in os.environ or "EXP3_TEX_OVERSAMPLES" in os.environ:
+        return list(product(ssaa_levels(), oversamples()))
+    return list(TEXTURE_SSAA_OS_PAIRS)
+
+
+def texture_oversamples() -> list[int]:
+    """Texture OS levels required by the active pair matrix (for texgen)."""
+    return sorted({oversamp for _, oversamp in texture_ssaa_oversample_pairs()})
 
 
 TEXGEN_WORKERS = max(1, int(os.environ.get("EXP3_TEXGEN_JOBS", str(TEXGEN_JOBS))))

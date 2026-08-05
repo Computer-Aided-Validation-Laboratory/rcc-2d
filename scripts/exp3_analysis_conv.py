@@ -1,9 +1,11 @@
 #!/usr/bin/env python3
-"""Convergence analysis for all completed Exp3 renderer outputs.
+"""Exp3 render convergence in the same figure/layout convention as Exp2.
 
-Analytic bespoke images are the primary reference wherever available.  A
-highest completed SSAA/OS image is used otherwise.  The companion ``_rectconv``
-tree always uses the highest SSAA/OS of the same renderer series.
+Custom and Riley-function studies use an analytic image whenever it exists.
+Otherwise their highest completed SSAA image is the reference.  A Riley
+texture is a reconstructed signal rather than the procedural continuum, so
+each interpolator/OS series instead uses its own highest completed SSAA image.
+This is the same reference convention used by the Exp2 texture analysis.
 """
 from __future__ import annotations
 
@@ -13,184 +15,358 @@ from collections import defaultdict
 from pathlib import Path
 
 import numpy as np
-from matplotlib.backends.backend_agg import FigureCanvasAgg
-from matplotlib.figure import Figure
+from matplotlib import rcParams
+from matplotlib.lines import Line2D
+from matplotlib.ticker import FixedFormatter, FixedLocator
 
-from exp0params_common import CORES
 from exp3params import BIT_DEPTHS
-from modules.exp3_analysis_common import Render, best_reference, discover_renders, image_frames, load_image, numeric_y_axis, release, title_lines
-from modules.analysis_selection import analysis_should_run, mark_analysis_complete
+from modules.analysis_memory import make_agg_figure, release_batch, release_figure
 from modules.analysis_parallel import run_analysis_jobs
+from modules.analysis_selection import analysis_should_run, mark_analysis_complete
+from modules.exp3_analysis_common import Render, discover_renders, image_frames, load_image
 from modules.render_outputs import quantise_camera
+
 
 RESULTS = Path("out/exp3_analysis_conv")
 RECT_RESULTS = Path("out/exp3_analysis_conv_rectconv")
+BIT_LINESTYLES = {8: "-", 10: "--", 12: "-.", 16: ":"}
+MARKERS = ("o", "s", "^", "v", "<", ">", "D", "P", "X")
 
 
-def family(item: Render) -> str:
+def renderer_family(item: Render) -> str:
     if "grid2d" in item.root:
-        return "grid2d"
+        return "custom_grid"
     if "speck2d" in item.root:
-        return "speck2d"
+        return "custom_speck"
     if "riley_render_func" in item.root:
         return "riley_func"
-    storage = "texuint" if "texuint" in item.root else "texfloat"
-    return f"riley_{storage}_{item.interpolator}"
+    return "riley_texuint" if "texuint" in item.root else "riley_texfloat"
 
 
-def metrics(image: np.ndarray, reference: np.ndarray, bit_depth: int) -> tuple[float, float, float, float]:
-    delta = image - reference
-    digitised = quantise_camera(image, bit_depth).astype(np.float64) - quantise_camera(reference, bit_depth).astype(np.float64)
-    values = (float(np.sqrt(np.mean(delta * delta))), float(np.max(np.abs(delta))), float(np.max(np.abs(digitised))), float(np.mean(digitised != 0)))
-    del delta, digitised
-    return values
+def is_texture(item: Render) -> bool:
+    return renderer_family(item).startswith("riley_tex")
 
 
-def plot(rows: list[dict[str, object]], path: Path, heading: str, reference_name: str) -> None:
-    figure = Figure(figsize=(11, 7), constrained_layout=True); FigureCanvasAgg(figure)
-    axes = figure.subplots(2, 2).ravel()
-    fields = (("e_rms", "Float RMS error"), ("e_max", "Float max error"), ("max_lsb", "Max 8-bit code error [LSB]"), ("fraction_changed", "Changed-pixel fraction"))
-    by_os: dict[int, list[dict[str, object]]] = defaultdict(list)
-    for row in rows: by_os[int(row["OS"])].append(row)
-    texture_series = any("_os" in str(row["Config"]) for row in rows)
-    for axis, (field, ylabel) in zip(axes, fields):
-        plotted: list[float] = []
-        # Draw high OS first, leaving lower-OS curves visible where they
-        # overlap after the high-OS series has converged.
-        for osamp, values in sorted(by_os.items(), reverse=True):
-            values.sort(key=lambda row: int(row["SSAA"]))
-            x = [int(row["SSAA"]) for row in values]; y = [float(row[field]) for row in values]
-            axis.plot(x, y, "o-", label=f"OS={osamp}" if texture_series else "SSAA series")
-            plotted.extend(y)
-        axis.set_xscale("log", base=2); numeric_y_axis(axis, plotted)
-        axis.set_xticks(sorted({int(row["SSAA"]) for row in rows})); axis.set_xticklabels(sorted({int(row["SSAA"]) for row in rows}))
-        axis.set_xlabel("SSAA samples along one pixel axis"); axis.set_ylabel(ylabel); axis.grid(alpha=.3); axis.legend(fontsize=8)
-    figure.suptitle(f"{title_lines(heading)}\nReference: {reference_name}", fontsize=11, fontweight="bold")
-    path.parent.mkdir(parents=True, exist_ok=True); figure.savefig(path, dpi=160); figure.clear(); release()
+def is_psf(item: Render) -> bool:
+    return "_psf" in item.root or "_psf" in item.config
 
 
-def analyse_group(payload: tuple[str, str, str, str, list[Render], list[Render], int]) -> tuple[list[dict[str, object]], list[dict[str, object]]]:
-    case, fam, pattern, output_key, items, reference_candidates, bit_depth = payload
-    reference, ref_label = best_reference(reference_candidates)
-    if reference is None: return [], []
-    frames = image_frames(reference.directory)
-    primary: list[dict[str, object]] = []; self_rows: list[dict[str, object]] = []
-    self_reference = max(items, key=lambda item: (item.ssaa, item.oversamp)) if items else None
-    self_label = (
-        (f"Highest SSAA/OS: SSAA={self_reference.ssaa}, OS={self_reference.oversamp}" if self_reference.oversamp else f"Highest SSAA: SSAA={self_reference.ssaa}")
-        if self_reference else "No self reference"
+def render_case(family: str, psf: bool) -> str:
+    """Name the Exp3 renderer root like Exp1/2's separate analysis suites."""
+    if family == "custom_grid":
+        return "grid2d_psf" if psf else "grid2d"
+    if family == "custom_speck":
+        return "speck2d_psf" if psf else "speck2d"
+    if family == "riley_func":
+        return "riley_func_psf" if psf else "riley_func"
+    storage = "texu" if family == "riley_texuint" else "texf"
+    return f"riley_{storage}{'_psf' if psf else ''}"
+
+
+def output_group(case: str, pattern: str, psf: bool, family: str, interpolator: str) -> Path:
+    """Place every study below its own renderer root, like Exp1/Exp2."""
+    group = RESULTS / render_case(family, psf) / f"{case}_{pattern}"
+    if family.startswith("riley_tex"):
+        return group / interpolator
+    return group
+
+
+def rectconv_group(case: str, pattern: str, psf: bool, family: str, interpolator: str) -> Path:
+    relative = output_group(case, pattern, psf, family, interpolator).relative_to(RESULTS)
+    return RECT_RESULTS / relative
+
+
+def load_frame(item: Render, frame: int) -> np.ndarray | None:
+    path = image_frames(item.directory).get(frame)
+    return load_image(path) if path is not None else None
+
+
+def reference_label(reference: Render, *, texture: bool) -> str:
+    if reference.analytic:
+        return "Analytic Reference"
+    if texture:
+        return f"Highest SSAA Reference at OS={reference.oversamp} ({reference.ssaa}x{reference.ssaa})"
+    return f"Highest SSAA Reference ({reference.ssaa}x{reference.ssaa})"
+
+
+def reference_for(items: list[Render], candidates: list[Render], *, texture: bool) -> Render | None:
+    analytic = [value for value in candidates if value.analytic]
+    if analytic:
+        return sorted(analytic, key=lambda value: (value.root, value.config))[0]
+    # An analytic image may be shared by equivalent renderer families.  Once
+    # that option is absent, do not silently substitute another renderer's
+    # model: converge the current study to its own highest completed SSAA.
+    return max(items, key=lambda value: (value.ssaa, value.oversamp)) if items else None
+
+
+def metric_row(image: np.ndarray, reference: np.ndarray, bit_depth: int) -> tuple[float, float, float, float, float]:
+    difference = image - reference
+    code_difference = (
+        quantise_camera(image, bit_depth).astype(np.int64)
+        - quantise_camera(reference, bit_depth).astype(np.int64)
     )
-    for frame, ref_path in frames.items():
-        ref_image = load_image(ref_path)
-        self_path = image_frames(self_reference.directory).get(frame) if self_reference else None
-        self_image = load_image(self_path) if self_path else None
-        for item in items:
-            if item == reference:
+    result = (
+        float(np.sqrt(np.mean(difference ** 2))),
+        float(np.max(np.abs(difference))),
+        float(np.sqrt(np.mean(code_difference ** 2))),
+        float(np.mean(code_difference != 0)),
+        float(np.max(np.abs(code_difference))),
+    )
+    del difference, code_difference
+    return result
+
+
+def set_samples_axis(axis, values: list[int], label: str) -> None:
+    ticks = sorted({int(value) for value in values if value > 0})
+    if not ticks:
+        return
+    axis.set_xscale("log", base=2)
+    axis.xaxis.set_major_locator(FixedLocator(ticks))
+    axis.xaxis.set_major_formatter(FixedFormatter([str(value) for value in ticks]))
+    axis.set_xlim(0.85 * ticks[0], 1.15 * ticks[-1])
+    axis.set_xlabel(label)
+
+
+def set_float_axis(axis, rows: list[dict[str, object]], metric: str, bit_depths: list[int]) -> None:
+    values = [float(row[metric]) for row in rows if np.isfinite(float(row[metric])) and float(row[metric]) >= 0.0]
+    finest_half_lsb = 0.5 / float(2 ** max(bit_depths) - 1)
+    coarsest_lsb = 1.0 / float(2 ** min(bit_depths) - 1)
+    axis.set_yscale("symlog", linthresh=finest_half_lsb, linscale=0.8)
+    for bits in bit_depths:
+        maximum = float(2 ** bits - 1)
+        axis.axhline(1.0 / maximum, color="black", linestyle=BIT_LINESTYLES.get(bits, "-"), alpha=0.35)
+        axis.axhline(0.5 / maximum, color="red", linestyle=BIT_LINESTYLES.get(bits, "-"), alpha=0.35)
+    axis.set_ylim(0.0, 1.15 * max(values + [coarsest_lsb]))
+
+
+def set_max_lsb_axis(axis, rows: list[dict[str, object]]) -> None:
+    maximum = max([float(row["max_eb"]) for row in rows] + [1.0])
+    axis.set_yscale("symlog", linthresh=1.0, linscale=0.8)
+    axis.axhline(1.0, color="black", linestyle="--", alpha=0.55, label="1 LSB")
+    axis.axhline(0.0, color="red", linestyle=":", alpha=0.6, label="0 LSB")
+    axis.set_ylim(0.0, 1.15 * maximum)
+
+
+def line_label(family: str, line_key: str, value: int) -> str:
+    if family.startswith("riley_tex"):
+        return f"Riley, Tex, {'OS' if line_key == 'OS' else 'SSAA'}={value}"
+    if family == "riley_func":
+        return f"Riley, Func, SSAA={value}"
+    return f"Custom, SSAA={value}"
+
+
+def plot_four_panel(
+    rows: list[dict[str, object]], bit_depth: int, x_key: str, line_key: str,
+    x_label: str, title: str, output_path: Path, family: str,
+) -> None:
+    selected = [row for row in rows if int(row["BitDepth"]) == bit_depth]
+    if not selected:
+        return
+    figure, axes = make_agg_figure(2, 2, figsize=(15, 10), constrained_layout=True)
+    grouped: dict[int, list[dict[str, object]]] = defaultdict(list)
+    for row in selected:
+        grouped[int(row[line_key])].append(row)
+    line_values = sorted(grouped)
+    colors = rcParams["axes.prop_cycle"].by_key()["color"]
+    styles = {value: (colors[index % len(colors)], MARKERS[index % len(MARKERS)]) for index, value in enumerate(line_values)}
+    # Exp2 convention: plot the highest line-control value first so lower
+    # curves remain readable where the converged curves overlap.
+    for value in reversed(line_values):
+        series = sorted(grouped[value], key=lambda row: int(row[x_key]))
+        color, marker = styles[value]
+        label = line_label(family, line_key, value)
+        for axis, metric in ((axes[0, 0], "e_f64"), (axes[0, 1], "e_inf"), (axes[1, 0], "delta_b"), (axes[1, 1], "max_eb")):
+            axis.plot([int(row[x_key]) for row in series], [float(row[metric]) for row in series], color=color, marker=marker, linewidth=1.6, markersize=6, label=label)
+    set_float_axis(axes[0, 0], selected, "e_f64", [bit_depth])
+    set_float_axis(axes[0, 1], selected, "e_inf", [bit_depth])
+    axes[1, 0].set_ylim(0.0, 1.0)
+    set_max_lsb_axis(axes[1, 1], selected)
+    for axis, panel_title, ylabel in (
+        (axes[0, 0], "Floating-Point RMSE", "RMSE"),
+        (axes[0, 1], "Floating-Point Max Error", "Max error"),
+        (axes[1, 0], "Digitised Mismatch Fraction", "Fraction of differing pixels"),
+        (axes[1, 1], "Maximum Digitised Mismatch", "LSB levels"),
+    ):
+        set_samples_axis(axis, [int(row[x_key]) for row in selected], x_label)
+        axis.set_title(panel_title); axis.set_ylabel(ylabel); axis.grid(True, which="both", ls="--", alpha=0.4)
+        handles, labels = axis.get_legend_handles_labels()
+        unique = dict(zip(labels, handles))
+        if unique:
+            axis.legend(unique.values(), unique.keys(), loc="lower left", fontsize=6, frameon=True, facecolor="white", edgecolor="none")
+    figure.suptitle(f"{title} | {bit_depth}-bit", fontweight="bold")
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    figure.savefig(output_path, dpi=150)
+    release_figure(figure)
+
+
+def plot_limit_cuts(rows: list[dict[str, object]], title: str, output_dir: Path, frame: int, family: str) -> None:
+    """Match Exp2's four min/max SSAA/OS texture-study cuts."""
+    ssaa = sorted({int(row["SSAA"]) for row in rows})
+    oversamp = sorted({int(row["OS"]) for row in rows})
+    if len(ssaa) < 2 or len(oversamp) < 2:
+        return
+    cuts = (
+        ("max_ssaa", "SSAA", "OS", max(oversamp), "OS", "Riley Samples Along One Pixel Axis"),
+        ("max_oversamp", "OS", "SSAA", max(ssaa), "SSAA", "Texture Oversampling Along One Pixel Axis"),
+        ("min_ssaa", "SSAA", "OS", min(oversamp), "OS", "Riley Samples Along One Pixel Axis"),
+        ("min_oversamp", "OS", "SSAA", min(ssaa), "SSAA", "Texture Oversampling Along One Pixel Axis"),
+    )
+    colors = rcParams["axes.prop_cycle"].by_key()["color"]
+    for suffix, x_key, fixed_key, fixed_value, fixed_name, x_label in cuts:
+        fixed = [row for row in rows if int(row[fixed_key]) == fixed_value]
+        if not fixed:
+            continue
+        figure, axes = make_agg_figure(1, 2, figsize=(12, 6), constrained_layout=True)
+        # Float data are numerically identical for each digitisation depth;
+        # use the finest selected depth to avoid duplicate overlapping lines.
+        float_depth = max(int(row["BitDepth"]) for row in fixed)
+        float_rows = sorted((row for row in fixed if int(row["BitDepth"]) == float_depth), key=lambda row: int(row[x_key]))
+        axes[0].plot([int(row[x_key]) for row in float_rows], [float(row["e_inf"]) for row in float_rows], marker="o", color="#1f77b4", label=line_label(family, fixed_name, fixed_value))
+        set_float_axis(axes[0], float_rows, "e_inf", sorted({int(row["BitDepth"]) for row in fixed}))
+        set_samples_axis(axes[0], [int(row[x_key]) for row in float_rows], x_label)
+        axes[0].set_title("Floating-Point Maximum Error"); axes[0].set_ylabel("Max error"); axes[0].grid(True, which="both", ls="--", alpha=0.4); axes[0].legend(loc="lower left", fontsize=7)
+        for index, bits in enumerate(sorted({int(row["BitDepth"]) for row in fixed}, reverse=True)):
+            series = sorted((row for row in fixed if int(row["BitDepth"]) == bits), key=lambda row: int(row[x_key]))
+            axes[1].plot([int(row[x_key]) for row in series], [float(row["max_eb"]) for row in series], marker="o", linestyle=BIT_LINESTYLES.get(bits, "-"), color=colors[index % len(colors)], label=f"Riley, Tex, {fixed_name}={fixed_value}, {bits}-bit")
+        set_max_lsb_axis(axes[1], fixed)
+        set_samples_axis(axes[1], [int(row[x_key]) for row in fixed], x_label)
+        axes[1].set_title("Maximum Digitised Mismatch"); axes[1].set_ylabel("LSB levels"); axes[1].grid(True, which="both", ls="--", alpha=0.4); axes[1].legend(loc="lower left", fontsize=7)
+        figure.suptitle(f"{title}\nLimit: {fixed_name}={fixed_value}", fontweight="bold")
+        figure.savefig(output_dir / f"limit_{suffix}_frame{frame:02d}.png", dpi=150)
+        release_figure(figure)
+
+
+def write_figures(rows: list[dict[str, object]], output_dir: Path, frame: int, title: str, family: str, *, texture: bool) -> None:
+    frame_rows = [row for row in rows if int(row["Frame"]) == frame]
+    for bit_depth in sorted({int(row["BitDepth"]) for row in frame_rows}):
+        plot_four_panel(frame_rows, bit_depth, "SSAA", "OS", "Riley Samples Along One Pixel Axis" if texture else "Samples Along One Pixel Axis", title, output_dir / f"metrics_b{bit_depth:02d}_frame{frame:02d}.png", family)
+        if texture:
+            plot_four_panel(frame_rows, bit_depth, "OS", "SSAA", "Texture Oversampling Along One Pixel Axis", title, output_dir / f"os_metrics_b{bit_depth:02d}_frame{frame:02d}.png", family)
+    if texture:
+        plot_limit_cuts(frame_rows, title, output_dir, frame, family)
+
+
+def make_rows(
+    case: str, family: str, pattern: str, psf: bool, interpolator: str,
+    items: list[Render], candidates: list[Render], bit_depths: list[int],
+) -> tuple[list[dict[str, object]], list[dict[str, object]]]:
+    texture = family.startswith("riley_tex")
+    by_os: dict[int, list[Render]] = defaultdict(list)
+    for item in items:
+        by_os[item.oversamp if texture else 1].append(item)
+    primary: list[dict[str, object]] = []
+    self_rows: list[dict[str, object]] = []
+    for osamp, series in sorted(by_os.items()):
+        reference = reference_for(series, candidates, texture=texture)
+        if reference is None:
+            continue
+        self_reference = max(series, key=lambda value: (value.ssaa, value.oversamp))
+        primary_label, self_label = reference_label(reference, texture=texture), reference_label(self_reference, texture=True)
+        for frame in sorted(image_frames(reference.directory)):
+            ref_image = load_frame(reference, frame)
+            self_image = load_frame(self_reference, frame)
+            if ref_image is None or self_image is None:
                 continue
-            path = image_frames(item.directory).get(frame)
-            if path is None: continue
-            image = load_image(path)
-            if image.shape == ref_image.shape:
-                rms, maximum, lsb, changed = metrics(image, ref_image, bit_depth)
-                primary.append({"Case": case, "Family": fam, "Pattern": pattern, "Config": item.config, "Frame": frame, "BitDepth": bit_depth, "SSAA": item.ssaa or 1, "OS": item.oversamp or 1, "Reference": ref_label, "e_rms": rms, "e_max": maximum, "max_lsb": lsb, "fraction_changed": changed})
-            if self_image is not None and image.shape == self_image.shape and item != self_reference:
-                rms, maximum, lsb, changed = metrics(image, self_image, bit_depth)
-                self_rows.append({"Case": case, "Family": fam, "Pattern": pattern, "Config": item.config, "Frame": frame, "BitDepth": bit_depth, "SSAA": item.ssaa or 1, "OS": item.oversamp or 1, "Reference": self_label, "e_rms": rms, "e_max": maximum, "max_lsb": lsb, "fraction_changed": changed})
-            del image
-        if primary:
-            plot([row for row in primary if int(row["Frame"]) == frame], RESULTS / case / fam / f"{pattern}_b{bit_depth:02d}_frame{frame:02d}_conv.png", f"{case}: {fam}, {pattern}, {bit_depth}-bit", ref_label)
-        if reference.analytic and self_rows:
-            plot([row for row in self_rows if int(row["Frame"]) == frame], RECT_RESULTS / case / fam / f"{pattern}_b{bit_depth:02d}_frame{frame:02d}_rectconv.png", f"{case}: {fam}, {pattern}, {bit_depth}-bit self convergence", self_label)
-        del ref_image, self_image
-        release()
+            for item in series:
+                image = load_frame(item, frame)
+                if image is None:
+                    continue
+                for bit_depth in bit_depths:
+                    base = {"Case": case, "Family": family, "Pattern": pattern, "PSF": psf, "Interpolator": interpolator, "Config": item.config, "Frame": frame, "BitDepth": bit_depth, "SSAA": item.ssaa or 1, "OS": item.oversamp or 1}
+                    # The analytic image is a reference, not an SSAA=1
+                    # sample.  Its parsed parameter is zero (displayed as
+                    # one otherwise), which previously made a spurious zero
+                    # point appear beside the real SSAA=1 render.
+                    if item != reference and image.shape == ref_image.shape:
+                        e_f64, e_inf, e_b, delta_b, max_eb = metric_row(image, ref_image, bit_depth)
+                        primary.append({**base, "Reference": primary_label, "e_f64": e_f64, "e_inf": e_inf, "e_b": e_b, "delta_b": delta_b, "max_eb": max_eb})
+                    # Exp1/2 _rectconv convention: always compare against
+                    # the highest available SSAA (at each OS for textures),
+                    # independently of the primary analytic-reference study.
+                    if not item.analytic and image.shape == self_image.shape:
+                        e_f64, e_inf, e_b, delta_b, max_eb = metric_row(image, self_image, bit_depth)
+                        self_rows.append({**base, "Reference": self_label, "e_f64": e_f64, "e_inf": e_inf, "e_b": e_b, "delta_b": delta_b, "max_eb": max_eb})
+                del image
+            del ref_image, self_image
+            release_batch()
     return primary, self_rows
 
 
-def write_csv(path: Path, rows: list[dict[str, object]]) -> None:
-    if not rows: return
-    path.mkdir(parents=True, exist_ok=True)
-    with (path / "summary.csv").open("w", newline="") as handle:
-        writer = csv.DictWriter(handle, fieldnames=list(rows[0])); writer.writeheader(); writer.writerows(rows)
+def analyse_task(task: tuple[str, str, str, bool, str, list[Render], list[Render], list[int]]) -> tuple[Path, Path, Path, Path, list[dict[str, object]], list[dict[str, object]]]:
+    case, family, pattern, psf, interpolator, items, candidates, bit_depths = task
+    output_dir = output_group(case, pattern, psf, family, interpolator)
+    rect_dir = rectconv_group(case, pattern, psf, family, interpolator)
+    primary, self_rows = make_rows(case, family, pattern, psf, interpolator, items, candidates, bit_depths)
+    if primary:
+        references = {str(row["Reference"]) for row in primary}
+        reference_title = "Highest SSAA Reference at each OS" if family.startswith("riley_tex") and len(references) > 1 else str(primary[0]["Reference"])
+        renderer_title = "Riley, Tex" if family.startswith("riley_tex") else ("Riley, Func" if family == "riley_func" else "Custom")
+        title = f"{renderer_title}: {case}, {pattern} | Reference: {reference_title}"
+    else:
+        title = f"{case}, {pattern}"
+    for frame in sorted({int(row["Frame"]) for row in primary}):
+        write_figures(primary, output_dir, frame, title, family, texture=family.startswith("riley_tex"))
+    if self_rows:
+        self_title = f"{case}, {pattern}: self convergence | Reference: {self_rows[0]['Reference']}"
+        for frame in sorted({int(row["Frame"]) for row in self_rows}):
+            write_figures(self_rows, rect_dir, frame, self_title, family, texture=family.startswith("riley_tex"))
+    release_batch()
+    return output_dir, rect_dir, RESULTS / render_case(family, psf), RECT_RESULTS / render_case(family, psf), primary, self_rows
 
 
-def comparison_overlays(rows: list[dict[str, object]]) -> None:
-    """Overlay like-for-like bespoke Exp3 and Exp1/2 SSAA convergence."""
-    comparison_dir = RESULTS / "exp1_exp2_comparisons"; comparison_dir.mkdir(parents=True, exist_ok=True)
-    comparison_bit_depth = 16 if 16 in BIT_DEPTHS else max(BIT_DEPTHS)
-    for pattern, previous in (("eggbox", Path("out/exp1_grid2d_analysis_uvs/summary.csv")), ("diskaddsat", Path("out/exp2_speck2d_analysis/summary.csv")), ("gausscont", Path("out/exp2_speck2d_analysis/summary.csv"))):
-        if not previous.exists(): continue
-        old = list(csv.DictReader(previous.open()))
-        for case_kind in ("rigid", "affine"):
-            # These are intentionally bespoke-only comparisons.  Texture and
-            # function-shader rows have independent OS/shader controls and
-            # must never be concatenated into an SSAA curve.
-            exp3_family = "grid2d" if pattern == "eggbox" else "speck2d"
-            new = [
-                row for row in rows
-                if row["Pattern"] == pattern
-                and row["Family"] == exp3_family
-                and case_kind in str(row["Case"])
-                and int(row["Frame"]) == 0
-                and int(row["OS"]) == 1
-                and int(row["BitDepth"]) == comparison_bit_depth
-            ]
-            old_rows = [
-                row for row in old
-                if case_kind in row.get("Case", row.get("Group", ""))
-                and (pattern == "eggbox" or pattern in row.get("Group", row.get("Pattern", "")))
-                and int(row.get("Frame", 0)) == 0
-                and row.get("Method", "rect") == "rect"
-            ]
-            if not new or not old_rows: continue
-            figure = Figure(figsize=(7, 4.5), constrained_layout=True); FigureCanvasAgg(figure); axis = figure.subplots()
-            plotted: list[float] = []
-            for label, data, xkey, ykey in ((f"Exp3 {exp3_family}, SSAA", new, "SSAA", "e_max"), ("Exp1 rectangular SSAA" if pattern == "eggbox" else "Exp2 rectangular SSAA", old_rows, "Samples", "e_inf")):
-                values = sorted(data, key=lambda row: float(row[xkey])); axis.plot([float(row[xkey]) for row in values], [float(row[ykey]) for row in values], "o-", label=label)
-                plotted.extend(float(row[ykey]) for row in values)
-            axis.set_xscale("log", base=2); numeric_y_axis(axis, plotted); axis.set_xlabel("SSAA samples along one pixel axis"); axis.set_ylabel("max floating-point error"); axis.grid(alpha=.3); axis.legend(fontsize=8)
-            previous_name = "Exp1" if pattern == "eggbox" else "Exp2"
-            axis.set_title(
-                f"{case_kind.title()}, {pattern}: bespoke Exp3 vs {previous_name}\n"
-                "Frame 00; analytic-reference max error",
-                fontsize=10,
-            )
-            figure.savefig(comparison_dir / f"{pattern}_{case_kind}_bespoke_ssaa_overlay.png", dpi=160); figure.clear(); release()
+def write_summary(directory: Path, rows: list[dict[str, object]]) -> None:
+    if not rows:
+        return
+    directory.mkdir(parents=True, exist_ok=True)
+    fields = ["Case", "Family", "Pattern", "PSF", "Interpolator", "Config", "Frame", "BitDepth", "SSAA", "OS", "Reference", "e_f64", "e_inf", "e_b", "delta_b", "max_eb"]
+    with (directory / "summary.csv").open("w", newline="") as stream:
+        writer = csv.DictWriter(stream, fieldnames=fields)
+        writer.writeheader(); writer.writerows(rows)
 
 
 def main() -> None:
     if not analysis_should_run(RESULTS, "Experiment 3 convergence analysis"):
         return
-    renders = discover_renders(); groups: dict[tuple[str, str, str], list[Render]] = defaultdict(list)
-    by_case_pattern: dict[tuple[str, str, bool], list[Render]] = defaultdict(list)
+    renders = [item for item in discover_renders() if "_oldver" not in item.root]
+    all_by_case_pattern: dict[tuple[str, str, bool], list[Render]] = defaultdict(list)
+    grouped: dict[tuple[str, str, str, bool, str], list[Render]] = defaultdict(list)
     for item in renders:
-        psf = "_psf" in item.root or "_psf" in item.config
-        groups[(item.case, family(item), item.pattern, psf)].append(item); by_case_pattern[(item.case, item.pattern, psf)].append(item)
+        family, psf = renderer_family(item), is_psf(item)
+        all_by_case_pattern[(item.case, item.pattern, psf)].append(item)
+        grouped[(item.case, family, item.pattern, psf, item.interpolator if is_texture(item) else "")].append(item)
     tasks = []
-    for (case, fam, pattern, psf), items in groups.items():
-        # A Riley texture at each OS is a separate reconstructed signal.  Its
-        # highest SSAA is therefore its own reference; never compare it to
-        # the continuum analytic image or a different texture OS.
-        buckets = (
-            {osamp: [item for item in items if item.oversamp == osamp]
-             for osamp in sorted({item.oversamp for item in items})}
-            if fam.startswith("riley_tex") else {None: items}
-        )
-        for osamp, bucket in buckets.items():
-            display_family = f"{fam}_os{osamp}" if osamp is not None else fam
-            display_family = f"{display_family}_psf" if psf else display_family
-            candidates = bucket if osamp is not None else by_case_pattern[(case, pattern, psf)]
-            for bit_depth in BIT_DEPTHS:
-                tasks.append((case, display_family, pattern, f"{case}/{display_family}/{pattern}", bucket, candidates, bit_depth))
+    for (case, family, pattern, psf, interpolator), items in sorted(grouped.items()):
+        # Match Exp1/2: every renderer uses the shared analytic image whenever
+        # that image exists for this deformation/pattern/PSF case.  Texture
+        # studies without an analytic image retain their per-OS highest-SSAA
+        # fallback because each reconstructed texture is a distinct signal.
+        candidates = all_by_case_pattern[(case, pattern, psf)]
+        tasks.append((case, family, pattern, psf, interpolator, items, candidates, list(BIT_DEPTHS)))
     limit = int(os.environ.get("EXP3_ANALYSIS_LIMIT", "0"))
-    if limit: tasks = tasks[:limit]
-    primary: list[dict[str, object]] = []; self_rows: list[dict[str, object]] = []
-    for a, b in run_analysis_jobs("Experiment 3 convergence analysis", tasks, analyse_group):
-        primary.extend(a); self_rows.extend(b)
-    write_csv(RESULTS, primary); write_csv(RECT_RESULTS, self_rows)
-    if primary:
-        comparison_overlays(primary)
+    if limit:
+        tasks = tasks[:limit]
+    primary_rows: list[dict[str, object]] = []
+    self_rows: list[dict[str, object]] = []
+    per_output: dict[Path, list[dict[str, object]]] = defaultdict(list)
+    per_rect: dict[Path, list[dict[str, object]]] = defaultdict(list)
+    per_renderer: dict[Path, list[dict[str, object]]] = defaultdict(list)
+    per_rect_renderer: dict[Path, list[dict[str, object]]] = defaultdict(list)
+    print(f"Experiment 3 convergence analysis: {len(tasks)} studies; bit depths={BIT_DEPTHS}")
+    for output_dir, rect_dir, renderer_dir, rect_renderer_dir, primary, self_data in run_analysis_jobs("Experiment 3 convergence analysis", tasks, analyse_task):
+        primary_rows.extend(primary); self_rows.extend(self_data)
+        per_output[output_dir].extend(primary); per_rect[rect_dir].extend(self_data)
+        per_renderer[renderer_dir].extend(primary); per_rect_renderer[rect_renderer_dir].extend(self_data)
+    for directory, rows in per_output.items():
+        write_summary(directory, rows)
+    for directory, rows in per_rect.items():
+        write_summary(directory, rows)
+    for directory, rows in per_renderer.items():
+        write_summary(directory, rows)
+    for directory, rows in per_rect_renderer.items():
+        write_summary(directory, rows)
     mark_analysis_complete(RESULTS)
-    print(f"Wrote {len(primary)} primary and {len(self_rows)} self-convergence rows.")
+    print(f"Wrote {len(primary_rows)} primary and {len(self_rows)} self-convergence rows.")
 
 
-if __name__ == "__main__": main()
+if __name__ == "__main__":
+    main()
