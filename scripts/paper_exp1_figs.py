@@ -21,10 +21,11 @@ from modules.exp_common_analysis import image_error_metrics
 from modules.paperfigs import add_figure_legend, annotate_no_data, finish_axis, make_figure, save_figure
 from modules.render_outputs import quantise_camera
 from paperparams import (
-    AXIS_LABEL_FONT_SIZE_PT, FIGURE_2X3_CM, FIGURE_3X2_CM, FONT_SIZE_PT, LEGEND_FONT_SIZE_PT,
+    AXIS_LABEL_FONT_SIZE_PT, FIGURE_2X3_CM, FONT_SIZE_PT, LEGEND_FONT_SIZE_PT,
     GRID_LINE_WIDTH_PT, GRID_MARKER_SIZE_PT, RILEY_LINE_WIDTH_PT, RILEY_MARKER_SIZE_PT,
     PAPER_DPI, PAPER_FORMATS, PAPER_FRAME, PAPER_OUTPUT_DIR,
-    PAPER_TEXFLOAT_BIT_DEPTH, PAPER_TEXTURE_INTERPOLATOR, TICK_FONT_SIZE_PT,
+    PAPER_TEXFLOAT_BIT_DEPTH, PAPER_TEXTURE_INTERPOLATOR,
+    TICK_FONT_SIZE_PT,
     FIGURE_CAPTIONS, FIGURE_LABELS,
 )
 
@@ -34,7 +35,11 @@ GRID_RENDER = OUT / "exp1_grid2d_render_uvs"
 FUNC_RENDER = OUT / "exp1_riley_render_func_uvs"
 TEXFLOAT_RENDER = OUT / "exp1_riley_render_texf"
 TEXUINT_RENDER = OUT / "exp1_riley_render_texuint"
-CASES = (("pt42_cam32_q9_rig", "Rigid"), ("pt42_cam32_q9_aff", "Affine"), ("pt42_cam32_q9_qsadd", "Quadratic saddle"))
+TEXTURE_STUDIES = (
+    ("pt42_cam32_q9_rig", 0, "Undeformed"),
+    ("pt42_cam32_q9_rig", 3, "Rigid 0.3px"),
+    ("pt42_cam32_q9_aff", 3, "Affine 0.3px"),
+)
 METRICS = (("e_b", "Digitised RMSE [bits]"), ("max_eb", "Max. digitised err. [bits]"))
 
 
@@ -111,14 +116,14 @@ def function_series(case: str, reference: np.ndarray, metric: str, bit_depths: s
     return [Series(f"Riley Rect, {bits}-bit", tuple(x for x, _ in sorted(points)), tuple(y for _, y in sorted(points)), bits, "#d95f02", "^", "-" if bits <= 8 else "--") for bits, points in sorted(groups.items())]
 
 
-def texture_series(case: str, root: Path, *, source_bits: int | None, camera_bits: int, metric: str) -> list[Series]:
-    reference, _ = analytic_reference(case)
+def texture_series(case: str, root: Path, *, source_bits: int | None, camera_bits: int, metric: str, frame: int) -> list[Series]:
+    reference, _ = analytic_reference(case, frame)
     pattern = re.compile(r"ss(\d+)_(?:b(\d+)_)?os(\d+)(?:_f)?")
     grouped: dict[int, list[tuple[int, float]]] = defaultdict(list)
     for case_dir in root.glob(f"{case}_{PAPER_TEXTURE_INTERPOLATOR}"):
         for directory in case_dir.iterdir():
             match = pattern.fullmatch(directory.name)
-            path = directory / f"image_c00_f{PAPER_FRAME:02d}.npy"
+            path = directory / f"image_c00_f{frame:02d}.npy"
             if not match or not path.is_file():
                 continue
             texture_bits = int(match.group(2)) if match.group(2) else None
@@ -182,36 +187,105 @@ def figure_function_shaders() -> list[Path]:
     return save_figure(figure, PAPER_OUTPUT_DIR / "exp1_fig1_eggbox_function_shaders", PAPER_FORMATS, PAPER_DPI)
 
 
-def figure_texture_shaders(case: str, deformation: str, number: int) -> list[Path]:
-    figure, axes = make_figure(FIGURE_3X2_CM, rows=3, columns=2, tick_font_size=TICK_FONT_SIZE_PT)
-    source_rows = (
-        ("Texture f64", TEXFLOAT_RENDER, None, PAPER_TEXFLOAT_BIT_DEPTH),
-        ("Texture u8", TEXUINT_RENDER, 8, 8),
-        ("Texture u16", TEXUINT_RENDER, 12, 12),
-    )
+def figure_texture_convergence(
+    stem: str, texture_label: str, root: Path, source_bits: int | None,
+    output_bits: int,
+) -> list[Path]:
+    """A Fig. 1-style texture convergence figure with Tex-OS traces."""
+    figure, axes = make_figure(FIGURE_2X3_CM, rows=2, columns=3, tick_font_size=TICK_FONT_SIZE_PT)
     handles: list[Line2D] = []
-    _, ref_label = analytic_reference(case)
-    for row, (row_name, root, source_bits, camera_bits) in enumerate(source_rows):
-        for column, (metric, ylabel) in enumerate(METRICS):
-            data = texture_series(case, root, source_bits=source_bits, camera_bits=camera_bits, metric=metric)
+    for column, (case, frame, deformation) in enumerate(TEXTURE_STUDIES):
+        _, ref_label = analytic_reference(case, frame)
+        for row, (metric, ylabel) in enumerate(METRICS):
+            data = texture_series(
+                case, root, source_bits=source_bits, camera_bits=output_bits,
+                metric=metric, frame=frame,
+            )
             handles.extend(draw_series(axes[row, column], data, ylabel, ref_label))
             axes[row, column].set_title(
-                f"{panel_prefix(row * 2 + column)} {row_name}, Ref: {ref_label}",
+                f"{panel_prefix(row * 3 + column)} {deformation}, Ref: {ref_label}",
                 fontsize=FONT_SIZE_PT,
             )
     unique = {handle.get_label(): handle for handle in handles}
     add_figure_legend(figure, list(unique.values()), font_size=LEGEND_FONT_SIZE_PT, columns=4)
-    return save_figure(figure, PAPER_OUTPUT_DIR / f"exp1_fig{number}_riley_textures_{case}", PAPER_FORMATS, PAPER_DPI)
+    return save_figure(figure, PAPER_OUTPUT_DIR / stem, PAPER_FORMATS, PAPER_DPI)
 
 
-def write_tex_preview() -> list[Path]:
-    """Write editable figure blocks and compile a minimal A4 preview article."""
-    stems = (
+def exp1_figure_stems() -> tuple[str, ...]:
+    return (
         "exp1_fig1_eggbox_function_shaders",
+        "exp1_fig2_riley_texf_b8",
+        "exp1_fig3_riley_texu8_b8",
+        "exp1_fig4_riley_texu12_b8",
+        "exp1_fig5_riley_texf_b12",
+        "exp1_fig6_affine_eggbox_difference_maps",
+    )
+
+
+def generate_texture_figures() -> list[Path]:
+    """Generate the four source-texture/output-depth convergence figures."""
+    written = figure_texture_convergence("exp1_fig2_riley_texf_b8", "Texture f64", TEXFLOAT_RENDER, None, 8)
+    # These calls intentionally remain valid when the uint campaign has not
+    # completed: ``draw_series`` renders an explicit no-data panel instead.
+    written.extend(figure_texture_convergence("exp1_fig3_riley_texu8_b8", "Texture u8", TEXUINT_RENDER, 8, 8))
+    written.extend(figure_texture_convergence("exp1_fig4_riley_texu12_b8", "Texture u12", TEXUINT_RENDER, 12, 8))
+    written.extend(figure_texture_convergence("exp1_fig5_riley_texf_b12", "Texture f64", TEXFLOAT_RENDER, None, 12))
+    return written
+
+
+def figure_affine_function_difference_maps() -> list[Path]:
+    """Fig. 6: signed 8-bit affine Eggbox errors for selected Riley SSAA."""
+    case, frame = "pt42_cam32_q9_aff", 3
+    reference, _ = analytic_reference(case, frame)
+    levels = (1, 2, 4, 8, 64, 256)
+    figure, axes = make_figure(FIGURE_2X3_CM, rows=2, columns=3, tick_font_size=TICK_FONT_SIZE_PT)
+    differences: list[np.ndarray | None] = []
+    for samples in levels:
+        path = FUNC_RENDER / case / f"ss{samples}_f" / f"image_c00_f{frame:02d}.npy"
+        if path.is_file():
+            image = load_normalised(path)
+            if image.shape == reference.shape:
+                differences.append(
+                    quantise_camera(image, 8).astype(np.float64)
+                    - quantise_camera(reference, 8).astype(np.float64)
+                )
+                continue
+        differences.append(None)
+    scale = max((float(np.max(np.abs(value))) for value in differences if value is not None), default=1.0)
+    images = []
+    for index, (samples, difference) in enumerate(zip(levels, differences, strict=True)):
+        axis = axes.flat[index]
+        axis.set_title(f"{panel_prefix(index)} SSAA={samples}", fontsize=FONT_SIZE_PT)
+        if difference is None:
+            annotate_no_data(axis, "No completed render data", font_size=FONT_SIZE_PT)
+            continue
+        images.append(axis.imshow(difference, cmap="gray", vmin=-scale, vmax=scale, interpolation="nearest", origin="upper"))
+        axis.set_xlabel("Pixel x", fontsize=AXIS_LABEL_FONT_SIZE_PT)
+        axis.set_ylabel("Pixel y", fontsize=AXIS_LABEL_FONT_SIZE_PT)
+    if images:
+        colourbar = figure.colorbar(images[0], ax=list(axes.flat), shrink=0.86, pad=0.02)
+        colourbar.set_label("Digitised difference [bits]", fontsize=AXIS_LABEL_FONT_SIZE_PT)
+        colourbar.ax.tick_params(labelsize=TICK_FONT_SIZE_PT)
+    return save_figure(figure, PAPER_OUTPUT_DIR / "exp1_fig6_affine_eggbox_difference_maps", PAPER_FORMATS, PAPER_DPI)
+
+
+def remove_superseded_figures() -> None:
+    """Remove only previously generated Exp1 paper figures no longer used."""
+    stems = (
+        "exp1_fig1_1_rigid_eggbox_function_shaders",
+        "exp1_fig1_2_affine_eggbox_function_shaders",
         "exp1_fig2_riley_textures_pt42_cam32_q9_rig",
         "exp1_fig3_riley_textures_pt42_cam32_q9_aff",
         "exp1_fig4_riley_textures_pt42_cam32_q9_qsadd",
     )
+    for stem in stems:
+        for extension in (*PAPER_FORMATS, "tex"):
+            (PAPER_OUTPUT_DIR / stem).with_suffix(f".{extension}").unlink(missing_ok=True)
+
+
+def write_tex_preview() -> list[Path]:
+    """Write editable figure blocks and compile a minimal A4 preview article."""
+    stems = exp1_figure_stems()
     blocks: list[Path] = []
     for stem in stems:
         block = PAPER_OUTPUT_DIR / f"{stem}.tex"
@@ -247,13 +321,10 @@ def write_tex_preview() -> list[Path]:
 
 
 def main() -> None:
-    # Superseded by the single three-column comparison figure.
-    for extension in PAPER_FORMATS:
-        for stem in ("exp1_fig1_1_rigid_eggbox_function_shaders", "exp1_fig1_2_affine_eggbox_function_shaders"):
-            (PAPER_OUTPUT_DIR / stem).with_suffix(f".{extension}").unlink(missing_ok=True)
+    remove_superseded_figures()
     written = figure_function_shaders()
-    for number, (case, deformation) in enumerate(CASES, start=2):
-        written.extend(figure_texture_shaders(case, deformation, number))
+    written.extend(generate_texture_figures())
+    written.extend(figure_affine_function_difference_maps())
     written.extend(write_tex_preview())
     print("Wrote paper figures:")
     for path in written:

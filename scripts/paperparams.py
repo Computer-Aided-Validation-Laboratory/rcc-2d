@@ -28,20 +28,27 @@ GRID_MARKER_SIZE_PT = 3.0
 RILEY_LINE_WIDTH_PT = 1.0
 RILEY_MARKER_SIZE_PT = 2.0
 
-ASPECT_RATIO = 1.6
-FIG_WIDTH = CONTENT_WIDTH_CM/3
-FIG_HEIGHT = FIG_WIDTH/ASPECT_RATIO
-
-FIGURE_2X2_CM = (2*FIG_WIDTH, 2*FIG_HEIGHT)
-FIGURE_2X3_CM = (2*FIG_WIDTH, 3*FIG_HEIGHT)
-FIGURE_3X2_CM = (3*FIG_WIDTH, 2*FIG_HEIGHT)
+AR = 1.2
+FIG_DIM = CONTENT_WIDTH_CM/3
+# (HEIGHT,WIDTH)
+FIGURE_2X2_CM = (2*FIG_DIM, 2*FIG_DIM/AR)
+FIGURE_2X3_CM = (3*FIG_DIM, 2*FIG_DIM/AR)
+FIGURE_3X2_CM = (2*FIG_DIM, 3*FIG_DIM/AR)
+FIGURE_4X4_CM = (CONTENT_WIDTH_CM, CONTENT_WIDTH_CM)
 
 # Paper selections.  Texf is evaluated at this camera digitisation depth;
 # Texuint rows use the source texture depth named in their row labels.
 PAPER_FRAME = 0
-PAPER_TEXTURE_INTERPOLATOR = "line"
+# Short output-directory token for Riley's cubic Catmull--Rom sampler.
+PAPER_TEXTURE_INTERPOLATOR = "cubiccm"
 PAPER_TEXFLOAT_BIT_DEPTH = 8
 PAPER_UINT_TEXTURE_DEPTHS = (8, 12)
+# Exp2 Speck2D figures show each of these on-the-fly camera digitisations.
+PAPER_EXP2_BIT_DEPTHS = (8, 12)
+# Figure 3 has one error metric so its rows can compare disk and Gaussian
+# textures directly.  Use the conservative maximum digitised error by default.
+PAPER_EXP2_TEX_METRIC = "max_eb"
+PAPER_EXP2_TEX_METRIC_LABEL = "Max. digitised err. [bits]"
 
 # Captions are intentionally plain constants: edit these here without touching
 # the data/plotting code.  The corresponding article labels are below.
@@ -50,19 +57,50 @@ FIGURE_CAPTIONS = {
         "Digitised convergence of the eggbox function shader for the "
         "undeformed, rigid-body and affine-deformation cases."
     ),
-    "exp1_fig2_riley_textures_pt42_cam32_q9_rig": (
-        "Digitised convergence of Riley texture-shader renders for the rigid-body case."
+    "exp1_fig2_riley_texf_b8": (
+        "Eight-bit digitised convergence of Riley f64 texture-shader renders."
     ),
-    "exp1_fig3_riley_textures_pt42_cam32_q9_aff": (
-        "Digitised convergence of Riley texture-shader renders for the affine-deformation case."
+    "exp1_fig3_riley_texu8_b8": (
+        "Eight-bit digitised convergence of Riley u8 texture-shader renders."
     ),
-    "exp1_fig4_riley_textures_pt42_cam32_q9_qsadd": (
-        "Digitised convergence of Riley texture-shader renders for the quadratic-saddle case."
+    "exp1_fig4_riley_texu12_b8": (
+        "Eight-bit digitised convergence of Riley u12 texture-shader renders."
+    ),
+    "exp1_fig5_riley_texf_b12": (
+        "Twelve-bit digitised convergence of Riley f64 texture-shader renders."
+    ),
+    "exp1_fig6_affine_eggbox_difference_maps": (
+        "Signed 8-bit grey-level differences between the analytic Eggbox image and "
+        "Riley function-shader images for 0.3-pixel affine deformation."
+    ),
+    "exp2_fig1_speck2d_disk": (
+        "Digitised convergence of the bespoke Speck2D renderer for additive disk speckles."
+    ),
+    "exp2_fig2_speck2d_gauss": (
+        "Digitised convergence of the bespoke Speck2D renderer for additive Gaussian speckles."
+    ),
+    "exp2_fig3_riley_texf": (
+        "Digitised convergence of Riley f64 texture-shader renders for additive disk and Gaussian speckles."
+    ),
+    "exp2_fig4_riley_texf_disk_difference_maps": (
+        "Signed 8-bit grey-level differences between the analytic additive-disk image and "
+        "Riley f64 texture-shader images for 0.3-pixel rigid-body motion."
+    ),
+    "exp2_fig5_riley_texf_gauss_difference_maps": (
+        "Signed 8-bit grey-level differences between the analytic additive-Gaussian image and "
+        "Riley f64 texture-shader images for 0.3-pixel rigid-body motion."
     ),
 }
 FIGURE_LABELS = {
     "exp1_fig1_eggbox_function_shaders": "fig:exp1-eggbox-function",
-    "exp1_fig2_riley_textures_pt42_cam32_q9_rig": "fig:exp1-texture-rigid",
-    "exp1_fig3_riley_textures_pt42_cam32_q9_aff": "fig:exp1-texture-affine",
-    "exp1_fig4_riley_textures_pt42_cam32_q9_qsadd": "fig:exp1-texture-quadsaddle",
+    "exp1_fig2_riley_texf_b8": "fig:exp1-texf-b8",
+    "exp1_fig3_riley_texu8_b8": "fig:exp1-texu8-b8",
+    "exp1_fig4_riley_texu12_b8": "fig:exp1-texu12-b8",
+    "exp1_fig5_riley_texf_b12": "fig:exp1-texf-b12",
+    "exp1_fig6_affine_eggbox_difference_maps": "fig:exp1-affine-eggbox-difference",
+    "exp2_fig1_speck2d_disk": "fig:exp2-speck2d-disk",
+    "exp2_fig2_speck2d_gauss": "fig:exp2-speck2d-gauss",
+    "exp2_fig3_riley_texf": "fig:exp2-riley-texf",
+    "exp2_fig4_riley_texf_disk_difference_maps": "fig:exp2-riley-texf-disk-difference",
+    "exp2_fig5_riley_texf_gauss_difference_maps": "fig:exp2-riley-texf-gauss-difference",
 }

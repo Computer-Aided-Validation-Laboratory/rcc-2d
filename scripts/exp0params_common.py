@@ -52,7 +52,7 @@ RILEY_RENDER_CASES: tuple[str, ...] = (
     "texfloat",
     "func_psf",
     "texfloat_psf",
-    # "texuint",       # Re-enable digitised texture source studies here.
+    "texuint",       # Re-enable digitised texture source studies here.
     # "texuint_psf",   # Re-enable digitised PSF texture source studies here.
 )
 
