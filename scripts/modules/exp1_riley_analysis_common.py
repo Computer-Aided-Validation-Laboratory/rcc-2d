@@ -112,14 +112,20 @@ def _set_explicit_sample_ticks(axis, values) -> None:
     axis.set_xlim(0.85 * ticks[0], 1.15 * ticks[-1])
 
 
-def _set_zero_inclusive_float_axis(axis, values) -> None:
-    """Use a precision-aware scale that preserves exact zero endpoints."""
+def _set_zero_inclusive_float_axis(axis, values, *, signed: bool = False) -> None:
+    """Use a precision-aware scale that preserves exact zero endpoints.
+
+    A negative autoscale is meaningful only for the signed-mean diagnostic.
+    RMSE and maximum-absolute-error values are non-negative quantities, even
+    if a numerical artefact ever supplies a tiny negative value.
+    """
     floor = 0.5 / float(2 ** max(BIT_DEPTHS) - 1)
     finite = [float(value) for value in values if np.isfinite(value)]
     axis.set_yscale("symlog", linthresh=floor, linscale=0.8)
     ceiling = 1.15 * max([abs(value) for value in finite] + [floor])
-    axis.set_ylim((-ceiling, ceiling) if any(value < 0.0 for value in finite) else (0.0, ceiling))
-    if any(value < 0.0 for value in finite): axis.axhline(0.0, color="black", linestyle=":", alpha=0.55)
+    axis.set_ylim((-ceiling, ceiling) if signed else (0.0, ceiling))
+    if signed:
+        axis.axhline(0.0, color="black", linestyle=":", alpha=0.55)
 
 
 def _set_nonnegative_digit_axis(axis, values) -> None:
@@ -278,6 +284,7 @@ def _plot_texture_oversample_metrics(
         _set_zero_inclusive_float_axis(
             axis,
             [value for ssaa in ssaa_values for _, value in values_for(float_bit_depth, ssaa, metric)],
+            signed=(metric == "mean_f64"),
         )
     _set_nonnegative_digit_axis(axes[0, 1], [value for depth in plotted_bit_depths for ssaa in ssaa_values for _, value in values_for(depth, ssaa, "e_b")])
     _set_nonnegative_digit_axis(axes[2, 1], [value for depth in plotted_bit_depths for ssaa in ssaa_values for _, value in values_for(depth, ssaa, "max_eb")])
@@ -385,6 +392,7 @@ def _plot_texture_ssaa_metrics(
         _set_zero_inclusive_float_axis(
             axis,
             [value for oversamp in oversamp_values for _, value in values_for(float_bit_depth, oversamp, metric)],
+            signed=(metric == "mean_f64"),
         )
     _set_nonnegative_digit_axis(axes[0, 1], [value for depth in plotted_bit_depths for oversamp in oversamp_values for _, value in values_for(depth, oversamp, "e_b")])
     _set_nonnegative_digit_axis(axes[2, 1], [value for depth in plotted_bit_depths for oversamp in oversamp_values for _, value in values_for(depth, oversamp, "max_eb")])

@@ -32,7 +32,7 @@ from modules.render_logging import case_label, render_log
 from modules.render_selection import uint_textures_enabled
 from modules.texture_preview import write_preview_b8
 from modules.output_naming import case_name, config_name, output_root
-from exp0params_common import TEXGEN_JOBS
+from exp0params_common import CORES, TEXGEN_JOBS
 from exp3params import (
     BACKGROUND, BIT_DEPTHS, CASE_CAMERA_PIXELS, CASE_ROI_SIZES,
     DEFORMATION_CASES, EGGBOX_PERIOD_FINAL_PX, FORCE_RENDER_OVER, GAMMA, I0,
@@ -108,6 +108,63 @@ _texgen_y_top: float | None = None
 _texgen_texel_size: tuple[float, float] | None = None
 _eggbox_x_average: np.ndarray | None = None
 _eggbox_y_average: np.ndarray | None = None
+
+# ``gridint2d`` evaluates independent camera-pixel chunks.  Keep the worker
+# state process-local so Linux ``fork`` shares the read-only mesh arrays by
+# copy-on-write rather than serialising a large finite-star mesh for every
+# task.  This is deliberately separate from texture generation: it is the
+# bespoke *image renderer* worker state.
+_grid2d_chunk_state: dict | None = None
+
+
+def bespoke_render_workers() -> int:
+    """Number of Exp3 bespoke-render workers, defaulting to machine CORES.
+
+    ``EXP3_RENDER_WORKERS`` is a useful per-run throttle on shared machines;
+    unlike Riley's raster worker setting it applies to bespoke Grid2D SSAA.
+    """
+    return max(1, int(os.environ.get("EXP3_RENDER_WORKERS", str(CORES))))
+
+
+def _init_grid2d_chunk_worker(state: dict) -> None:
+    """Install immutable one-frame Grid2D state in a worker process."""
+    global _grid2d_chunk_state
+    _grid2d_chunk_state = state
+
+
+def _render_grid2d_ssaa_chunk(bounds: tuple[int, int]) -> tuple[int, np.ndarray]:
+    """Render one independent Grid2D pixel interval for the active frame."""
+    if _grid2d_chunk_state is None:
+        raise RuntimeError("Grid2D render worker was not initialised.")
+    state = _grid2d_chunk_state
+    start, stop = bounds
+    ids = np.arange(start, stop)
+    width = state["width"]
+    roi_x, roi_y = state["roi"]
+    samples = state["samples"]
+    px = -roi_x / 2 + (ids % width) * roi_x / width
+    py = -roi_y / 2 + (ids // width) * roi_y / state["height"]
+    qx = (px[:, None] + state["dx"]).ravel()
+    qy = (py[:, None] + state["dy"]).ravel()
+
+    affine = state["affine"]
+    if affine is not None:
+        matrix, offset = affine
+        refs = np.column_stack((qx, qy)) @ matrix.T + offset
+        rx, ry = refs[:, 0], refs[:, 1]
+        valid = np.ones(qx.size, dtype=bool)
+    else:
+        rx, ry, valid = reference_points(
+            state["case"], state["coords"], state["connect"], state["ux"],
+            state["uy"], state["frame"], qx, qy, topology=state["topology"],
+            deformed=state["deformed"],
+        )
+    pitch_x, pitch_y = state["pitch"]
+    values = I0 + .5 * GAMMA * (1 + np.cos(2*np.pi*rx/pitch_x)) * (
+        1 + np.cos(2*np.pi*ry/pitch_y)
+    ) - GAMMA
+    values[~valid] = BACKGROUND
+    return start, values.reshape(stop - start, samples * samples).sum(axis=1) * state["weight"]
 
 
 def _init_speckle_texgen_worker(
@@ -567,6 +624,14 @@ def bespoke_render(case: str, pattern: str, method: str, param: int, *, texture_
     dx, dy = np.meshgrid(offsets * roi_x / width, offsets * roi_y / height)
     weights = 1.0 / (samples * samples)
     chunk = max(1, int(os.environ.get("EXP3_CHUNK_PIXELS", "32768")))
+    # Grid2D is entirely pixel-local, so one process per bounded interval is
+    # numerically identical to the previous serial loop.  Limit each worker's
+    # expanded sub-pixel coordinate arrays; high SSAA otherwise multiplies
+    # the old 32k-pixel chunk allocation by ``CORES``.
+    grid2d_workers = bespoke_render_workers() if pattern == "eggbox" and method == "ssaa" else 1
+    if grid2d_workers > 1:
+        point_cap = max(1, int(os.environ.get("EXP3_RENDER_WORKER_POINT_CAP", "2000000")))
+        chunk = min(chunk, max(1, point_cap // (samples * samples)))
     analytic_speckle = method == "analytic" and pattern in {"diskaddsat", "gausscont"} and texture is None
     for frame in selected_frames(case, ux.shape[1]):
         prefix = f"frame{frame:02d}"
@@ -596,40 +661,72 @@ def bespoke_render(case: str, pattern: str, method: str, param: int, *, texture_
         if frame and MAPPING_MODES[case] == "structured_newton":
             deformed = np.array(coords, copy=True)
             deformed[:, 0] += ux[:, frame]; deformed[:, 1] += uy[:, frame]
-        for start in range(0, flat.size, chunk):
-            ids = np.arange(start, min(start + chunk, flat.size))
-            px = -roi_x / 2 + (ids % width) * roi_x / width
-            py = -roi_y / 2 + (ids // width) * roi_y / height
-            if method == "analytic" and pattern == "eggbox" and texture is None:
-                a, b = _inverse_affine(coords, ux, uy, frame)
-                flat[ids] = _analytic_eggbox_affine(px, py, roi_x / width, roi_y / height, a, b, eggbox_pitch_world(case))
-                continue
-            if analytic_speckle:
-                if speckles is None or analytic_a is None or analytic_b is None:
-                    raise RuntimeError("Analytic speckle state was not initialised.")
-                centres = np.column_stack((px + .5 * roi_x / width, py + .5 * roi_y / height))
-                ref_centres = centres @ analytic_a.T + analytic_b
-                maps = np.broadcast_to(analytic_a, (len(ids), 2, 2))
-                coverage = (
-                    analytic_disk_coverage(ref_centres, maps, speckles, roi_x / width)
-                    if pattern == "diskaddsat" else
-                    analytic_gaussian_coverage(ref_centres, maps, speckles, roi_x / width)
-                )
-                flat[ids] = coverage
-                continue
-            qx = (px[:, None] + dx.ravel()).ravel(); qy = (py[:, None] + dy.ravel()).ravel()
-            rx, ry, valid = reference_points(case, coords, connect, ux, uy, frame, qx, qy, topology=topology, deformed=deformed)
-            if texture is None:
-                pitch_x, pitch_y = eggbox_pitch_world(case)
-                values = I0 + .5 * GAMMA * (1 + np.cos(2*np.pi*rx/pitch_x)) * (1 + np.cos(2*np.pi*ry/pitch_y)) - GAMMA if pattern == "eggbox" else BACKGROUND + np.zeros_like(rx)
-                if pattern != "eggbox":
-                    if speckles is None:
-                        raise RuntimeError("Speckle pattern was not initialised.")
-                    values = speckles.evaluate_coverage(rx, ry)
-            else:
-                values = _sample_texture(texture, case, rx, ry, texture_os, interp)
-            values[~valid] = 0.0 if pattern != "eggbox" else BACKGROUND
-            flat[ids] = values.reshape(len(ids), samples * samples).sum(axis=1) * weights
+        # The finite-star Grid2D path previously performed this complete loop
+        # in its caller process.  Process chunks instead, keeping only the
+        # parent as the writer of ``flat`` for deterministic, race-free output.
+        use_grid2d_pool = pattern == "eggbox" and method == "ssaa" and grid2d_workers > 1
+        if use_grid2d_pool:
+            affine = None
+            if frame == 0:
+                affine = (np.eye(2), np.zeros(2))
+            elif MAPPING_MODES[case] == "affine":
+                affine = _inverse_affine(coords, ux, uy, frame)
+            state = {
+                "case": case, "coords": coords, "connect": connect, "ux": ux, "uy": uy,
+                "frame": frame, "width": width, "height": height, "roi": (roi_x, roi_y),
+                "samples": samples, "dx": dx.ravel(), "dy": dy.ravel(), "weight": weights,
+                "pitch": eggbox_pitch_world(case), "affine": affine, "topology": topology,
+                "deformed": deformed,
+            }
+            tasks = [(start, min(start + chunk, flat.size)) for start in range(0, flat.size, chunk)]
+            workers = min(grid2d_workers, len(tasks))
+            print(
+                f"  {case} {prefix}: Grid2D SSAA uses {workers} workers, "
+                f"{len(tasks)} pixel chunks of up to {chunk} pixels."
+            )
+            # Exp3 runs on Linux workstations: fork preserves the immutable
+            # mesh/Numba state without a per-task pickle.  Fall back to the
+            # portable context only on platforms where fork is unavailable.
+            context_name = "fork" if "fork" in multiprocessing.get_all_start_methods() else None
+            context = multiprocessing.get_context(context_name) if context_name else multiprocessing.get_context()
+            with context.Pool(workers, initializer=_init_grid2d_chunk_worker, initargs=(state,)) as pool:
+                for start, values in pool.imap_unordered(_render_grid2d_ssaa_chunk, tasks):
+                    flat[start:start + len(values)] = values
+        else:
+            for start in range(0, flat.size, chunk):
+                ids = np.arange(start, min(start + chunk, flat.size))
+                px = -roi_x / 2 + (ids % width) * roi_x / width
+                py = -roi_y / 2 + (ids // width) * roi_y / height
+                if method == "analytic" and pattern == "eggbox" and texture is None:
+                    a, b = _inverse_affine(coords, ux, uy, frame)
+                    flat[ids] = _analytic_eggbox_affine(px, py, roi_x / width, roi_y / height, a, b, eggbox_pitch_world(case))
+                    continue
+                if analytic_speckle:
+                    if speckles is None or analytic_a is None or analytic_b is None:
+                        raise RuntimeError("Analytic speckle state was not initialised.")
+                    centres = np.column_stack((px + .5 * roi_x / width, py + .5 * roi_y / height))
+                    ref_centres = centres @ analytic_a.T + analytic_b
+                    maps = np.broadcast_to(analytic_a, (len(ids), 2, 2))
+                    coverage = (
+                        analytic_disk_coverage(ref_centres, maps, speckles, roi_x / width)
+                        if pattern == "diskaddsat" else
+                        analytic_gaussian_coverage(ref_centres, maps, speckles, roi_x / width)
+                    )
+                    flat[ids] = coverage
+                    continue
+                qx = (px[:, None] + dx.ravel()).ravel(); qy = (py[:, None] + dy.ravel()).ravel()
+                rx, ry, valid = reference_points(case, coords, connect, ux, uy, frame, qx, qy, topology=topology, deformed=deformed)
+                if texture is None:
+                    pitch_x, pitch_y = eggbox_pitch_world(case)
+                    values = I0 + .5 * GAMMA * (1 + np.cos(2*np.pi*rx/pitch_x)) * (1 + np.cos(2*np.pi*ry/pitch_y)) - GAMMA if pattern == "eggbox" else BACKGROUND + np.zeros_like(rx)
+                    if pattern != "eggbox":
+                        if speckles is None:
+                            raise RuntimeError("Speckle pattern was not initialised.")
+                        values = speckles.evaluate_coverage(rx, ry)
+                else:
+                    values = _sample_texture(texture, case, rx, ry, texture_os, interp)
+                values[~valid] = 0.0 if pattern != "eggbox" else BACKGROUND
+                flat[ids] = values.reshape(len(ids), samples * samples).sum(axis=1) * weights
         image = flat.reshape(height, width)
         if psf:
             image = gaussian_filter(image, PSF_SIGMA_FINAL_PX, mode="constant", cval=0.0 if pattern != "eggbox" else BACKGROUND, radius=round(PSF_SUPPORT_SIGMAS * PSF_SIGMA_FINAL_PX))
