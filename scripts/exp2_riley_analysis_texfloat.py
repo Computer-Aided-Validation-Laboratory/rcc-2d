@@ -41,6 +41,7 @@ from modules.render_selection import riley_enabled
 from modules.analysis_selection import analysis_should_run, mark_analysis_complete
 from modules.analysis_parallel import run_analysis_jobs
 from modules.render_outputs import quantise_camera
+from modules.exp_common_analysis import image_error_metrics
 
 
 RILEY_OUTPUT_DIR = exp2_output_dir("exp2_riley_render_texfloat")
@@ -199,7 +200,7 @@ def _nonnegative_max(rows: list[dict[str, object]], metric: str) -> float:
     return max(values, default=0.0)
 
 
-def _set_float_axis(axis, rows: list[dict[str, object]], bit_depths: list[int]) -> None:
+def _set_float_axis(axis, rows: list[dict[str, object]], bit_depths: list[int], metric: str = "e_f64") -> None:
     """Use a zero-inclusive floating-error scale derived from image precision."""
     finest_half_lsb = 0.5 / float(2 ** max(bit_depths) - 1)
     coarsest_lsb = 1.0 / float(2 ** min(bit_depths) - 1)
@@ -208,14 +209,18 @@ def _set_float_axis(axis, rows: list[dict[str, object]], bit_depths: list[int]) 
         maximum = float(2**bit_depth - 1)
         axis.axhline(1.0 / maximum, color="black", linestyle="--", alpha=0.35)
         axis.axhline(0.5 / maximum, color="red", linestyle=":", alpha=0.35)
-    axis.set_ylim(0.0, 1.15 * max(_nonnegative_max(rows, "e_f64"), _nonnegative_max(rows, "e_inf"), coarsest_lsb))
+    values = [float(row[metric]) for row in rows if np.isfinite(float(row[metric]))]
+    ceiling = 1.15 * max([abs(value) for value in values] + [coarsest_lsb])
+    axis.set_ylim((-ceiling, ceiling) if metric.startswith("mean_") else (0.0, ceiling))
+    if metric.startswith("mean_"): axis.axhline(0.0, color="black", linestyle=":", alpha=0.55)
 
 
-def _set_max_lsb_axis(axis, rows: list[dict[str, object]]) -> None:
-    axis.set_yscale("symlog", linthresh=1.0, linscale=0.8)
+def _set_max_lsb_axis(axis, rows: list[dict[str, object]], metric: str = "max_eb") -> None:
+    axis.set_yscale("symlog", linthresh=0.25, linscale=0.8)
     axis.axhline(1.0, color="black", linestyle="--", alpha=0.55, label="1 LSB")
     axis.axhline(0.0, color="red", linestyle=":", alpha=0.6, label="0 LSB")
-    axis.set_ylim(0.0, 1.15 * max(_nonnegative_max(rows, "max_eb"), 1.0))
+    ceiling = 1.15 * max(max((abs(float(row[metric])) for row in rows), default=0.0), 1.0)
+    axis.set_ylim((-ceiling, ceiling) if metric == "mean_eb" else (0.0, ceiling))
 
 
 def _plot_four_panel(
@@ -230,9 +235,7 @@ def _plot_four_panel(
 ) -> None:
     """Plot one bit depth, varying either SSAA or texture OS."""
     selected_digitised = [row for row in digitised_rows if int(row["BitDepth"]) == bit_depth]
-    figure, axes = make_agg_figure(
-        2, 2, figsize=(15, 10), constrained_layout=True
-    )
+    figure, axes = make_agg_figure(3, 2, figsize=(12, 15), constrained_layout=True)
     grouped_float: dict[int, list[dict[str, object]]] = defaultdict(list)
     grouped_digitised: dict[int, list[dict[str, object]]] = defaultdict(list)
     for row in float_rows:
@@ -255,14 +258,14 @@ def _plot_four_panel(
         float_group = sorted(grouped_float.get(line_value, []), key=lambda row: int(row[x_key]))
         digitised_group = sorted(grouped_digitised.get(line_value, []), key=lambda row: int(row[x_key]))
         label = f"Riley, Tex, {'OS' if line_key == 'Oversamp' else 'SSAA'}={line_value}"
-        for axis, metric in ((axes[0, 0], "e_f64"), (axes[0, 1], "e_inf")):
+        for axis, metric in ((axes[0, 0], "e_f64"), (axes[1, 0], "mean_f64"), (axes[2, 0], "e_inf")):
             if float_group:
                 axis.plot(
                     [int(row[x_key]) for row in float_group],
                     [float(row[metric]) for row in float_group],
                     color=color, marker=marker, linewidth=1.6, markersize=6, label=label,
                 )
-        for axis, metric in ((axes[1, 0], "delta_b"), (axes[1, 1], "max_eb")):
+        for axis, metric in ((axes[0, 1], "e_b"), (axes[1, 1], "mean_eb"), (axes[2, 1], "max_eb")):
             if digitised_group:
                 axis.plot(
                     [int(row[x_key]) for row in digitised_group],
@@ -271,14 +274,17 @@ def _plot_four_panel(
                 )
     x_values = [int(row[x_key]) for row in float_rows]
     _set_float_axis(axes[0, 0], float_rows, [bit_depth])
-    _set_float_axis(axes[0, 1], float_rows, [bit_depth])
-    _set_max_lsb_axis(axes[1, 1], selected_digitised)
-    axes[1, 0].set_ylim(0.0, 1.0)
+    _set_float_axis(axes[1, 0], float_rows, [bit_depth], "mean_f64")
+    _set_max_lsb_axis(axes[0, 1], selected_digitised, "e_b")
+    _set_max_lsb_axis(axes[1, 1], selected_digitised, "mean_eb")
+    _set_max_lsb_axis(axes[2, 1], selected_digitised, "max_eb")
     for axis, panel_title, ylabel in (
         (axes[0, 0], "Floating-Point RMSE", "RMSE"),
-        (axes[0, 1], "Floating-Point Max Error", "Max error"),
-        (axes[1, 0], "Digitised Mismatch Fraction", "Fraction of differing pixels"),
-        (axes[1, 1], "Maximum Digitised Mismatch", "LSB levels"),
+        (axes[1, 0], "Floating-Point Signed Mean Error", "Mean error"),
+        (axes[2, 0], "Floating-Point Maximum Error", "Max error"),
+        (axes[0, 1], "Digitised RMSE", "LSB levels"),
+        (axes[1, 1], "Digitised Signed Mean Error", "LSB levels"),
+        (axes[2, 1], "Maximum Digitised Error", "LSB levels"),
     ):
         _axis_samples(axis, x_values, x_label)
         axis.set_title(panel_title)
@@ -372,6 +378,22 @@ def _write_analysis_figures(
             bit_title,
             output_dir / f"os_metrics_b{bit_depth:02d}_frame{frame:02d}.png",
         )
+        # Distribution companion: one curve per OS, varying raster SSAA.
+        selected = [row for row in digitised_rows if int(row["BitDepth"]) == bit_depth]
+        if selected:
+            figure, axes = make_agg_figure(2, 2, figsize=(12, 9), constrained_layout=True)
+            grouped: dict[int, list[dict[str, object]]] = defaultdict(list)
+            for row in selected: grouped[int(row["Oversamp"])].append(row)
+            for index, osamp in enumerate(reversed(sorted(grouped))):
+                series = sorted(grouped[osamp], key=lambda row: int(row["SSAA"]))
+                for axis, metric in zip(axes.flat, ("delta_b", "severe_b", "p95_eb", "p99_eb")):
+                    axis.plot([int(row["SSAA"]) for row in series], [float(row[metric]) for row in series], marker=OVERSAMP_MARKERS[index % len(OVERSAMP_MARKERS)], color=INTERPOLATOR_COLORS[index % len(INTERPOLATOR_COLORS)], label=f"Riley, Tex, OS={osamp}")
+            for axis, name, ylabel in zip(axes.flat, ("Mismatch Fraction (≥1 LSB)", "Severe Mismatch Fraction (≥2 LSB)", "95th Percentile Absolute Digitised Error", "99th Percentile Absolute Digitised Error"), ("Fraction of pixels", "Fraction of pixels", "LSB levels", "LSB levels")):
+                _axis_samples(axis, [int(row["SSAA"]) for row in selected], "Riley Samples Along One Pixel Axis")
+                axis.set_title(name); axis.set_ylabel(ylabel); axis.grid(True, which="both", ls="--", alpha=0.4); axis.legend(loc="lower left", fontsize=6)
+            figure.suptitle(bit_title, fontweight="bold")
+            figure.savefig(output_dir / f"mismatch_b{bit_depth:02d}_frame{frame:02d}.png", dpi=150)
+            release_figure(figure)
     _plot_limit_cuts(
         float_rows, digitised_rows, title, output_dir, frame,
     )
@@ -383,7 +405,7 @@ def _write_rows(path: Path, rows: list[dict[str, object]]) -> None:
     fields = [
         "Case", "Pattern", "Interpolator", "Frame", "SSAA", "Oversamp",
         "Samples", "Reference", "ReferenceMethod", "ReferenceParam",
-        "e_f64", "e_inf",
+        "e_f64", "mean_f64", "e_inf",
     ]
     with path.open("w", newline="") as file:
         writer = csv.DictWriter(file, fieldnames=fields)
@@ -395,7 +417,7 @@ def _write_digitised_rows(path: Path, rows: list[dict[str, object]]) -> None:
     fields = [
         "Case", "Pattern", "Interpolator", "Frame", "SSAA", "Oversamp",
         "Samples", "BitDepth", "Reference", "ReferenceMethod",
-        "ReferenceParam", "delta_b", "max_eb",
+        "ReferenceParam", "e_b", "mean_eb", "delta_b", "severe_b", "p95_eb", "p99_eb", "max_eb",
     ]
     with path.open("w", newline="") as file:
         writer = csv.DictWriter(file, fieldnames=fields)
@@ -449,12 +471,12 @@ def _analyse_riley_self_convergence_frame(
                     "ReferenceParam": reference_ssaa,
                 }
                 rows_by_interpolator[interpolator].append({
-                    **base_row, "e_f64": 0.0, "e_inf": 0.0,
+                    **base_row, "e_f64": 0.0, "mean_f64": 0.0, "e_inf": 0.0,
                 })
                 for bit_depth in BIT_DEPTHS:
                     digitised_by_interpolator[interpolator].append({
                         **base_row, "BitDepth": bit_depth,
-                        "delta_b": 0.0, "max_eb": 0.0,
+                        "e_b": 0.0, "mean_eb": 0.0, "delta_b": 0.0, "severe_b": 0.0, "p95_eb": 0.0, "p99_eb": 0.0, "max_eb": 0.0,
                     })
                 continue
             image = _load_riley_image(image_path)
@@ -462,7 +484,7 @@ def _analyse_riley_self_convergence_frame(
                 print(f"Skipping image with shape mismatch against self reference: {image_path}.")
                 del image
                 continue
-            difference = image - reference
+            metrics_by_bit = {bit: image_error_metrics(image, reference, bit, _quantize) for bit in BIT_DEPTHS}
             base_row = {
                 "Case": group_name,
                 "Pattern": group_name,
@@ -477,24 +499,15 @@ def _analyse_riley_self_convergence_frame(
             }
             rows_by_interpolator[interpolator].append({
                 **base_row,
-                "e_f64": float(np.sqrt(np.mean(difference**2))),
-                "e_inf": float(np.max(np.abs(difference))),
+                "e_f64": metrics_by_bit[BIT_DEPTHS[0]]["e_f64"], "mean_f64": metrics_by_bit[BIT_DEPTHS[0]]["mean_f64"], "e_inf": metrics_by_bit[BIT_DEPTHS[0]]["e_inf"],
             })
             for bit_depth in BIT_DEPTHS:
-                # Camera codes are unsigned.  Promote before subtraction so
-                # a one-code negative error cannot wrap to 255/65535.
-                digitised_difference = (
-                    _quantize(image, bit_depth).astype(np.int32)
-                    - _quantize(reference, bit_depth).astype(np.int32)
-                )
                 digitised_by_interpolator[interpolator].append({
                     **base_row,
                     "BitDepth": bit_depth,
-                    "delta_b": float(np.mean(digitised_difference != 0.0)),
-                    "max_eb": float(np.max(np.abs(digitised_difference))),
+                    **{key: metrics_by_bit[bit_depth][key] for key in ("e_b", "mean_eb", "delta_b", "severe_b", "p95_eb", "p99_eb", "max_eb")},
                 })
-                del digitised_difference
-            del image, difference
+            del image, metrics_by_bit
         del reference
 
     rectconv_root = Path(f"{RESULTS_DIR}_rectconv") / group_name
@@ -550,7 +563,7 @@ def analyse_pattern(
                 print(f"Skipping image with shape mismatch against reference: {image_path}.")
                 del image
                 continue
-            difference = image - reference_image
+            metrics_by_bit = {bit: image_error_metrics(image, reference_image, bit, _quantize) for bit in BIT_DEPTHS}
             base_row = {
                 "Case": case_name,
                 "Pattern": tag,
@@ -565,22 +578,15 @@ def analyse_pattern(
             }
             frame_rows.append({
                 **base_row,
-                "e_f64": float(np.sqrt(np.mean(difference**2))),
-                "e_inf": float(np.max(np.abs(difference))),
+                "e_f64": metrics_by_bit[BIT_DEPTHS[0]]["e_f64"], "mean_f64": metrics_by_bit[BIT_DEPTHS[0]]["mean_f64"], "e_inf": metrics_by_bit[BIT_DEPTHS[0]]["e_inf"],
             })
             for bit_depth in BIT_DEPTHS:
-                digitised_difference = (
-                    _quantize(image, bit_depth).astype(np.int32)
-                    - _quantize(reference_image, bit_depth).astype(np.int32)
-                )
                 frame_digitised_rows.append({
                     **base_row,
                     "BitDepth": bit_depth,
-                    "delta_b": float(np.mean(digitised_difference != 0.0)),
-                    "max_eb": float(np.max(np.abs(digitised_difference))),
+                    **{key: metrics_by_bit[bit_depth][key] for key in ("e_b", "mean_eb", "delta_b", "severe_b", "p95_eb", "p99_eb", "max_eb")},
                 })
-                del digitised_difference
-            del difference, image
+            del metrics_by_bit, image
         if not frame_rows:
             print(f"    No completed clamped Riley outputs; skipping plots.")
             del reference_image, reference

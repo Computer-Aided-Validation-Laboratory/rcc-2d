@@ -1,0 +1,127 @@
+\documentclass[11pt,a4paper]{article}
+
+\usepackage[margin=25mm]{geometry}
+\usepackage{amsmath,amssymb,bm}
+\usepackage{microtype}
+\usepackage[hidelinks]{hyperref}
+
+\newcommand{\clip}{\operatorname{clip}}
+\newcommand{\round}{\operatorname{round}}
+
+\title{Digitisation of Rendered Images and Texture Sources}
+\author{}
+\date{}
+
+\begin{document}
+\maketitle
+
+\section{Purpose and common convention}
+
+This note records the image and texture digitisation convention shared by the
+render and analysis code.  The durable render product is a floating-point
+\texttt{.npy} image.  An 8-bit TIFF is only a visualisation preview.  All
+measurement analyses form their requested bit depth directly from the stored
+floating-point image using the same function below; higher-bit TIFFs are not a
+separate source of truth.
+
+For $B$ bits, define the largest unsigned camera code as
+\begin{equation}
+  M_B = 2^B-1.
+\end{equation}
+For a normalised camera intensity $I\in\mathbb{R}$, the common digitiser is
+\begin{equation}
+  \boxed{
+  Q_B(I) = \round\!\left(M_B\,\clip(I,0,1)\right),
+  \qquad
+  \clip(z,0,1)=\min\{1,\max\{0,z\}\}.}
+  \label{eq:camera-digitiser}
+\end{equation}
+The implementation is \texttt{numpy.rint}: it rounds to the nearest integer,
+with exact half-way cases rounded to the even integer.  The output type is
+\texttt{uint8} for $B\leq 8$ and \texttt{uint16} otherwise.
+
+Equation~\eqref{eq:camera-digitiser} is implemented centrally as
+\texttt{modules.render\_outputs.quantise\_camera}.  It is used for render
+previews and for the on-the-fly digitised-error analyses in Experiments 1--3.
+
+\section{Additive speckle images}
+
+Let $c(\bm{x})$ be the raw additive coverage field.  For a camera pixel
+$P$, its pixel-box integration---analytic where available, otherwise SSAA---is
+\begin{equation}
+  \bar c_P = \frac{1}{|P|}\int_P c(\bm{x})\,\mathrm{d}\bm{x}.
+  \label{eq:coverage-integral}
+\end{equation}
+Disk and Gaussian contributions add in $c$; hence overlapping unit-amplitude
+blobs can give $\bar c_P>1$.  This raw coverage is intentionally retained in
+floating-point additive texture assets and in the float-texture Riley path.
+No clipping occurs during texture generation or before pixel integration.
+
+Only after the final pixel value has been integrated is coverage mapped to
+normalised image intensity:
+\begin{align}
+  s_P &= \clip(\bar c_P,0,1),\\
+  I_P &= \clip\!\left(I_0+\gamma(1-2s_P),0,1\right).
+  \label{eq:coverage-intensity}
+\end{align}
+Thus zero coverage is the bright level $I_0+\gamma$, and saturated coverage is
+the dark level $I_0-\gamma$.  With the current $I_0=0.5$ and $\gamma=0.4$,
+these limits are $0.9$ and $0.1$, respectively.  The final camera code is
+$Q_B(I_P)$ from Equation~\eqref{eq:camera-digitiser}.
+
+The ordering is important:
+\begin{equation}
+ \clip\!\left(\frac{1}{|P|}\int_P c(\bm{x})\,\mathrm{d}\bm{x},0,1\right)
+ \neq
+ \frac{1}{|P|}\int_P\clip(c(\bm{x}),0,1)\,\mathrm{d}\bm{x}
+ \quad\text{in general}.
+\end{equation}
+The code uses the left-hand expression.  It is therefore an additive,
+post-integration saturation model rather than the geometric union of opaque
+disks.
+
+\section{Eggbox images}
+
+The eggbox is already an intensity function, rather than a coverage field.  In
+reference coordinates with pitches $p_x,p_y$, it is
+\begin{equation}
+ I_{\mathrm{egg}}(x,y)=I_0-\gamma+
+ \frac{\gamma}{2}
+ \left[1+\cos\!\left(\frac{2\pi x}{p_x}\right)\right]
+ \left[1+\cos\!\left(\frac{2\pi y}{p_y}\right)\right].
+\end{equation}
+The renderer integrates this intensity over the pixel footprint, then applies
+$Q_B$ only when an integer camera image is required.  Eggbox float textures
+therefore store intensity directly; additive float textures store raw coverage.
+
+\section{Float and uint texture sources}
+
+For an additive float texture, a texel stores the area-averaged raw coverage
+$\bar c_T$.  A uint texture of depth $B$ is derived from that same float asset,
+not regenerated from the procedural speckle field:
+\begin{equation}
+ T^{\mathrm{uint}}_B = Q_B\!\left(
+ I_0+\gamma\left[1-2\clip(\bar c_T,0,1)\right]\right).
+ \label{eq:uint-texture}
+\end{equation}
+For eggbox textures, whose float value is already intensity,
+\begin{equation}
+ T^{\mathrm{uint}}_B = Q_B(T^{\mathrm{float}}).
+\end{equation}
+Consequently, changing the uint source bit depth changes only the quantised
+texture source supplied to Riley; it does not repeat analytic texture
+integration.  A separate Riley render remains necessary because interpolation
+of a quantised source is physically a different operation.
+
+\section{Persisted outputs and analysis}
+
+The standard persisted final-image convention is a normalised floating-point
+camera intensity $I_P$ after Equation~\eqref{eq:coverage-intensity} (or the
+eggbox equivalent).  The render helpers save this \texttt{float64 .npy} file
+and, if absent, derive only an 8-bit TIFF preview using $Q_8$.  For a requested
+analysis depth $B$, both candidate and reference float images are independently
+converted with $Q_B$ before their integer-code difference is calculated.  This
+makes all reported bit-depth metrics reproducible from one canonical floating
+image, without depending on a TIFF encoder or pre-existing $B$-bit files.
+
+\end{document}

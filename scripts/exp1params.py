@@ -136,7 +136,7 @@ TEX_PX_PAD: int = TEXTURE_PAD_PIXELS
 # sampled, normalised Gaussian kernel.
 PSF_SIGMA_FINAL_PX: float = 1.0
 PSF_SUPPORT_SIGMAS: float = 4.0
-BIT_DEPTHS: List[int] = [8, 10, 12]
+BIT_DEPTHS: List[int] = [8, 12]
 # Limit quadrature points held by each bespoke-renderer worker.  VTK mapping
 # retains query, sampled-point and field arrays simultaneously, so it needs a
 # much smaller cap than the affine corner-fit path on a 32 GiB workstation.

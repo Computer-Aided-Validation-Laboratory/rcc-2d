@@ -34,6 +34,7 @@ from modules.render_selection import custom_enabled
 from modules.analysis_selection import analysis_should_run, mark_analysis_complete
 from modules.analysis_parallel import run_analysis_jobs
 from modules.render_outputs import quantise_camera
+from modules.exp_common_analysis import image_error_metrics
 
 
 RESULTS_DIR = exp2_output_dir("exp2_speckint2d_analysis")
@@ -113,7 +114,7 @@ def _reference_job(
 def _write_rows(path: Path, rows: list[dict[str, object]]) -> None:
     if not rows:
         return
-    fields = ["Group", "Frame", "BitDepth", "Method", "Param", "Samples", "Reference", "e_f64", "e_inf", "e_b", "delta_b", "max_eb"]
+    fields = ["Group", "Frame", "BitDepth", "Method", "Param", "Samples", "Reference", "e_f64", "mean_f64", "e_inf", "e_b", "mean_eb", "delta_b", "severe_b", "p95_eb", "p99_eb", "max_eb"]
     with path.open("w", newline="") as file:
         writer = csv.DictWriter(file, fieldnames=fields)
         writer.writeheader()
@@ -135,8 +136,9 @@ def analyse_group(group_name: str, jobs: dict[tuple[str, int], Path]) -> list[di
         references = {bit_depth: value for bit_depth, value in references.items() if value is not None}
         if not references:
             continue
-        float_data = {method: {"samples": [], "e_f64": [], "e_inf": []} for method in methods}
-        digitised_data = {bit_depth: {method: {"samples": [], "max_eb": [], "delta_b": []} for method in methods} for bit_depth in BIT_DEPTHS}
+        float_data = {method: {"samples": [], "e_f64": [], "mean_f64": [], "e_inf": []} for method in methods}
+        keys = ("samples", "e_b", "mean_eb", "max_eb", "delta_b", "severe_b", "p95_eb", "p99_eb")
+        digitised_data = {bit_depth: {method: {key: [] for key in keys} for method in methods} for bit_depth in BIT_DEPTHS}
         preferred_bit_depth = 16 if 16 in references else max(references)
         for (method, param), directory in sorted(jobs.items()):
             if (method, param) == (ref_method, ref_param) or method == "analytic":
@@ -147,22 +149,14 @@ def analyse_group(group_name: str, jobs: dict[tuple[str, int], Path]) -> list[di
                 if image is None:
                     continue
                 image_float, image_digitised = image
-                float_diff = image_float - ref_float
-                digitised_diff = image_digitised - ref_digitised
-                e_f64 = float(np.sqrt(np.mean(float_diff**2)))
-                e_inf = float(np.max(np.abs(float_diff)))
-                e_b = float(np.sqrt(np.mean(digitised_diff**2)))
-                delta_b = float(np.mean(image_digitised != ref_digitised))
-                max_eb = float(np.max(np.abs(digitised_diff)))
+                metrics = image_error_metrics(image_float, ref_float, bit_depth, quantise_camera)
                 digitised_data[bit_depth][method]["samples"].append(samples)
-                digitised_data[bit_depth][method]["max_eb"].append(max_eb)
-                digitised_data[bit_depth][method]["delta_b"].append(delta_b)
+                for key in ("e_b", "mean_eb", "max_eb", "delta_b", "severe_b", "p95_eb", "p99_eb"): digitised_data[bit_depth][method][key].append(metrics[key])
                 if bit_depth == preferred_bit_depth:
                     float_data[method]["samples"].append(samples)
-                    float_data[method]["e_f64"].append(e_f64)
-                    float_data[method]["e_inf"].append(e_inf)
-                rows.append({"Group": group_name, "Frame": frame, "BitDepth": bit_depth, "Method": method, "Param": param, "Samples": samples, "Reference": f"{ref_method}:{ref_param}", "e_f64": e_f64, "e_inf": e_inf, "e_b": e_b, "delta_b": delta_b, "max_eb": max_eb})
-                del image, image_float, image_digitised, float_diff, digitised_diff
+                    for key in ("e_f64", "mean_f64", "e_inf"): float_data[method][key].append(metrics[key])
+                rows.append({"Group": group_name, "Frame": frame, "BitDepth": bit_depth, "Method": method, "Param": param, "Samples": samples, "Reference": f"{ref_method}:{ref_param}", **metrics})
+                del image, image_float, image_digitised
         path = plot_bespoke_four_panel(group_name, frame, ref_name, output_dir, float_data, digitised_data, sorted(references))
         print(f"Saved {path}")
         del references, float_data, digitised_data
@@ -204,11 +198,9 @@ def analyse_rectangular_self_convergence(
             bit_depth: value for bit_depth, value in references.items()
             if value is not None
         }
-        float_data = {"rect": {"samples": [], "e_f64": [], "e_inf": []}}
-        digitised_data = {
-            bit_depth: {"rect": {"samples": [], "max_eb": [], "delta_b": []}}
-            for bit_depth in BIT_DEPTHS
-        }
+        float_data = {"rect": {"samples": [], "e_f64": [], "mean_f64": [], "e_inf": []}}
+        metric_keys = ("samples", "e_b", "mean_eb", "max_eb", "delta_b", "severe_b", "p95_eb", "p99_eb")
+        digitised_data = {bit_depth: {"rect": {key: [] for key in metric_keys}} for bit_depth in BIT_DEPTHS}
         preferred_bit_depth = 16 if 16 in references else max(references)
         frame_rows = []
         for param in rect_params:
@@ -216,36 +208,26 @@ def analyse_rectangular_self_convergence(
             samples = samples_for_method("rect", param)
             for bit_depth, (ref_float, ref_digitised) in references.items():
                 if param == ref_param:
-                    e_f64 = e_inf = e_b = delta_b = max_eb = 0.0
+                    metrics = {key: 0.0 for key in ("e_f64", "mean_f64", "e_inf", "e_b", "mean_eb", "delta_b", "severe_b", "p95_eb", "p99_eb", "max_eb")}
                     digitised_data[bit_depth]["rect"]["samples"].append(samples)
-                    digitised_data[bit_depth]["rect"]["max_eb"].append(max_eb)
-                    digitised_data[bit_depth]["rect"]["delta_b"].append(delta_b)
+                    for key in metric_keys[1:]: digitised_data[bit_depth]["rect"][key].append(metrics[key])
                     if bit_depth == preferred_bit_depth:
                         float_data["rect"]["samples"].append(samples)
-                        float_data["rect"]["e_f64"].append(e_f64)
-                        float_data["rect"]["e_inf"].append(e_inf)
-                    frame_rows.append({"Group": group_name, "Frame": frame, "BitDepth": bit_depth, "Method": "rect", "Param": param, "Samples": samples, "Reference": f"rect:{ref_param}", "e_f64": e_f64, "e_inf": e_inf, "e_b": e_b, "delta_b": delta_b, "max_eb": max_eb})
+                        for key in ("e_f64", "mean_f64", "e_inf"): float_data["rect"][key].append(metrics[key])
+                    frame_rows.append({"Group": group_name, "Frame": frame, "BitDepth": bit_depth, "Method": "rect", "Param": param, "Samples": samples, "Reference": f"rect:{ref_param}", **metrics})
                     continue
                 image = _image_pair(directory, "rect", param, bit_depth, frame)
                 if image is None:
                     continue
                 image_float, image_digitised = image
-                float_diff = image_float - ref_float
-                digitised_diff = image_digitised - ref_digitised
-                e_f64 = float(np.sqrt(np.mean(float_diff**2)))
-                e_inf = float(np.max(np.abs(float_diff)))
-                e_b = float(np.sqrt(np.mean(digitised_diff**2)))
-                delta_b = float(np.mean(image_digitised != ref_digitised))
-                max_eb = float(np.max(np.abs(digitised_diff)))
+                metrics = image_error_metrics(image_float, ref_float, bit_depth, quantise_camera)
                 digitised_data[bit_depth]["rect"]["samples"].append(samples)
-                digitised_data[bit_depth]["rect"]["max_eb"].append(max_eb)
-                digitised_data[bit_depth]["rect"]["delta_b"].append(delta_b)
+                for key in metric_keys[1:]: digitised_data[bit_depth]["rect"][key].append(metrics[key])
                 if bit_depth == preferred_bit_depth:
                     float_data["rect"]["samples"].append(samples)
-                    float_data["rect"]["e_f64"].append(e_f64)
-                    float_data["rect"]["e_inf"].append(e_inf)
-                frame_rows.append({"Group": group_name, "Frame": frame, "BitDepth": bit_depth, "Method": "rect", "Param": param, "Samples": samples, "Reference": f"rect:{ref_param}", "e_f64": e_f64, "e_inf": e_inf, "e_b": e_b, "delta_b": delta_b, "max_eb": max_eb})
-                del image, image_float, image_digitised, float_diff, digitised_diff
+                    for key in ("e_f64", "mean_f64", "e_inf"): float_data["rect"][key].append(metrics[key])
+                frame_rows.append({"Group": group_name, "Frame": frame, "BitDepth": bit_depth, "Method": "rect", "Param": param, "Samples": samples, "Reference": f"rect:{ref_param}", **metrics})
+                del image, image_float, image_digitised
         if frame_rows:
             plot_bespoke_four_panel(
                 group_name,

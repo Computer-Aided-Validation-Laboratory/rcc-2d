@@ -87,15 +87,13 @@ def plot_bespoke_four_panel(
     digitised_data: Mapping[int, Mapping[str, Mapping[str, Sequence[float]]]],
     bit_depths: Sequence[int],
 ) -> Path:
-    """Write the standard metrics as one four-panel convergence figure."""
+    """Write the standard six-panel error figure and mismatch companion."""
     output_dir.mkdir(parents=True, exist_ok=True)
     for suffix in ("float_rmse", "float_max", "bits", "max_eb"):
         (output_dir / f"{case_name}_{suffix}_frame{frame:02d}.png").unlink(
             missing_ok=True
         )
-    figure, axes = make_agg_figure(
-        2, 2, figsize=(15, 10), constrained_layout=True
-    )
+    figure, axes = make_agg_figure(3, 2, figsize=(12, 15), constrained_layout=True)
     all_samples: list[float] = []
     for values in float_data.values():
         all_samples.extend(samples_per_pixel_axis(values["samples"]))
@@ -105,7 +103,8 @@ def plot_bespoke_four_panel(
 
     for metric, axis, title, ylabel in (
         ("e_f64", axes[0, 0], "Floating-Point RMSE", "RMSE ($e_{f64}$)"),
-        ("e_inf", axes[0, 1], "Floating-Point Max Error", "Max error ($e_{∞}$)"),
+        ("mean_f64", axes[1, 0], "Floating-Point Signed Mean Error", "Mean error"),
+        ("e_inf", axes[2, 0], "Floating-Point Maximum Error", "Max error ($e_{∞}$)"),
     ):
         metric_values: list[float] = []
         for method, values in float_data.items():
@@ -119,6 +118,10 @@ def plot_bespoke_four_panel(
                           label=label, linewidth=1.8, markersize=7)
             metric_values.extend(errors.tolist())
         _set_float_error_axis(axis, metric_values, bit_depths)
+        if metric == "mean_f64":
+            ceiling = 1.15 * max([abs(value) for value in metric_values] + [0.5 / float(2 ** max(bit_depths) - 1)])
+            axis.set_ylim(-ceiling, ceiling)
+            axis.axhline(0.0, color="black", linestyle=":", alpha=0.55)
         axis.set_title(title)
         axis.set_ylabel(ylabel)
 
@@ -131,20 +134,33 @@ def plot_bespoke_four_panel(
             samples = samples_per_pixel_axis(np.asarray(values["samples"])[order])
             color, marker, label = _style(method)
             style = BIT_LINESTYLES.get(bit_depth, "-.")
-            axes[1, 0].semilogx(samples, np.asarray(values["delta_b"])[order], color=color,
-                                marker=marker, linestyle=style, label=f"{label}, {bit_depth}-bit", linewidth=1.6)
-            axes[1, 1].loglog(samples, np.maximum(floor, np.asarray(values["max_eb"])[order]),
-                              color=color, marker=marker, linestyle=style,
-                              label=f"{label}, {bit_depth}-bit", linewidth=1.6)
-    axes[1, 0].axhline(0.0, color="red", linestyle=":", alpha=0.6, label="0 differing pixels")
-    axes[1, 0].set_ylim(-0.05, 1.05)
-    axes[1, 0].set_title("Digitised Mismatch Fraction")
-    axes[1, 0].set_ylabel("Fraction of differing pixels")
-    axes[1, 1].axhline(1.0, color="black", linestyle="--", alpha=0.6, label="1 LSB")
-    axes[1, 1].axhline(floor, color="red", linestyle=":", alpha=0.6, label="0 LSB")
-    axes[1, 1].set_ylim(floor * 0.8, None)
-    axes[1, 1].set_title("Maximum Digitised Mismatch")
-    axes[1, 1].set_ylabel("LSB levels")
+            for axis, metric in ((axes[0, 1], "e_b"), (axes[1, 1], "mean_eb"), (axes[2, 1], "max_eb")):
+                axis.semilogx(samples, np.asarray(values[metric])[order], color=color, marker=marker, linestyle=style, label=f"{label}, {bit_depth}-bit", linewidth=1.6)
+    for axis, title, ylabel in ((axes[0, 1], "Digitised RMSE", "LSB levels"), (axes[1, 1], "Digitised Signed Mean Error", "LSB levels"), (axes[2, 1], "Maximum Digitised Error", "LSB levels")):
+        axis.axhline(1.0, color="black", linestyle="--", alpha=0.45, label="1 LSB")
+        axis.set_yscale("symlog", linthresh=0.25, linscale=0.8)
+        axis.set_title(title); axis.set_ylabel(ylabel)
+    mean_values = [value for data in digitised_data.values() for values in data.values() for value in values["mean_eb"]]
+    digit_rmse_values = [
+        value
+        for data in digitised_data.values()
+        for values in data.values()
+        for value in values["e_b"]
+    ]
+    digit_max_values = [
+        value
+        for data in digitised_data.values()
+        for values in data.values()
+        for value in values["max_eb"]
+    ]
+    # ``symlog`` otherwise adds a small negative autoscale margin around zero.
+    # RMSE and maximum absolute error are non-negative by definition; only the
+    # signed-mean panel is allowed to span zero.
+    axes[0, 1].set_ylim(0.0, 1.15 * max([float(value) for value in digit_rmse_values] + [1.0]))
+    axes[2, 1].set_ylim(0.0, 1.15 * max([float(value) for value in digit_max_values] + [1.0]))
+    mean_ceiling = 1.15 * max([abs(float(value)) for value in mean_values] + [1.0])
+    axes[1, 1].set_ylim(-mean_ceiling, mean_ceiling)
+    axes[1, 1].axhline(0.0, color="black", linestyle=":", alpha=0.55)
     for axis in axes.flat:
         axis.set_xlabel("Samples Along One Pixel Axis")
         _set_sample_axis(axis, all_samples)
@@ -164,4 +180,19 @@ def plot_bespoke_four_panel(
     figure.savefig(path, dpi=150)
     # This also breaks renderer/artist cycles and trims released allocator pages.
     release_figure(figure)
+    mismatch, mismatch_axes = make_agg_figure(2, 2, figsize=(12, 9), constrained_layout=True)
+    for bit_depth in bit_depths:
+        for method, values in digitised_data.get(bit_depth, {}).items():
+            if not values["samples"]:
+                continue
+            order = np.argsort(values["samples"]); samples = samples_per_pixel_axis(np.asarray(values["samples"])[order])
+            color, marker, label = _style(method); style = BIT_LINESTYLES.get(bit_depth, "-.")
+            for axis, metric in zip(mismatch_axes.flat, ("delta_b", "severe_b", "p95_eb", "p99_eb")):
+                axis.semilogx(samples, np.asarray(values[metric])[order], color=color, marker=marker, linestyle=style, label=f"{label}, {bit_depth}-bit", linewidth=1.6)
+    for axis, title, ylabel in zip(mismatch_axes.flat, ("Mismatch Fraction (≥1 LSB)", "Severe Mismatch Fraction (≥2 LSB)", "95th Percentile Absolute Digitised Error", "99th Percentile Absolute Digitised Error"), ("Fraction of pixels", "Fraction of pixels", "LSB levels", "LSB levels")):
+        axis.set_xlabel("Samples Along One Pixel Axis"); _set_sample_axis(axis, all_samples); axis.set_title(title); axis.set_ylabel(ylabel); axis.grid(True, which="both", ls="--", alpha=0.4)
+        axis.legend(loc="lower left", fontsize=6, frameon=True, facecolor="white", edgecolor="none")
+    mismatch.suptitle(f"{case_name} (Frame {frame:02d}) | Reference: {reference_name}", fontweight="bold")
+    mismatch.savefig(output_dir / f"{case_name}_mismatch_frame{frame:02d}.png", dpi=150)
+    release_figure(mismatch)
     return path

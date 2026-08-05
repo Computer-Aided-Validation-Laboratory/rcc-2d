@@ -23,6 +23,7 @@ from exp3params import BIT_DEPTHS
 from modules.analysis_memory import make_agg_figure, release_batch, release_figure
 from modules.analysis_parallel import run_analysis_jobs
 from modules.analysis_selection import analysis_should_run, mark_analysis_complete
+from modules.exp_common_analysis import image_error_metrics
 from modules.exp3_analysis_common import Render, discover_renders, image_frames, load_image
 from modules.render_outputs import quantise_camera
 
@@ -99,21 +100,8 @@ def reference_for(items: list[Render], candidates: list[Render], *, texture: boo
     return max(items, key=lambda value: (value.ssaa, value.oversamp)) if items else None
 
 
-def metric_row(image: np.ndarray, reference: np.ndarray, bit_depth: int) -> tuple[float, float, float, float, float]:
-    difference = image - reference
-    code_difference = (
-        quantise_camera(image, bit_depth).astype(np.int64)
-        - quantise_camera(reference, bit_depth).astype(np.int64)
-    )
-    result = (
-        float(np.sqrt(np.mean(difference ** 2))),
-        float(np.max(np.abs(difference))),
-        float(np.sqrt(np.mean(code_difference ** 2))),
-        float(np.mean(code_difference != 0)),
-        float(np.max(np.abs(code_difference))),
-    )
-    del difference, code_difference
-    return result
+def metric_row(image: np.ndarray, reference: np.ndarray, bit_depth: int) -> dict[str, float]:
+    return image_error_metrics(image, reference, bit_depth, quantise_camera)
 
 
 def set_samples_axis(axis, values: list[int], label: str) -> None:
@@ -128,7 +116,7 @@ def set_samples_axis(axis, values: list[int], label: str) -> None:
 
 
 def set_float_axis(axis, rows: list[dict[str, object]], metric: str, bit_depths: list[int]) -> None:
-    values = [float(row[metric]) for row in rows if np.isfinite(float(row[metric])) and float(row[metric]) >= 0.0]
+    values = [float(row[metric]) for row in rows if np.isfinite(float(row[metric]))]
     finest_half_lsb = 0.5 / float(2 ** max(bit_depths) - 1)
     coarsest_lsb = 1.0 / float(2 ** min(bit_depths) - 1)
     axis.set_yscale("symlog", linthresh=finest_half_lsb, linscale=0.8)
@@ -136,15 +124,19 @@ def set_float_axis(axis, rows: list[dict[str, object]], metric: str, bit_depths:
         maximum = float(2 ** bits - 1)
         axis.axhline(1.0 / maximum, color="black", linestyle=BIT_LINESTYLES.get(bits, "-"), alpha=0.35)
         axis.axhline(0.5 / maximum, color="red", linestyle=BIT_LINESTYLES.get(bits, "-"), alpha=0.35)
-    axis.set_ylim(0.0, 1.15 * max(values + [coarsest_lsb]))
+    ceiling = 1.15 * max([abs(value) for value in values] + [coarsest_lsb])
+    axis.set_ylim((-ceiling, ceiling) if metric.startswith("mean_") else (0.0, ceiling))
+    if metric.startswith("mean_"):
+        axis.axhline(0.0, color="black", linestyle=":", alpha=0.55)
 
 
-def set_max_lsb_axis(axis, rows: list[dict[str, object]]) -> None:
-    maximum = max([float(row["max_eb"]) for row in rows] + [1.0])
-    axis.set_yscale("symlog", linthresh=1.0, linscale=0.8)
+def set_max_lsb_axis(axis, rows: list[dict[str, object]], metric: str = "max_eb") -> None:
+    values = [float(row[metric]) for row in rows]
+    maximum = max([abs(value) for value in values] + [1.0])
+    axis.set_yscale("symlog", linthresh=0.25, linscale=0.8)
     axis.axhline(1.0, color="black", linestyle="--", alpha=0.55, label="1 LSB")
     axis.axhline(0.0, color="red", linestyle=":", alpha=0.6, label="0 LSB")
-    axis.set_ylim(0.0, 1.15 * maximum)
+    axis.set_ylim((-1.15 * maximum, 1.15 * maximum) if metric == "mean_eb" else (0.0, 1.15 * maximum))
 
 
 def line_label(family: str, line_key: str, value: int) -> str:
@@ -162,7 +154,7 @@ def plot_four_panel(
     selected = [row for row in rows if int(row["BitDepth"]) == bit_depth]
     if not selected:
         return
-    figure, axes = make_agg_figure(2, 2, figsize=(15, 10), constrained_layout=True)
+    figure, axes = make_agg_figure(3, 2, figsize=(12, 15), constrained_layout=True)
     grouped: dict[int, list[dict[str, object]]] = defaultdict(list)
     for row in selected:
         grouped[int(row[line_key])].append(row)
@@ -175,17 +167,21 @@ def plot_four_panel(
         series = sorted(grouped[value], key=lambda row: int(row[x_key]))
         color, marker = styles[value]
         label = line_label(family, line_key, value)
-        for axis, metric in ((axes[0, 0], "e_f64"), (axes[0, 1], "e_inf"), (axes[1, 0], "delta_b"), (axes[1, 1], "max_eb")):
+        for axis, metric in ((axes[0, 0], "e_f64"), (axes[1, 0], "mean_f64"), (axes[2, 0], "e_inf"), (axes[0, 1], "e_b"), (axes[1, 1], "mean_eb"), (axes[2, 1], "max_eb")):
             axis.plot([int(row[x_key]) for row in series], [float(row[metric]) for row in series], color=color, marker=marker, linewidth=1.6, markersize=6, label=label)
     set_float_axis(axes[0, 0], selected, "e_f64", [bit_depth])
     set_float_axis(axes[0, 1], selected, "e_inf", [bit_depth])
-    axes[1, 0].set_ylim(0.0, 1.0)
-    set_max_lsb_axis(axes[1, 1], selected)
+    set_float_axis(axes[1, 0], selected, "mean_f64", [bit_depth])
+    set_max_lsb_axis(axes[0, 1], selected, "e_b")
+    set_max_lsb_axis(axes[1, 1], selected, "mean_eb")
+    set_max_lsb_axis(axes[2, 1], selected, "max_eb")
     for axis, panel_title, ylabel in (
         (axes[0, 0], "Floating-Point RMSE", "RMSE"),
-        (axes[0, 1], "Floating-Point Max Error", "Max error"),
-        (axes[1, 0], "Digitised Mismatch Fraction", "Fraction of differing pixels"),
-        (axes[1, 1], "Maximum Digitised Mismatch", "LSB levels"),
+        (axes[1, 0], "Floating-Point Signed Mean Error", "Mean error"),
+        (axes[2, 0], "Floating-Point Maximum Error", "Max error"),
+        (axes[0, 1], "Digitised RMSE", "LSB levels"),
+        (axes[1, 1], "Digitised Signed Mean Error", "LSB levels"),
+        (axes[2, 1], "Maximum Digitised Error", "LSB levels"),
     ):
         set_samples_axis(axis, [int(row[x_key]) for row in selected], x_label)
         axis.set_title(panel_title); axis.set_ylabel(ylabel); axis.grid(True, which="both", ls="--", alpha=0.4)
@@ -193,6 +189,30 @@ def plot_four_panel(
         unique = dict(zip(labels, handles))
         if unique:
             axis.legend(unique.values(), unique.keys(), loc="lower left", fontsize=6, frameon=True, facecolor="white", edgecolor="none")
+    figure.suptitle(f"{title} | {bit_depth}-bit", fontweight="bold")
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    figure.savefig(output_path, dpi=150)
+    release_figure(figure)
+
+
+def plot_mismatch_panel(rows, bit_depth, x_key, line_key, x_label, title, output_path, family):
+    """Four complementary digitised-error distribution measures."""
+    selected = [row for row in rows if int(row["BitDepth"]) == bit_depth]
+    if not selected:
+        return
+    figure, axes = make_agg_figure(2, 2, figsize=(12, 9), constrained_layout=True)
+    grouped = defaultdict(list)
+    for row in selected:
+        grouped[int(row[line_key])].append(row)
+    colors = rcParams["axes.prop_cycle"].by_key()["color"]
+    for index, value in enumerate(reversed(sorted(grouped))):
+        series = sorted(grouped[value], key=lambda row: int(row[x_key]))
+        for axis, metric in zip(axes.flat, ("delta_b", "severe_b", "p95_eb", "p99_eb")):
+            axis.plot([int(row[x_key]) for row in series], [float(row[metric]) for row in series], color=colors[index % len(colors)], marker=MARKERS[index % len(MARKERS)], linewidth=1.6, markersize=6, label=line_label(family, line_key, value))
+    for axis, name, ylabel in zip(axes.flat, ("Mismatch Fraction (≥1 LSB)", "Severe Mismatch Fraction (≥2 LSB)", "95th Percentile Absolute Digitised Error", "99th Percentile Absolute Digitised Error"), ("Fraction of pixels", "Fraction of pixels", "LSB levels", "LSB levels")):
+        set_samples_axis(axis, [int(row[x_key]) for row in selected], x_label)
+        axis.set_title(name); axis.set_ylabel(ylabel); axis.grid(True, which="both", ls="--", alpha=0.4)
+        axis.legend(loc="lower left", fontsize=6, frameon=True, facecolor="white", edgecolor="none")
     figure.suptitle(f"{title} | {bit_depth}-bit", fontweight="bold")
     output_path.parent.mkdir(parents=True, exist_ok=True)
     figure.savefig(output_path, dpi=150)
@@ -238,10 +258,18 @@ def plot_limit_cuts(rows: list[dict[str, object]], title: str, output_dir: Path,
 
 def write_figures(rows: list[dict[str, object]], output_dir: Path, frame: int, title: str, family: str, *, texture: bool) -> None:
     frame_rows = [row for row in rows if int(row["Frame"]) == frame]
+    # The current texture layout always uses the complete levels; remove stale
+    # exponent-parity figures from prior analysis versions.
+    for stale in output_dir.glob(f"*odd_exp*frame{frame:02d}.png"):
+        stale.unlink(missing_ok=True)
+    for stale in output_dir.glob(f"*even_exp*frame{frame:02d}.png"):
+        stale.unlink(missing_ok=True)
     for bit_depth in sorted({int(row["BitDepth"]) for row in frame_rows}):
         plot_four_panel(frame_rows, bit_depth, "SSAA", "OS", "Riley Samples Along One Pixel Axis" if texture else "Samples Along One Pixel Axis", title, output_dir / f"metrics_b{bit_depth:02d}_frame{frame:02d}.png", family)
+        plot_mismatch_panel(frame_rows, bit_depth, "SSAA", "OS", "Riley Samples Along One Pixel Axis" if texture else "Samples Along One Pixel Axis", title, output_dir / f"mismatch_b{bit_depth:02d}_frame{frame:02d}.png", family)
         if texture:
             plot_four_panel(frame_rows, bit_depth, "OS", "SSAA", "Texture Oversampling Along One Pixel Axis", title, output_dir / f"os_metrics_b{bit_depth:02d}_frame{frame:02d}.png", family)
+            plot_mismatch_panel(frame_rows, bit_depth, "OS", "SSAA", "Texture Oversampling Along One Pixel Axis", title, output_dir / f"os_mismatch_b{bit_depth:02d}_frame{frame:02d}.png", family)
     if texture:
         plot_limit_cuts(frame_rows, title, output_dir, frame, family)
 
@@ -278,14 +306,12 @@ def make_rows(
                     # one otherwise), which previously made a spurious zero
                     # point appear beside the real SSAA=1 render.
                     if item != reference and image.shape == ref_image.shape:
-                        e_f64, e_inf, e_b, delta_b, max_eb = metric_row(image, ref_image, bit_depth)
-                        primary.append({**base, "Reference": primary_label, "e_f64": e_f64, "e_inf": e_inf, "e_b": e_b, "delta_b": delta_b, "max_eb": max_eb})
+                        primary.append({**base, "Reference": primary_label, **metric_row(image, ref_image, bit_depth)})
                     # Exp1/2 _rectconv convention: always compare against
                     # the highest available SSAA (at each OS for textures),
                     # independently of the primary analytic-reference study.
                     if not item.analytic and image.shape == self_image.shape:
-                        e_f64, e_inf, e_b, delta_b, max_eb = metric_row(image, self_image, bit_depth)
-                        self_rows.append({**base, "Reference": self_label, "e_f64": e_f64, "e_inf": e_inf, "e_b": e_b, "delta_b": delta_b, "max_eb": max_eb})
+                        self_rows.append({**base, "Reference": self_label, **metric_row(image, self_image, bit_depth)})
                 del image
             del ref_image, self_image
             release_batch()
@@ -318,7 +344,7 @@ def write_summary(directory: Path, rows: list[dict[str, object]]) -> None:
     if not rows:
         return
     directory.mkdir(parents=True, exist_ok=True)
-    fields = ["Case", "Family", "Pattern", "PSF", "Interpolator", "Config", "Frame", "BitDepth", "SSAA", "OS", "Reference", "e_f64", "e_inf", "e_b", "delta_b", "max_eb"]
+    fields = ["Case", "Family", "Pattern", "PSF", "Interpolator", "Config", "Frame", "BitDepth", "SSAA", "OS", "Reference", "e_f64", "mean_f64", "e_inf", "e_b", "mean_eb", "delta_b", "severe_b", "p95_eb", "p99_eb", "max_eb"]
     with (directory / "summary.csv").open("w", newline="") as stream:
         writer = csv.DictWriter(stream, fieldnames=fields)
         writer.writeheader(); writer.writerows(rows)

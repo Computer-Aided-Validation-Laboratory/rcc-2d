@@ -41,6 +41,9 @@ from modules.analysis_selection import analysis_should_run, mark_analysis_comple
 from modules.analysis_parallel import run_analysis_jobs
 from modules.analysis_memory import make_agg_figure, release_batch, release_figure
 from modules.render_outputs import quantise_camera
+from modules.exp_common_analysis import image_error_metrics
+
+METRIC_KEYS = ("e_f64", "mean_f64", "e_inf", "e_b", "mean_eb", "delta_b", "severe_b", "p95_eb", "p99_eb", "max_eb")
 
 # Defaults make this base entry point usable directly.  The world, UV, and
 # texture-only wrappers below override these paths for their specific studies.
@@ -112,9 +115,19 @@ def _set_explicit_sample_ticks(axis, values) -> None:
 def _set_zero_inclusive_float_axis(axis, values) -> None:
     """Use a precision-aware scale that preserves exact zero endpoints."""
     floor = 0.5 / float(2 ** max(BIT_DEPTHS) - 1)
-    finite = [float(value) for value in values if np.isfinite(value) and value >= 0.0]
+    finite = [float(value) for value in values if np.isfinite(value)]
     axis.set_yscale("symlog", linthresh=floor, linscale=0.8)
-    axis.set_ylim(0.0, 1.15 * max(finite + [floor]))
+    ceiling = 1.15 * max([abs(value) for value in finite] + [floor])
+    axis.set_ylim((-ceiling, ceiling) if any(value < 0.0 for value in finite) else (0.0, ceiling))
+    if any(value < 0.0 for value in finite): axis.axhline(0.0, color="black", linestyle=":", alpha=0.55)
+
+
+def _set_nonnegative_digit_axis(axis, values) -> None:
+    """Zero-aware log scale for RMSE/absolute-max camera-code errors."""
+    ceiling = 1.15 * max([float(value) for value in values if np.isfinite(value) and value >= 0.0] + [1.0])
+    axis.set_yscale("symlog", linthresh=0.25, linscale=0.8)
+    axis.set_ylim(0.0, ceiling)
+    axis.axhline(1.0, color="black", linestyle="--", alpha=0.55)
 
 
 def _load_reference_for_frame(case_dir: Path, frame: int):
@@ -218,7 +231,7 @@ def _plot_texture_oversample_metrics(
                     break
         return points
 
-    figure, axes = _make_figure(figsize=(15, 10))
+    figure, axes = _make_figure(figsize=(12, 15), rows=3, columns=2)
     colors = plt.rcParams["axes.prop_cycle"].by_key()["color"]
     bit_styles = {8: "-", 12: "--", 16: ":"}
     plotted_bit_depths = [bit_depth] if bit_depth is not None else BIT_DEPTHS
@@ -233,7 +246,8 @@ def _plot_texture_oversample_metrics(
         color = ssaa_colors[ssaa]
         for axis, metric, title, ylabel in (
             (axes[0, 0], "e_f64", "Floating-Point RMSE", "RMSE"),
-            (axes[0, 1], "e_inf", "Floating-Point Max Error", "Max error"),
+            (axes[1, 0], "mean_f64", "Floating-Point Signed Mean Error", "Mean error"),
+            (axes[2, 0], "e_inf", "Floating-Point Maximum Error", "Max error"),
         ):
             points = values_for(float_bit_depth, ssaa, metric)
             if points:
@@ -244,18 +258,14 @@ def _plot_texture_oversample_metrics(
             axis.set_ylabel(ylabel)
         for plotted_bit_depth in plotted_bit_depths:
             for axis, metric, title, ylabel in (
-                (axes[1, 0], "delta_b", "Digitised Mismatch Fraction", "Fraction of differing pixels"),
-                (axes[1, 1], "max_eb", "Maximum Digitised Mismatch", "LSB levels"),
+                (axes[0, 1], "e_b", "Digitised RMSE", "LSB levels"),
+                (axes[1, 1], "mean_eb", "Digitised Signed Mean Error", "LSB levels"),
+                (axes[2, 1], "max_eb", "Maximum Digitised Error", "LSB levels"),
             ):
                 points = values_for(plotted_bit_depth, ssaa, metric)
                 if points:
                     x, y = zip(*points)
-                    if metric == "max_eb":
-                        axis.loglog(x, np.maximum(0.2, y), color=color, marker="o",
-                                    linestyle=bit_styles.get(plotted_bit_depth, "-"), linewidth=1.4)
-                    else:
-                        axis.semilogx(x, y, color=color, marker="o",
-                                      linestyle=bit_styles.get(plotted_bit_depth, "-"), linewidth=1.4)
+                    axis.semilogx(x, y, color=color, marker="o", linestyle=bit_styles.get(plotted_bit_depth, "-"), linewidth=1.4)
                 axis.set_title(title)
                 axis.set_ylabel(ylabel)
 
@@ -264,15 +274,16 @@ def _plot_texture_oversample_metrics(
         style = bit_styles.get(plotted_bit_depth, "-")
         axes[0, 0].axhline(1.0 / maximum, color="black", linestyle=style, alpha=0.35)
         axes[0, 1].axhline(0.5 / maximum, color="red", linestyle=style, alpha=0.35)
-    for axis, metric in ((axes[0, 0], "e_f64"), (axes[0, 1], "e_inf")):
+    for axis, metric in ((axes[0, 0], "e_f64"), (axes[1, 0], "mean_f64"), (axes[2, 0], "e_inf")):
         _set_zero_inclusive_float_axis(
             axis,
             [value for ssaa in ssaa_values for _, value in values_for(float_bit_depth, ssaa, metric)],
         )
-    axes[1, 0].set_ylim(-0.05, 1.05)
-    axes[1, 1].axhline(1.0, color="black", linestyle="--", alpha=0.6)
-    axes[1, 1].axhline(0.2, color="red", linestyle=":", alpha=0.6)
-    axes[1, 1].set_ylim(0.16, None)
+    _set_nonnegative_digit_axis(axes[0, 1], [value for depth in plotted_bit_depths for ssaa in ssaa_values for _, value in values_for(depth, ssaa, "e_b")])
+    _set_nonnegative_digit_axis(axes[2, 1], [value for depth in plotted_bit_depths for ssaa in ssaa_values for _, value in values_for(depth, ssaa, "max_eb")])
+    mean_values = [value for depth in plotted_bit_depths for ssaa in ssaa_values for _, value in values_for(depth, ssaa, "mean_eb")]
+    mean_ceiling = 1.15 * max([abs(float(value)) for value in mean_values] + [1.0])
+    axes[1, 1].set_yscale("symlog", linthresh=0.25, linscale=0.8); axes[1, 1].set_ylim(-mean_ceiling, mean_ceiling); axes[1, 1].axhline(0.0, color="black", linestyle=":", alpha=0.55)
 
     for axis in axes.flat:
         axis.set_xlabel("Texture Oversampling Along One Pixel Axis")
@@ -331,7 +342,7 @@ def _plot_texture_ssaa_metrics(
         values = riley_tex[bit_depth][oversamp]
         return sorted(zip(values["samples"], values[metric]))
 
-    figure, axes = _make_figure(figsize=(15, 10))
+    figure, axes = _make_figure(figsize=(12, 15), rows=3, columns=2)
     colors = plt.rcParams["axes.prop_cycle"].by_key()["color"]
     bit_styles = {8: "-", 12: "--", 16: ":"}
     plotted_bit_depths = [bit_depth] if bit_depth is not None else BIT_DEPTHS
@@ -344,7 +355,8 @@ def _plot_texture_ssaa_metrics(
         color = oversamp_colors[oversamp]
         for axis, metric, title, ylabel in (
             (axes[0, 0], "e_f64", "Floating-Point RMSE", "RMSE"),
-            (axes[0, 1], "e_inf", "Floating-Point Max Error", "Max error"),
+            (axes[1, 0], "mean_f64", "Floating-Point Signed Mean Error", "Mean error"),
+            (axes[2, 0], "e_inf", "Floating-Point Maximum Error", "Max error"),
         ):
             points = values_for(float_bit_depth, oversamp, metric)
             if points:
@@ -354,16 +366,14 @@ def _plot_texture_ssaa_metrics(
             axis.set_ylabel(ylabel)
         for plotted_bit_depth in plotted_bit_depths:
             for axis, metric, title, ylabel in (
-                (axes[1, 0], "delta_b", "Digitised Mismatch Fraction", "Fraction of differing pixels"),
-                (axes[1, 1], "max_eb", "Maximum Digitised Mismatch", "LSB levels"),
+                (axes[0, 1], "e_b", "Digitised RMSE", "LSB levels"),
+                (axes[1, 1], "mean_eb", "Digitised Signed Mean Error", "LSB levels"),
+                (axes[2, 1], "max_eb", "Maximum Digitised Error", "LSB levels"),
             ):
                 points = values_for(plotted_bit_depth, oversamp, metric)
                 if points:
                     x, y = zip(*points)
-                    if metric == "max_eb":
-                        axis.loglog(x, np.maximum(0.2, y), color=color, marker="o", linestyle=bit_styles.get(plotted_bit_depth, "-"), linewidth=1.4)
-                    else:
-                        axis.semilogx(x, y, color=color, marker="o", linestyle=bit_styles.get(plotted_bit_depth, "-"), linewidth=1.4)
+                    axis.semilogx(x, y, color=color, marker="o", linestyle=bit_styles.get(plotted_bit_depth, "-"), linewidth=1.4)
                 axis.set_title(title)
                 axis.set_ylabel(ylabel)
     for plotted_bit_depth in plotted_bit_depths:
@@ -371,15 +381,16 @@ def _plot_texture_ssaa_metrics(
         style = bit_styles.get(plotted_bit_depth, "-")
         axes[0, 0].axhline(1.0 / maximum, color="black", linestyle=style, alpha=0.35)
         axes[0, 1].axhline(0.5 / maximum, color="red", linestyle=style, alpha=0.35)
-    for axis, metric in ((axes[0, 0], "e_f64"), (axes[0, 1], "e_inf")):
+    for axis, metric in ((axes[0, 0], "e_f64"), (axes[1, 0], "mean_f64"), (axes[2, 0], "e_inf")):
         _set_zero_inclusive_float_axis(
             axis,
             [value for oversamp in oversamp_values for _, value in values_for(float_bit_depth, oversamp, metric)],
         )
-    axes[1, 0].set_ylim(-0.05, 1.05)
-    axes[1, 1].axhline(1.0, color="black", linestyle="--", alpha=0.6)
-    axes[1, 1].axhline(0.2, color="red", linestyle=":", alpha=0.6)
-    axes[1, 1].set_ylim(0.16, None)
+    _set_nonnegative_digit_axis(axes[0, 1], [value for depth in plotted_bit_depths for oversamp in oversamp_values for _, value in values_for(depth, oversamp, "e_b")])
+    _set_nonnegative_digit_axis(axes[2, 1], [value for depth in plotted_bit_depths for oversamp in oversamp_values for _, value in values_for(depth, oversamp, "max_eb")])
+    mean_values = [value for depth in plotted_bit_depths for oversamp in oversamp_values for _, value in values_for(depth, oversamp, "mean_eb")]
+    mean_ceiling = 1.15 * max([abs(float(value)) for value in mean_values] + [1.0])
+    axes[1, 1].set_yscale("symlog", linthresh=0.25, linscale=0.8); axes[1, 1].set_ylim(-mean_ceiling, mean_ceiling); axes[1, 1].axhline(0.0, color="black", linestyle=":", alpha=0.55)
     for axis in axes.flat:
         axis.set_xlabel("Riley Samples Along One Pixel Axis")
         axis.xaxis.set_major_locator(FixedLocator(ssaa_values))
@@ -494,6 +505,10 @@ def _write_texture_analysis_figures(
     images was a user-facing output, so the final figures are now generated
     directly from the in-memory metric arrays.
     """
+    for stale in output_dir.glob(f"{case_name}_tex_*odd_exp*_frame{frame:02d}.png"):
+        stale.unlink(missing_ok=True)
+    for stale in output_dir.glob(f"{case_name}_tex_*even_exp*_frame{frame:02d}.png"):
+        stale.unlink(missing_ok=True)
     # Clear obsolete output names left by older versions of this analysis.
     for suffix in (
         "tex_metrics", "tex_oversamp_metrics", "tex_float_rmse", "tex_float_max",
@@ -520,22 +535,7 @@ def _write_texture_analysis_figures(
     )
     if not available_ssaa:
         return
-    odd_os = [value for value in available_os if value.bit_length() % 2 == 0]
-    even_os = [value for value in available_os if value.bit_length() % 2 == 1]
-    odd_ssaa = [value for value in available_ssaa if value.bit_length() % 2 == 0]
-    even_ssaa = [value for value in available_ssaa if value.bit_length() % 2 == 1]
-    for group_name, selected_os, selected_ssaa in (
-        ("odd_exp", odd_os, odd_ssaa),
-        ("even_exp", even_os, even_ssaa),
-    ):
-        _plot_texture_ssaa_metrics(
-            riley_tex, case_name, frame, output_dir, selected_os, group_name,
-            reference_name=reference_name,
-        )
-        _plot_texture_oversample_metrics(
-            riley_tex, case_name, frame, output_dir, selected_ssaa, group_name,
-            reference_name=reference_name,
-        )
+    # Full-range per-bit studies replace the former odd/even exponent split.
     for bit_depth in BIT_DEPTHS:
         _plot_texture_ssaa_metrics(
             riley_tex, case_name, frame, output_dir, available_os, "all", bit_depth,
@@ -545,6 +545,18 @@ def _write_texture_analysis_figures(
             riley_tex, case_name, frame, output_dir, available_ssaa, "all", bit_depth,
             reference_name,
         )
+        figure, axes = _make_figure(figsize=(12, 9), constrained_layout=True)
+        colors = plt.rcParams["axes.prop_cycle"].by_key()["color"]
+        for index, oversamp in enumerate(reversed(available_os)):
+            values = riley_tex[bit_depth][oversamp]
+            order = np.argsort(values["samples"])
+            for axis, metric in zip(axes.flat, ("delta_b", "severe_b", "p95_eb", "p99_eb")):
+                axis.semilogx(np.asarray(values["samples"])[order], np.asarray(values[metric])[order], color=colors[index % len(colors)], marker="o", label=f"Riley, Tex, OS={oversamp}")
+        for axis, name, ylabel in zip(axes.flat, ("Mismatch Fraction (≥1 LSB)", "Severe Mismatch Fraction (≥2 LSB)", "95th Percentile Absolute Digitised Error", "99th Percentile Absolute Digitised Error"), ("Fraction of pixels", "Fraction of pixels", "LSB levels", "LSB levels")):
+            axis.set_title(name); axis.set_ylabel(ylabel); axis.set_xlabel("Riley Samples Along One Pixel Axis"); _set_explicit_sample_ticks(axis, available_ssaa); axis.grid(True, which="both", ls="--", alpha=0.4); axis.legend(loc="lower left", fontsize=6)
+        figure.suptitle(f"Riley, Tex: {case_name} (Frame {frame:02d}) | {bit_depth}-bit\nReference: {reference_name}", fontweight="bold")
+        figure.savefig(output_dir / f"{case_name}_tex_mismatch_b{bit_depth:02d}_frame{frame:02d}.png", dpi=150)
+        _release_figure(figure)
     _plot_texture_limit_curves(riley_tex, case_name, frame, output_dir, reference_name)
 
 
@@ -557,12 +569,12 @@ def _write_function_analysis_figure(
     float_bit_depth: int,
     reference_name: str = "Analytic Reference",
 ) -> None:
-    """Write the function-shader four-panel figure without temporary PNGs."""
+    """Write the function-shader six-panel error figure."""
     for suffix in ("func_float_rmse", "func_float_max", "func_bits", "func_max_eb"):
         (output_dir / f"{case_name}_{suffix}_frame{frame:02d}.png").unlink(
             missing_ok=True
         )
-    figure, axes = _make_figure(figsize=(15, 10), constrained_layout=True)
+    figure, axes = _make_figure(figsize=(12, 15), constrained_layout=True, rows=3, columns=2)
     styles = (
         ("rect", "Custom, Rect", "#1f77b4", "o", "-"),
         ("gauss", "Custom, Gauss", "#2ca02c", "s", "-"),
@@ -586,7 +598,7 @@ def _write_function_analysis_figure(
     )
 
     for method, label, color, marker, linestyle in styles:
-        for axis, metric in ((axes[0, 0], "e_f64"), (axes[0, 1], "e_inf")):
+        for axis, metric in ((axes[0, 0], "e_f64"), (axes[1, 0], "mean_f64"), (axes[2, 0], "e_inf")):
             points = series(method, float_bit_depth, metric)
             if points:
                 x, y = zip(*points)
@@ -600,38 +612,35 @@ def _write_function_analysis_figure(
             axis.axhline(1.0 / maximum, color="black", linestyle=style, alpha=0.3)
             axis.axhline(0.5 / maximum, color="red", linestyle=style, alpha=0.3)
         for method, label, color, marker, _ in styles:
-            for axis, metric in ((axes[1, 0], "delta_b"), (axes[1, 1], "max_eb")):
+            for axis, metric in ((axes[0, 1], "e_b"), (axes[1, 1], "mean_eb"), (axes[2, 1], "max_eb")):
                 points = series(method, bit_depth, metric)
                 if points:
                     x, y = zip(*points)
                     values = np.asarray(y)
-                    if metric == "max_eb":
-                        axis.loglog(x, np.maximum(0.2, values), color=color, marker=marker,
-                                    linestyle=style, linewidth=1.3, markersize=5,
-                                    label=f"{label}, {bit_depth}-bit")
-                    else:
-                        axis.semilogx(x, values, color=color, marker=marker,
-                                      linestyle=style, linewidth=1.3, markersize=5,
-                                      label=f"{label}, {bit_depth}-bit")
-    axes[1, 0].set_ylim(-0.05, 1.05)
-    axes[1, 1].axhline(1.0, color="black", linestyle="--", alpha=0.6, label="1 LSB")
-    axes[1, 1].axhline(0.2, color="red", linestyle=":", alpha=0.6, label="0 LSB")
-    axes[1, 1].set_ylim(0.16, None)
+                    axis.semilogx(x, values, color=color, marker=marker, linestyle=style, linewidth=1.3, markersize=5, label=f"{label}, {bit_depth}-bit")
     # A self-convergence curve must include its exact-zero reference endpoint.
     # ``symlog`` preserves that endpoint while still resolving sub-LSB errors.
     float_limit = 0.5 / float(2 ** max(BIT_DEPTHS) - 1)
     float_ceiling = max(
-        [float(value) for metric in ("e_f64", "e_inf") for values in riley_func.values() for value in values[metric]]
+        [abs(float(value)) for metric in ("e_f64", "mean_f64", "e_inf") for values in riley_func.values() for value in values[metric]]
         + [float_limit]
     )
-    for axis in axes[0, :]:
+    for axis in (axes[0, 0], axes[2, 0]):
         axis.set_yscale("symlog", linthresh=float_limit, linscale=0.8)
         axis.set_ylim(0.0, 1.15 * float_ceiling)
+    axes[1, 0].set_yscale("symlog", linthresh=float_limit, linscale=0.8)
+    axes[1, 0].set_ylim(-1.15 * float_ceiling, 1.15 * float_ceiling); axes[1, 0].axhline(0.0, color="black", linestyle=":", alpha=0.55)
+    for axis in axes[:, 1].flat: axis.set_yscale("symlog", linthresh=0.25, linscale=0.8)
+    digit_ceiling = max([abs(float(value)) for values in riley_func.values() for key in ("e_b", "mean_eb", "max_eb") for value in values[key]] + [1.0])
+    axes[0, 1].set_ylim(0.0, 1.15 * digit_ceiling); axes[2, 1].set_ylim(0.0, 1.15 * digit_ceiling)
+    axes[1, 1].set_ylim(-1.15 * digit_ceiling, 1.15 * digit_ceiling); axes[1, 1].axhline(0.0, color="black", linestyle=":", alpha=0.55)
     for axis, title, ylabel in (
         (axes[0, 0], "Floating-Point RMSE", "RMSE"),
-        (axes[0, 1], "Floating-Point Max Error", "Max error"),
-        (axes[1, 0], "Digitised Mismatch Fraction", "Fraction of differing pixels"),
-        (axes[1, 1], "Maximum Digitised Mismatch", "LSB levels"),
+        (axes[1, 0], "Floating-Point Signed Mean Error", "Mean error"),
+        (axes[2, 0], "Floating-Point Maximum Error", "Max error"),
+        (axes[0, 1], "Digitised RMSE", "LSB levels"),
+        (axes[1, 1], "Digitised Signed Mean Error", "LSB levels"),
+        (axes[2, 1], "Maximum Digitised Error", "LSB levels"),
     ):
         axis.set_title(title)
         axis.set_xlabel("Samples Along One Pixel Axis")
@@ -648,6 +657,19 @@ def _write_function_analysis_figure(
     )
     figure.savefig(output_dir / f"{case_name}_func_metrics_frame{frame:02d}.png", dpi=150)
     _release_figure(figure)
+    mismatch, axes = _make_figure(figsize=(12, 9), constrained_layout=True)
+    for bit_depth in BIT_DEPTHS:
+        for method, label, color, marker, linestyle in styles:
+            points_by_metric = {metric: series(method, bit_depth, metric) for metric in ("delta_b", "severe_b", "p95_eb", "p99_eb")}
+            for axis, metric in zip(axes.flat, points_by_metric):
+                points = points_by_metric[metric]
+                if points:
+                    x, y = zip(*points); axis.semilogx(x, y, color=color, marker=marker, linestyle={8: "-", 12: "--", 16: ":"}.get(bit_depth, "-"), label=f"{label}, {bit_depth}-bit")
+    for axis, name, ylabel in zip(axes.flat, ("Mismatch Fraction (≥1 LSB)", "Severe Mismatch Fraction (≥2 LSB)", "95th Percentile Absolute Digitised Error", "99th Percentile Absolute Digitised Error"), ("Fraction of pixels", "Fraction of pixels", "LSB levels", "LSB levels")):
+        axis.set_title(name); axis.set_ylabel(ylabel); axis.set_xlabel("Samples Along One Pixel Axis"); _set_explicit_sample_ticks(axis, sample_ticks); axis.grid(True, which="both", ls="--", alpha=0.4); axis.legend(loc="lower left", fontsize=6)
+    mismatch.suptitle(f"Riley, Func: {case_name} (Frame {frame:02d}) | Reference: {reference_name}", fontweight="bold")
+    mismatch.savefig(output_dir / f"{case_name}_func_mismatch_frame{frame:02d}.png", dpi=150)
+    _release_figure(mismatch)
 
 
 def analyze_riley_case(case_name: str, tex_interp: str) -> None:
@@ -684,16 +706,12 @@ def analyze_riley_case(case_name: str, tex_interp: str) -> None:
                 "rect": {
                     "samples": [],
                     "e_f64": [],
-                    "e_inf": [],
-                    "delta_b": [],
-                    "max_eb": [],
+                    "mean_f64": [], "e_inf": [], "e_b": [], "mean_eb": [], "delta_b": [], "severe_b": [], "p95_eb": [], "p99_eb": [], "max_eb": [],
                 },
                 "gauss": {
                     "samples": [],
                     "e_f64": [],
-                    "e_inf": [],
-                    "delta_b": [],
-                    "max_eb": [],
+                    "mean_f64": [], "e_inf": [], "e_b": [], "mean_eb": [], "delta_b": [], "severe_b": [], "p95_eb": [], "p99_eb": [], "max_eb": [],
                 },
             }
             for bb in BIT_DEPTHS
@@ -719,31 +737,18 @@ def analyze_riley_case(case_name: str, tex_interp: str) -> None:
                     if npy_path.exists():
                         # Float metrics
                         img_float = np.asarray(np.load(npy_path), dtype=np.float64)
-                        diff = img_float - ref_float_by_bb[bb]
-                        e_f64 = np.sqrt(np.mean(diff**2))
-                        e_inf = np.max(np.abs(diff))
-
-                        # Digitised metrics
-                        img_dig = quantise_camera(img_float, bb).astype(np.float64)
-                        diff_dig = img_dig - ref_dig_by_bb[bb]
-                        delta_b = np.mean(img_dig != ref_dig_by_bb[bb])
-                        max_eb = np.max(np.abs(diff_dig))
+                        metrics = image_error_metrics(img_float, ref_float_by_bb[bb], bb, quantise_camera)
 
                         custom_data[bb][method]["samples"].append(np.sqrt(samples))
-                        custom_data[bb][method]["e_f64"].append(e_f64)
-                        custom_data[bb][method]["e_inf"].append(e_inf)
-                        custom_data[bb][method]["delta_b"].append(delta_b)
-                        custom_data[bb][method]["max_eb"].append(max_eb)
-                        del img_float, diff, img_dig, diff_dig
+                        for key in METRIC_KEYS: custom_data[bb][method][key].append(metrics[key])
+                        del img_float, metrics
 
         # 2. Riley, Func Data
         riley_func = {
             bb: {
                 "samples": [],
                 "e_f64": [],
-                "e_inf": [],
-                "delta_b": [],
-                "max_eb": [],
+                "mean_f64": [], "e_inf": [], "e_b": [], "mean_eb": [], "delta_b": [], "severe_b": [], "p95_eb": [], "p99_eb": [], "max_eb": [],
             }
             for bb in BIT_DEPTHS
         }
@@ -764,21 +769,11 @@ def analyze_riley_case(case_name: str, tex_interp: str) -> None:
                     img_float = np.asarray(np.load(npy_path), dtype=np.float64)
                     if img_float.size and np.nanmax(np.abs(img_float)) > 1.0 + 1e-12:
                         img_float /= max_val
-                    diff = img_float - ref_float_by_bb[bb]
-                    e_f64 = np.sqrt(np.mean(diff**2))
-                    e_inf = np.max(np.abs(diff))
-
-                    img_dig = quantise_camera(img_float, bb).astype(np.float64)
-                    diff_dig = img_dig - ref_dig_by_bb[bb]
-                    delta_b = np.mean(img_dig != ref_dig_by_bb[bb])
-                    max_eb = np.max(np.abs(diff_dig))
+                    metrics = image_error_metrics(img_float, ref_float_by_bb[bb], bb, quantise_camera)
 
                     riley_func[bb]["samples"].append(np.sqrt(samples))
-                    riley_func[bb]["e_f64"].append(e_f64)
-                    riley_func[bb]["e_inf"].append(e_inf)
-                    riley_func[bb]["delta_b"].append(delta_b)
-                    riley_func[bb]["max_eb"].append(max_eb)
-                    del img_float, diff, img_dig, diff_dig
+                    for key in METRIC_KEYS: riley_func[bb][key].append(metrics[key])
+                    del img_float, metrics
 
         # 3. Riley Texture Shader Data
         riley_tex = {
@@ -786,9 +781,7 @@ def analyze_riley_case(case_name: str, tex_interp: str) -> None:
                 oversamp: {
                     "samples": [],
                     "e_f64": [],
-                    "e_inf": [],
-                    "delta_b": [],
-                    "max_eb": [],
+                    "mean_f64": [], "e_inf": [], "e_b": [], "mean_eb": [], "delta_b": [], "severe_b": [], "p95_eb": [], "p99_eb": [], "max_eb": [],
                 }
                 for oversamp in TEX_OVERSAMPLES
             }
@@ -814,23 +807,13 @@ def analyze_riley_case(case_name: str, tex_interp: str) -> None:
                         img_float = np.asarray(np.load(npy_path), dtype=np.float64)
                         if img_float.size and np.nanmax(np.abs(img_float)) > 1.0 + 1e-12:
                             img_float /= max_val
-                        diff = img_float - ref_float_by_bb[bb]
-                        e_f64 = np.sqrt(np.mean(diff**2))
-                        e_inf = np.max(np.abs(diff))
-
-                        img_dig = quantise_camera(img_float, bb).astype(np.float64)
-                        diff_dig = img_dig - ref_dig_by_bb[bb]
-                        delta_b = np.mean(img_dig != ref_dig_by_bb[bb])
-                        max_eb = np.max(np.abs(diff_dig))
+                        metrics = image_error_metrics(img_float, ref_float_by_bb[bb], bb, quantise_camera)
 
                         r_tex = riley_tex[bb][oversamp]
                         r_tex["samples"].append(np.sqrt(samples))
-                        r_tex["e_f64"].append(e_f64)
-                        r_tex["e_inf"].append(e_inf)
-                        r_tex["delta_b"].append(delta_b)
-                        r_tex["max_eb"].append(max_eb)
+                        for key in METRIC_KEYS: r_tex[key].append(metrics[key])
                         riley_texture_sample_count += 1
-                        del img_float, diff, img_dig, diff_dig
+                        del img_float, metrics
 
         if ANALYSIS_MODE == "tex" and riley_texture_sample_count == 0:
             print(
@@ -1689,10 +1672,7 @@ def analyse_riley_self_convergence(
                                 "oversamp": oversamp,
                                 "ssaa": ssaa,
                                 "ref_ssaa": ref_ssaa,
-                                "e_f64": 0.0,
-                                "e_inf": 0.0,
-                                "delta_b": 0.0,
-                                "max_eb": 0.0,
+                                **{key: 0.0 for key in METRIC_KEYS},
                             }
                         )
                         continue
@@ -1700,8 +1680,7 @@ def analyse_riley_self_convergence(
                     if image is None:
                         continue
                     image_float, image_digitised = image
-                    float_diff = image_float - ref_float
-                    digitised_diff = image_digitised - ref_digitised
+                    metrics = image_error_metrics(image_float, ref_float, bit_depth, quantise_camera)
                     records.append(
                         {
                             "label": label,
@@ -1709,13 +1688,10 @@ def analyse_riley_self_convergence(
                             "oversamp": oversamp,
                             "ssaa": ssaa,
                             "ref_ssaa": ref_ssaa,
-                            "e_f64": float(np.sqrt(np.mean(float_diff**2))),
-                            "e_inf": float(np.max(np.abs(float_diff))),
-                            "delta_b": float(np.mean(image_digitised != ref_digitised)),
-                            "max_eb": float(np.max(np.abs(digitised_diff))),
+                            **metrics,
                         }
                     )
-                    del image_float, image_digitised, float_diff, digitised_diff
+                    del image_float, image_digitised, metrics
                 del ref_float, ref_digitised
         if not records:
             print(f"Insufficient Riley SSAA data for self convergence: {case_name}, frame {frame:02d}.")
@@ -1729,7 +1705,7 @@ def analyse_riley_self_convergence(
             # reference changes for self-convergence.
             riley_tex = {
                 bit_depth: {
-                    osamp: {key: [] for key in ("samples", "e_f64", "e_inf", "delta_b", "max_eb")}
+                    osamp: {key: [] for key in ("samples",) + METRIC_KEYS}
                     for osamp in TEX_OVERSAMPLES
                 }
                 for bit_depth in BIT_DEPTHS
@@ -1737,14 +1713,14 @@ def analyse_riley_self_convergence(
             for record in records:
                 slot = riley_tex[record["bit_depth"]][record["oversamp"]]
                 slot["samples"].append(record["ssaa"])
-                for key in ("e_f64", "e_inf", "delta_b", "max_eb"):
+                for key in METRIC_KEYS:
                     slot[key].append(record[key])
             _write_texture_analysis_figures(riley_tex, case_name, frame, output_dir, reference_name)
             del riley_tex
         else:
             # Function-shader self convergence uses the same four-panel
             # function writer as the analytic-reference study.
-            empty = {key: [] for key in ("samples", "e_f64", "e_inf", "delta_b", "max_eb")}
+            empty = {key: [] for key in ("samples",) + METRIC_KEYS}
             custom_data = {
                 bit_depth: {"rect": empty.copy(), "gauss": empty.copy()}
                 for bit_depth in BIT_DEPTHS
@@ -1756,7 +1732,7 @@ def analyse_riley_self_convergence(
             for record in records:
                 slot = riley_func[record["bit_depth"]]
                 slot["samples"].append(record["ssaa"])
-                for key in ("e_f64", "e_inf", "delta_b", "max_eb"):
+                for key in METRIC_KEYS:
                     slot[key].append(record[key])
             _write_function_analysis_figure(
                 custom_data, riley_func, case_name, frame, output_dir,

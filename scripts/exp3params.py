@@ -10,7 +10,7 @@ import riley
 
 from exp0params_common import CORES, FORCE_RENDER_OVER, NUM_PROCESSES, RILEY_RASTER_THREADS, RUN_MODE, RunMode
 
-BIT_DEPTHS = [8]
+BIT_DEPTHS = [8, 12]
 # Measurement analyses re-quantise the canonical post-integration float image;
 # adding a depth here never triggers a rerender or regenerates non-preview TIFFs.
 MEASUREMENT_BIT_DEPTHS = [8, 12]
