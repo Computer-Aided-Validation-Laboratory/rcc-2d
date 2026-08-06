@@ -187,8 +187,16 @@ def save_field(path: Path, ux: np.ndarray, uy: np.ndarray, frame: int, pitch: fl
         else plt.subplots(1, 2, figsize=(10, 4.4), constrained_layout=True)
     )
     for axis, field, name in zip(np.ravel(axes), (ux, uy), ("$u_x$", "$u_y$")):
-        # Natural per-field limits expose variation about the nominal motion.
-        image = axis.imshow(field, cmap="coolwarm", origin="upper")
+        center = float(np.nanmean(field)) if np.any(np.isfinite(field)) else 0.0
+        if np.any(np.isfinite(field)):
+            max_dev = float(np.nanmax(np.abs(field - center)))
+            r = max(max_dev, 0.05)
+        else:
+            r = 0.05
+        image = axis.imshow(
+            field, cmap="coolwarm", origin="upper",
+            vmin=center - r, vmax=center + r
+        )
         rows, cols = field.shape
         axis.add_patch(Rectangle((pitch, pitch), cols - 1 - 2*pitch, rows - 1 - 2*pitch, fill=False, edgecolor="black", linewidth=1.2))
         axis.set_title(field_title(label, frame, name), fontsize=9)

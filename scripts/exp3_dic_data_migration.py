@@ -15,7 +15,9 @@ from pathlib import Path
 
 import numpy as np
 
-from modules.exp3_dic_data import result_path, save_arrays, validate_result
+from modules.exp3_dic_data import (
+    result_path, save_arrays, validate_result, parse_config,
+)
 
 
 def frame_number(path: Path) -> int:
@@ -24,7 +26,16 @@ def frame_number(path: Path) -> int:
 
 def convert_one(source: Path, remove_source: bool) -> tuple[str, bool, bool]:
     """Convert one CSV independently, keeping peak disk use to one NPZ."""
-    target = result_path(source.parent, frame_number(source))
+    bit_depth = int(source.parent.name.removeprefix("b"))
+    config_name = source.parent.parent.name
+    render_root = source.parent.parent.parent.name
+    case = source.parent.parent.parent.parent.name
+    base_config, suffix = parse_config(config_name)
+    target_dir = (
+        source.parent.parent.parent.parent.parent
+        / "exp3_dic" / case / render_root / base_config
+    )
+    target = result_path(target_dir, suffix, bit_depth, frame_number(source))
     if target.exists():
         validate_result(target)
         removed = False
@@ -69,7 +80,14 @@ def main() -> None:
     converted = removed = skipped = 0
     if not args.apply:
         for source in sources:
-            print(f"would convert {source} -> {result_path(source.parent, frame_number(source))}")
+            bit_depth = int(source.parent.name.removeprefix("b"))
+            config_name = source.parent.parent.name
+            render_root = source.parent.parent.parent.name
+            case = source.parent.parent.parent.parent.name
+            base_config, suffix = parse_config(config_name)
+            target_dir = args.root / case / render_root / base_config
+            target = result_path(target_dir, suffix, bit_depth, frame_number(source))
+            print(f"would convert {source} -> {target}")
     else:
         workers = max(1, args.jobs)
         with ProcessPoolExecutor(max_workers=workers) as pool:

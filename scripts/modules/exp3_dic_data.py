@@ -4,14 +4,51 @@ from __future__ import annotations
 import os
 from pathlib import Path
 
+import re
+
 import numpy as np
 
 
 SCHEMA_VERSION = 1
 
 
-def result_path(directory: Path, frame: int) -> Path:
-    return directory / f"dic_frame{frame:02d}.npz"
+def parse_config(config_name: str) -> tuple[str, str]:
+    """Parse config_name into (base_config, suffix)."""
+    # 1. Riley format: pattern_seed_sampler_osX_ssY_f
+    match_riley = re.match(r"^(.+?)_os(\d+)_ss(\d+)_f$", config_name)
+    if match_riley:
+        base = match_riley.group(1)
+        suffix = f"os{match_riley.group(2)}_ss{match_riley.group(3)}_f"
+        return base, suffix
+
+    # 2. SSAA format: pattern_seed_ssY_f
+    match_ssaa = re.match(r"^(.+?)_ss(\d+)_f$", config_name)
+    if match_ssaa:
+        base = match_ssaa.group(1) + "_ssaa"
+        suffix = f"ss{match_ssaa.group(2)}_f"
+        return base, suffix
+
+    # 3. Analytic format: pattern_seed_analytic_f
+    if config_name.endswith("_analytic_f"):
+        base = config_name[:-11] + "_analytic"
+        suffix = "analytic_f"
+        return base, suffix
+
+    return config_name, ""
+
+
+def reconstruct_config_name(base_config: str, suffix: str) -> str:
+    """Reconstruct the original config name from base_config and suffix."""
+    if suffix == "analytic_f":
+        return base_config.replace("_analytic", "") + "_analytic_f"
+    elif suffix.startswith("ss"):
+        return base_config.replace("_ssaa", "") + "_" + suffix
+    else:
+        return base_config + "_" + suffix
+
+
+def result_path(directory: Path, suffix: str, bit_depth: int, frame: int) -> Path:
+    return directory / f"dic_{suffix}_b{bit_depth:02d}_frame{frame:02d}.npz"
 
 
 def save_result(path: Path, result: object) -> None:
