@@ -5,7 +5,8 @@ import subprocess
 import sys
 from pathlib import Path
 
-from modules.render_selection import custom_enabled, float_textures_enabled, riley_enabled
+from modules.render_selection import custom_enabled, float_textures_enabled, quantised_float_textures_enabled, riley_enabled
+from exp3params import ENABLE_TRUE_UINT_TEXTURES
 from modules.render_logging import render_log
 
 
@@ -18,9 +19,11 @@ SCRIPTS = (
     "exp3_speckint2d_render_ssaa.py",
     "exp3_riley_render_func_ssaa.py",
     "exp3_riley_render_texfloat_ssaa.py",
+    "exp3_riley_render_texfq_ssaa.py",
     "exp3_riley_render_texuint_ssaa.py",
     "exp3_speckint2d_render_disk_psf.py",
     "exp3_riley_render_texfloat_disk_psf.py",
+    "exp3_riley_render_texfq_disk_psf.py",
     # Integer PSF texture renders are available but intentionally deferred.
     # "exp3_riley_render_texuint_disk_psf.py",
 )
@@ -29,7 +32,9 @@ SCRIPTS = (
 def main() -> None:
     here = Path(__file__).parent
     for script in SCRIPTS:
-        if "texuint" in script and not riley_enabled("texuint_psf" if "psf" in script else "texuint"):
+        if "texuint" in script and (not ENABLE_TRUE_UINT_TEXTURES or not riley_enabled("texuint_psf" if "psf" in script else "texuint")):
+            continue
+        if "texfq" in script and not quantised_float_textures_enabled(psf="psf" in script):
             continue
         if "texfloat" in script and not float_textures_enabled(psf="psf" in script):
             continue

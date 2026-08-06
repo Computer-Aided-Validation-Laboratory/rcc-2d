@@ -30,6 +30,7 @@ from exp2params import (
     ANALYTIC_SPECKLE_TYPES,
     BLACK_AREA_FRACTIONS,
     BIT_DEPTHS,
+    ENABLE_TRUE_UINT_TEXTURES,
     DEFORMATION_CASES,
     FORCE_RENDER_OVER,
     RILEY_RASTER_THREADS,
@@ -122,7 +123,7 @@ def render_exists(case_out: Path, frames: range) -> bool:
 
 
 def main() -> None:
-    if not riley_enabled("texuint_psf" if psf_enabled() else "texuint"):
+    if not ENABLE_TRUE_UINT_TEXTURES or not riley_enabled("texuint_psf" if psf_enabled() else "texuint"):
         print("Experiment 2 Riley uint textures disabled by RILEY_RENDER_CASES; skipping.")
         return
     print("Experiment 2: Riley digitised coverage texture render")

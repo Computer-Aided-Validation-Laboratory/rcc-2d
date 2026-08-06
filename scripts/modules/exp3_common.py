@@ -31,6 +31,7 @@ from modules.render_outputs import float_and_depths_complete, save_float_and_dep
 from modules.render_logging import case_label, render_log
 from modules.render_selection import uint_textures_enabled
 from modules.texture_preview import write_preview_b8
+from modules.texture_quantisation import quantise_texture_f64
 from modules.output_naming import case_name, config_name, output_root
 from exp0params_common import CORES, TEXGEN_JOBS
 from exp3params import (
@@ -39,7 +40,7 @@ from exp3params import (
     MAPPING_MODES, PSF_SIGMA_FINAL_PX, PSF_SUPPORT_SIGMAS, RILEY_RASTER_THREADS,
     SSAA_LEVELS, RILEY_TEXTURE_SAMPLERS, TEX_OVERSAMPLES, TEX_PX_PAD,
     TEXTURE_SSAA_OS_PAIRS,
-    additive_jitter_for, BLACK_AREA_FRACTIONS, RANDOM_SEED,
+    additive_jitter_for, BLACK_AREA_FRACTIONS, RANDOM_SEED, ENABLE_TRUE_UINT_TEXTURES,
     GAUSSIAN_CUTOFF_SIGMAS, GAUSSIAN_EQUIVALENT_DISK_EDGE_FRACTION,
     GAUSSIAN_CONTINUOUS_TAIL_SIGMAS,
 )
@@ -417,7 +418,7 @@ def generate_texture(case: str, pattern: str, oversamp: int) -> Path:
         preview = path.with_name(f"{path.stem}_preview_b8.tiff")
         if owner_preview.exists() and (not preview.exists() or stale_link):
             _link_texture_asset(owner_preview, preview, replace_existing=stale_link)
-        for bits in bit_depths() if uint_textures_enabled() else ():
+        for bits in bit_depths() if ENABLE_TRUE_UINT_TEXTURES and uint_textures_enabled() else ():
             owner_uint = texture_path(owner, pattern, oversamp, "uint", bits)
             current_uint = texture_path(case, pattern, oversamp, "uint", bits)
             if owner_uint.exists() and (not current_uint.exists() or stale_link):
@@ -433,7 +434,7 @@ def generate_texture(case: str, pattern: str, oversamp: int) -> Path:
             valid_texture = False
         if valid_texture:
             _write_texture_preview(path, oversamp, pattern)
-            for bits in bit_depths() if uint_textures_enabled() else ():
+            for bits in bit_depths() if ENABLE_TRUE_UINT_TEXTURES and uint_textures_enabled() else ():
                 uint_path = texture_path(case, pattern, oversamp, "uint", bits)
                 if not uint_path.exists():
                     maximum = 2**bits - 1
@@ -525,7 +526,7 @@ def generate_texture(case: str, pattern: str, oversamp: int) -> Path:
         temporary.replace(path)
     texture = np.load(path, mmap_mode="r")
     _write_texture_preview(path, oversamp, pattern)
-    for bits in bit_depths() if uint_textures_enabled() else ():
+    for bits in bit_depths() if ENABLE_TRUE_UINT_TEXTURES and uint_textures_enabled() else ():
         maximum = 2**bits - 1
         camera_texture = coverage_to_intensity(texture) if pattern != "eggbox" else texture
         quant = np.round(np.clip(camera_texture, 0, 1) * maximum)
@@ -801,16 +802,28 @@ def riley_render(case: str, pattern: str, shader: str, ssaa: int, *, texture_os:
         # looking complete and silently bypass the rerender.
         generated_texture = generate_texture(case, pattern, texture_os)
         texture_marker = generated_texture.with_suffix(".sha256").read_text().strip()
-        signature = hashlib.sha256(f"{signature}:{texture_marker}".encode()).hexdigest()
+        quantisation = f":texfq:{source_bits}" if storage == "quantised_float" else ""
+        # Version the f64 eggbox scaling convention so previously saved
+        # images from the erroneous [0, 255] input-range path cannot be
+        # mistaken for valid resumable renders on another machine.
+        texture_scale = (
+            ":eggbox_f64_fixed_unit_range_v2"
+            if pattern == "eggbox" and storage in {"float", "quantised_float"}
+            else ""
+        )
+        signature = hashlib.sha256(
+            f"{signature}:{texture_marker}{quantisation}{texture_scale}".encode()
+        ).hexdigest()
     root = output_root(f"exp3_riley_render_{shader}{'_psf' if psf else ''}") / case_name(case)
     tag = f"{_tag(pattern)}"
     if texture_os is None:
         tag += f"_func_ss{ssaa}_f"
     else:
-        tag += f"_{interp}_os{texture_os}_ss{ssaa}_{'f' if storage == 'float' else f'b{source_bits}'}"
+        source_tag = "f" if storage == "float" else (f"q{source_bits}" if storage == "quantised_float" else f"b{source_bits}")
+        tag += f"_{interp}_os{texture_os}_ss{ssaa}_{source_tag}"
     root = root / config_name(tag)
     frames = selected_frames(case, ux.shape[1])
-    source_bits = source_bits if storage == "uint" else bit_depths()[0]
+    source_bits = source_bits if storage in {"uint", "quantised_float"} else bit_depths()[0]
     expected=[root/f"image_c00_f{frame:02d}.npy" for frame in frames]
     if all(p.exists() for p in expected) and outputs_match_case(root, signature) and not force_render():
         for path in expected:
@@ -823,11 +836,18 @@ def riley_render(case: str, pattern: str, shader: str, ssaa: int, *, texture_os:
         kwargs.update(shader_type=riley.ShaderType.func,uvs=_uvs(coords,case,1),func_shader_builtin=riley.FuncShaderBuiltin.eggbox,func_shader_coord_mode=riley.FuncCoordMode.world_reference,func_shader_params=riley.FuncShaderParams(eggbox_mean=I0,eggbox_contrast=GAMMA,eggbox_pitch=eggbox_pitch_world(case),eggbox_phase=(0.,0.)))
     else:
         texture=np.load(texture_path(case, pattern, texture_os, "uint" if storage=="uint" else "float", source_bits))
-        texture_storage = riley.TextureStorage.floating if storage == "float" else (riley.TextureStorage.u8 if texture.dtype == np.uint8 else riley.TextureStorage.u16)
-        if storage == "float" and pattern != "eggbox":
-            # Match Exp2: preserve unbounded floating coverage through the
-            # raster.  Clamp/scale only after Riley has integrated a pixel.
-            kwargs["scaling_type"] = riley.ScaleStrategy.none
+        if storage == "quantised_float":
+            texture = quantise_texture_f64(texture, source_bits)
+        texture_storage = riley.TextureStorage.floating if storage in {"float", "quantised_float"} else (riley.TextureStorage.u8 if texture.dtype == np.uint8 else riley.TextureStorage.u16)
+        if storage in {"float", "quantised_float"}:
+            if pattern != "eggbox":
+                # Match Exp2: preserve unbounded floating coverage through the
+                # raster.  Clamp/scale only after Riley has integrated a pixel.
+                kwargs["scaling_type"] = riley.ScaleStrategy.none
+            # Eggbox f64 values are already normalised intensities in [0, 1].
+            # Retain the initial fixed [0, 1] scaling so Riley's b-bit output
+            # is divided by exactly the same b-bit range below.  Do not use
+            # the uint-texture [0, 2**b-1] input convention here.
         else:
             kwargs["scaling_max"] = float(2**source_bits - 1)
         if interp not in RILEY_TEXTURE_SAMPLERS:
@@ -855,7 +875,7 @@ def riley_render(case: str, pattern: str, shader: str, ssaa: int, *, texture_os:
     if images is not None:
         for frame in frames:
             rendered = np.asarray(images[0,frame,0], dtype=np.float64)
-            if shader.startswith("tex") and storage == "float" and pattern != "eggbox":
+            if shader.startswith("tex") and storage in {"float", "quantised_float"} and pattern != "eggbox":
                 np.save(root / f"image_c00_f{frame:02d}_raw.npy", rendered)
                 rendered = coverage_to_intensity(rendered)
             elif storage == "uint":

@@ -25,6 +25,7 @@ from exp1params import (
     exp1_output_dir,
 )
 from modules.exp1common import output_case_name
+from modules.output_naming import analysis_output_root
 from modules.analysis_memory import release_batch
 from modules.expplots import plot_bespoke_four_panel, samples_for_method
 from modules.script_timing import ScriptTimer, timed_call
@@ -46,7 +47,7 @@ def _include_completed_integration_levels() -> None:
             found.add((match.group(1), int(match.group(2))))
     INTEGRATION_METHODS = tuple(sorted(found, key=lambda item: (item[0], item[1])))
 
-RESULTS_DIR = exp1_output_dir("exp1_gridint2d_analysis")
+RESULTS_DIR = analysis_output_root("exp1", "gridint2d")
 RENDER_SUFFIX = ""
 WRITE_RECTCONV = True
 
@@ -233,7 +234,7 @@ def _analyse_case_job(case_dir: Path) -> tuple[list[dict[str, object]], list[dic
     """Process one deformation case independently for the common harness."""
     rows = analyse_case(case_dir)
     rect_rows = (
-        analyse_rectangular_self_convergence(case_dir, Path(f"{RESULTS_DIR}_rectconv"))
+        analyse_rectangular_self_convergence(case_dir, RESULTS_DIR / "rectconv")
         if WRITE_RECTCONV else []
     )
     release_batch()
@@ -261,7 +262,7 @@ def main() -> None:
     if CLEAR_DIR:
         shutil.rmtree(RESULTS_DIR, ignore_errors=True)
     RESULTS_DIR.mkdir(parents=True, exist_ok=True)
-    rectconv_dir = Path(f"{RESULTS_DIR}_rectconv")
+    rectconv_dir = RESULTS_DIR / "rectconv"
     if not WRITE_RECTCONV:
         shutil.rmtree(rectconv_dir, ignore_errors=True)
     elif CLEAR_DIR:

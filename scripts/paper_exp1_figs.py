@@ -9,7 +9,6 @@ from __future__ import annotations
 
 import csv
 import re
-import subprocess
 from collections import defaultdict
 from dataclasses import dataclass
 from pathlib import Path
@@ -18,23 +17,30 @@ import numpy as np
 from matplotlib.lines import Line2D
 
 from modules.exp_common_analysis import image_error_metrics
-from modules.paperfigs import add_figure_legend, annotate_no_data, finish_axis, make_figure, save_figure
+from modules.paperfigs import (
+    add_figure_legend, annotate_no_data, finish_axis, finish_signed_axis,
+    make_figure, paper_output_directories, save_figure, texture_os_style,
+    write_latex_preview,
+)
 from modules.render_outputs import quantise_camera
 from paperparams import (
-    AXIS_LABEL_FONT_SIZE_PT, FIGURE_2X3_CM, FONT_SIZE_PT, LEGEND_FONT_SIZE_PT,
-    GRID_LINE_WIDTH_PT, GRID_MARKER_SIZE_PT, RILEY_LINE_WIDTH_PT, RILEY_MARKER_SIZE_PT,
-    PAPER_DPI, PAPER_FORMATS, PAPER_FRAME, PAPER_OUTPUT_DIR,
-    PAPER_TEXFLOAT_BIT_DEPTH, PAPER_TEXTURE_INTERPOLATOR,
-    TICK_FONT_SIZE_PT,
-    FIGURE_CAPTIONS, FIGURE_LABELS,
+    AXIS_LABEL_FONT_SIZE_PT, DIFFERENCE_CMAP, FIGURE_1X3_CM,
+    FIGURE_2X3_CM, FIGURE_3X3_CM, FIGURE_4X4_CM, FONT_SIZE_PT,
+    LEGEND_FONT_SIZE_PT, GRID_LINE_WIDTH_PT, GRID_MARKER_SIZE_PT,
+    RILEY_LINE_WIDTH_PT, RILEY_MARKER_SIZE_PT, PAPER_DPI, PAPER_FORMATS,
+    PAPER_FRAME, PAPER_OUTPUT_DIR, PAPER_TEXFLOAT_BIT_DEPTH,
+    PAPER_TEXTURE_INTERPOLATOR, TICK_FONT_SIZE_PT, FIGURE_CAPTIONS,
+    FIGURE_LABELS, EXP1_DIFF_SSAA_LEVELS, EXP2_DIFF_SSAA_LEVELS,
+    EXP2_DIFF_OVERSAMPLES, EXP1_DIFF_FUNC_CASE, EXP1_DIFF_FUNC_FRAME,
+    EXP1_DIFF_TEX_CASE, EXP1_DIFF_TEX_FRAME,
 )
 
 OUT = Path("out")
-GRID_SUMMARY = OUT / "exp1_grid2d_analysis_uvs" / "summary.csv"
+GRID_SUMMARY = OUT / "exp1_analysis" / "grid2d_uvs" / "summary.csv"
 GRID_RENDER = OUT / "exp1_grid2d_render_uvs"
 FUNC_RENDER = OUT / "exp1_riley_render_func_uvs"
 TEXFLOAT_RENDER = OUT / "exp1_riley_render_texf"
-TEXUINT_RENDER = OUT / "exp1_riley_render_texuint"
+TEXUINT_RENDER = OUT / "exp1_riley_render_texu"
 TEXTURE_STUDIES = (
     ("pt42_cam32_q9_rig", 0, "Undeformed"),
     ("pt42_cam32_q9_rig", 3, "Rigid 0.3px"),
@@ -66,10 +72,11 @@ def display_reference(value: str) -> str:
     return value.replace("_", " ")
 
 
-def load_normalised(path: Path) -> np.ndarray:
+def load_normalised(path: Path, bit_depth: int | None = None) -> np.ndarray:
     image = np.asarray(np.load(path), dtype=np.float64)
     if image.size and np.nanmax(np.abs(image)) > 1.0 + 1e-12:
-        image /= 255.0
+        scale = float(2**bit_depth - 1) if bit_depth is not None else 255.0
+        image /= scale
     return image
 
 
@@ -85,7 +92,7 @@ def analytic_reference(case: str, frame: int = PAPER_FRAME) -> tuple[np.ndarray,
     if not candidates:
         raise FileNotFoundError(f"No analytic or Gauss reference for {case} frame {frame:02d}")
     order, path = max(candidates)
-    return load_normalised(path), f"Highest Gauss ({order}×{order})"
+    return load_normalised(path), f"Gauss {order}"
 
 
 def grid_metric_series(case: str, metric: str, frame: int = PAPER_FRAME) -> tuple[list[Series], str]:
@@ -129,11 +136,16 @@ def texture_series(case: str, root: Path, *, source_bits: int | None, camera_bit
             texture_bits = int(match.group(2)) if match.group(2) else None
             if source_bits is not None and texture_bits != source_bits:
                 continue
-            image = load_normalised(path)
+            image = load_normalised(path, texture_bits)
             if image.shape == reference.shape:
                 grouped[int(match.group(3))].append((int(match.group(1)), image_error_metrics(image, reference, camera_bits, quantise_camera)[metric]))
-    colours = ["#1f77b4", "#ff7f0e", "#2ca02c", "#d62728", "#9467bd", "#8c564b", "#e377c2", "#7f7f7f"]
-    return [Series(f"Tex-OS={osamp}", tuple(x for x, _ in sorted(points)), tuple(y for _, y in sorted(points)), camera_bits, colours[index % len(colours)], "o", "-") for index, (osamp, points) in enumerate(sorted(grouped.items()))]
+    return [
+        Series(
+            f"Tex-OS={osamp}", tuple(x for x, _ in sorted(points)),
+            tuple(y for _, y in sorted(points)), camera_bits, *texture_os_style(osamp),
+        )
+        for osamp, points in sorted(grouped.items())
+    ]
 
 
 def draw_series(axis, series: list[Series], metric_label: str, reference: str) -> list[Line2D]:
@@ -159,85 +171,186 @@ def draw_series(axis, series: list[Series], metric_label: str, reference: str) -
     return handles
 
 
+
+
+
 def figure_function_shaders() -> list[Path]:
     """Figure 1: undeformed and 0.3 px rigid/affine comparisons."""
-    figure, axes = make_figure(FIGURE_2X3_CM, rows=2, columns=3, tick_font_size=TICK_FONT_SIZE_PT)
-    all_handles: list[Line2D] = []
     studies = (
         ("pt42_cam32_q9_rig", 0, "Undeformed"),
         ("pt42_cam32_q9_rig", 3, "Rigid 0.3px"),
         ("pt42_cam32_q9_aff", 3, "Affine 0.3px"),
     )
-    for column, (case, frame, subtitle) in enumerate(studies):
+    written = []
+
+    # 1. RMSE Figure
+    fig_rmse, axes_rmse = make_figure(
+        FIGURE_1X3_CM, rows=1, columns=3, tick_font_size=TICK_FONT_SIZE_PT,
+    )
+    handles_rmse = []
+    for col, (case, frame, subtitle) in enumerate(studies):
         reference, ref_label = analytic_reference(case, frame)
-        for row, (metric, ylabel) in enumerate(METRICS):
-            grid, summary_ref = grid_metric_series(case, metric, frame)
-            bits = {item.bit_depth for item in grid}
-            data = grid + function_series(case, reference, metric, bits, frame)
-            label = display_reference(summary_ref or ref_label)
-            all_handles.extend(draw_series(axes[row, column], data, ylabel, label))
-            axes[row, column].set_title(
-                f"{panel_prefix(row * 3 + column)} {subtitle}, Ref: {label}",
-                fontsize=FONT_SIZE_PT,
-            )
-            # Keep a complete vertical scale on every panel: the deformation
-            # columns are compared independently in the paper figure.
-    unique = {handle.get_label(): handle for handle in all_handles}
-    add_figure_legend(figure, list(unique.values()), font_size=LEGEND_FONT_SIZE_PT, columns=3)
-    return save_figure(figure, PAPER_OUTPUT_DIR / "exp1_fig1_eggbox_function_shaders", PAPER_FORMATS, PAPER_DPI)
+        grid, summary_ref = grid_metric_series(case, "e_b", frame)
+        bits = {item.bit_depth for item in grid}
+        data = grid + function_series(case, reference, "e_b", bits, frame)
+        label = display_reference(summary_ref or ref_label)
+        handles_rmse.extend(draw_series(
+            axes_rmse[0, col], data, "Digitised RMSE [bits]", label,
+        ))
+        axes_rmse[0, col].set_title(
+            f"{panel_prefix(col)} {subtitle}, Ref: {label}",
+            fontsize=FONT_SIZE_PT,
+        )
+    unique_rmse = {h.get_label(): h for h in handles_rmse}
+    add_figure_legend(
+        fig_rmse, list(unique_rmse.values()), font_size=LEGEND_FONT_SIZE_PT,
+        columns=3, y_offset=-0.18,
+    )
+    written.extend(save_figure(
+        fig_rmse,
+        PAPER_OUTPUT_DIR / "exp1_fig1_eggbox_function_shaders_rmse",
+        PAPER_FORMATS, PAPER_DPI,
+    ))
+
+    # 2. Max Error Figure
+    fig_max, axes_max = make_figure(
+        FIGURE_1X3_CM, rows=1, columns=3, tick_font_size=TICK_FONT_SIZE_PT,
+    )
+    handles_max = []
+    for col, (case, frame, subtitle) in enumerate(studies):
+        reference, ref_label = analytic_reference(case, frame)
+        grid, summary_ref = grid_metric_series(case, "max_eb", frame)
+        bits = {item.bit_depth for item in grid}
+        data = grid + function_series(case, reference, "max_eb", bits, frame)
+        label = display_reference(summary_ref or ref_label)
+        handles_max.extend(draw_series(
+            axes_max[0, col], data, "Max. digitised err. [bits]", label,
+        ))
+        axes_max[0, col].set_title(
+            f"{panel_prefix(col)} {subtitle}, Ref: {label}",
+            fontsize=FONT_SIZE_PT,
+        )
+    unique_max = {h.get_label(): h for h in handles_max}
+    add_figure_legend(
+        fig_max, list(unique_max.values()), font_size=LEGEND_FONT_SIZE_PT,
+        columns=3, y_offset=-0.18,
+    )
+    written.extend(save_figure(
+        fig_max,
+        PAPER_OUTPUT_DIR / "exp1_fig1_eggbox_function_shaders_max_eb",
+        PAPER_FORMATS, PAPER_DPI,
+    ))
+
+    return written
 
 
-def figure_texture_convergence(
-    stem: str, texture_label: str, root: Path, source_bits: int | None,
-    output_bits: int,
-) -> list[Path]:
-    """A Fig. 1-style texture convergence figure with Tex-OS traces."""
-    figure, axes = make_figure(FIGURE_2X3_CM, rows=2, columns=3, tick_font_size=TICK_FONT_SIZE_PT)
-    handles: list[Line2D] = []
-    for column, (case, frame, deformation) in enumerate(TEXTURE_STUDIES):
-        _, ref_label = analytic_reference(case, frame)
-        for row, (metric, ylabel) in enumerate(METRICS):
-            data = texture_series(
-                case, root, source_bits=source_bits, camera_bits=output_bits,
-                metric=metric, frame=frame,
-            )
-            handles.extend(draw_series(axes[row, column], data, ylabel, ref_label))
-            axes[row, column].set_title(
-                f"{panel_prefix(row * 3 + column)} {deformation}, Ref: {ref_label}",
-                fontsize=FONT_SIZE_PT,
-            )
-    unique = {handle.get_label(): handle for handle in handles}
-    add_figure_legend(figure, list(unique.values()), font_size=LEGEND_FONT_SIZE_PT, columns=4)
-    return save_figure(figure, PAPER_OUTPUT_DIR / stem, PAPER_FORMATS, PAPER_DPI)
+def figure_texture_convergence() -> list[Path]:
+    """Figure 2 & 3: texture convergence with Riley renders."""
+    figs_config = (
+        ("b8", (
+            ("Riley, In: Tex f64, Out: u8", TEXFLOAT_RENDER, None, 8),
+            ("Riley, In: Tex u8, Out: u8", TEXUINT_RENDER, 8, 8),
+        )),
+        ("b12", (
+            ("Riley, In: Tex f64, Out: u12", TEXFLOAT_RENDER, None, 12),
+            ("Riley, In: Tex u12, Out: u12", TEXUINT_RENDER, 12, 12),
+        )),
+    )
+    written = []
+
+    for suffix, rows_config in figs_config:
+        stem = f"exp1_fig2_riley_textures_{suffix}" if suffix == "b8" else f"exp1_fig3_riley_textures_{suffix}"
+
+        # 1. RMSE Figure
+        fig_rmse, axes_rmse = make_figure(
+            FIGURE_2X3_CM, rows=2, columns=3, tick_font_size=TICK_FONT_SIZE_PT,
+        )
+        handles_rmse = []
+        for row, (row_label, root, src_bits, cam_bits) in enumerate(rows_config):
+            for col, (case, frame, deformation) in enumerate(TEXTURE_STUDIES):
+                _, ref_label = analytic_reference(case, frame)
+                data = texture_series(
+                    case, root, source_bits=src_bits, camera_bits=cam_bits,
+                    metric="e_b", frame=frame,
+                )
+                handles_rmse.extend(draw_series(
+                    axes_rmse[row, col], data, "Digitised RMSE [bits]",
+                    ref_label,
+                ))
+                axes_rmse[row, col].set_title(
+                    f"{panel_prefix(row * 3 + col)} {row_label}\n"
+                    f"{deformation}, Ref: {ref_label}",
+                    fontsize=FONT_SIZE_PT,
+                )
+        unique_rmse = {h.get_label(): h for h in handles_rmse}
+        add_figure_legend(
+            fig_rmse, list(unique_rmse.values()), font_size=LEGEND_FONT_SIZE_PT,
+            columns=4, y_offset=-0.13,
+        )
+        written.extend(save_figure(
+            fig_rmse, PAPER_OUTPUT_DIR / f"{stem}_rmse",
+            PAPER_FORMATS, PAPER_DPI,
+        ))
+
+        # 2. Max Error Figure
+        fig_max, axes_max = make_figure(
+            FIGURE_2X3_CM, rows=2, columns=3, tick_font_size=TICK_FONT_SIZE_PT,
+        )
+        handles_max = []
+        for row, (row_label, root, src_bits, cam_bits) in enumerate(rows_config):
+            for col, (case, frame, deformation) in enumerate(TEXTURE_STUDIES):
+                _, ref_label = analytic_reference(case, frame)
+                data = texture_series(
+                    case, root, source_bits=src_bits, camera_bits=cam_bits,
+                    metric="max_eb", frame=frame,
+                )
+                handles_max.extend(draw_series(
+                    axes_max[row, col], data, "Max. digitised err. [bits]",
+                    ref_label,
+                ))
+                axes_max[row, col].set_title(
+                    f"{panel_prefix(row * 3 + col)} {row_label}\n"
+                    f"{deformation}, Ref: {ref_label}",
+                    fontsize=FONT_SIZE_PT,
+                )
+        unique_max = {h.get_label(): h for h in handles_max}
+        add_figure_legend(
+            fig_max, list(unique_max.values()), font_size=LEGEND_FONT_SIZE_PT,
+            columns=4, y_offset=-0.13,
+        )
+        written.extend(save_figure(
+            fig_max, PAPER_OUTPUT_DIR / f"{stem}_max_eb",
+            PAPER_FORMATS, PAPER_DPI,
+        ))
+
+    return written
 
 
 def exp1_figure_stems() -> tuple[str, ...]:
     return (
-        "exp1_fig1_eggbox_function_shaders",
-        "exp1_fig2_riley_texf_b8",
-        "exp1_fig3_riley_texu8_b8",
-        "exp1_fig4_riley_texu12_b8",
-        "exp1_fig5_riley_texf_b12",
-        "exp1_fig6_affine_eggbox_difference_maps",
+        "exp1_fig1_eggbox_function_shaders_rmse",
+        "exp1_fig1_eggbox_function_shaders_max_eb",
+        "exp1_fig2_riley_textures_b8_rmse",
+        "exp1_fig2_riley_textures_b8_max_eb",
+        "exp1_fig3_riley_textures_b12_rmse",
+        "exp1_fig3_riley_textures_b12_max_eb",
+        "exp1_fig4_affine_eggbox_difference_maps",
+        "exp1_fig5_riley_texf_difference_maps",
     )
 
 
 def generate_texture_figures() -> list[Path]:
-    """Generate the four source-texture/output-depth convergence figures."""
-    written = figure_texture_convergence("exp1_fig2_riley_texf_b8", "Texture f64", TEXFLOAT_RENDER, None, 8)
-    # These calls intentionally remain valid when the uint campaign has not
-    # completed: ``draw_series`` renders an explicit no-data panel instead.
-    written.extend(figure_texture_convergence("exp1_fig3_riley_texu8_b8", "Texture u8", TEXUINT_RENDER, 8, 8))
-    written.extend(figure_texture_convergence("exp1_fig4_riley_texu12_b8", "Texture u12", TEXUINT_RENDER, 12, 8))
-    written.extend(figure_texture_convergence("exp1_fig5_riley_texf_b12", "Texture f64", TEXFLOAT_RENDER, None, 12))
+    """Generate the combined texture convergence and difference figures."""
+    written = figure_texture_convergence()
+    written.extend(figure_texture_difference_maps())
     return written
 
 
 def figure_affine_function_difference_maps() -> list[Path]:
-    """Fig. 6: signed 8-bit affine Eggbox errors for selected Riley SSAA."""
-    case, frame = "pt42_cam32_q9_aff", 3
+    """Fig. 4: signed 8-bit affine Eggbox errors for selected Riley SSAA."""
+    case, frame = EXP1_DIFF_FUNC_CASE, EXP1_DIFF_FUNC_FRAME
     reference, _ = analytic_reference(case, frame)
-    levels = (1, 2, 4, 8, 64, 256)
+    levels = EXP1_DIFF_SSAA_LEVELS
     figure, axes = make_figure(FIGURE_2X3_CM, rows=2, columns=3, tick_font_size=TICK_FONT_SIZE_PT)
     differences: list[np.ndarray | None] = []
     for samples in levels:
@@ -255,18 +368,97 @@ def figure_affine_function_difference_maps() -> list[Path]:
     images = []
     for index, (samples, difference) in enumerate(zip(levels, differences, strict=True)):
         axis = axes.flat[index]
-        axis.set_title(f"{panel_prefix(index)} SSAA={samples}", fontsize=FONT_SIZE_PT)
+        axis.set_title(f"{panel_prefix(index)} Px-SS={samples}", fontsize=FONT_SIZE_PT)
         if difference is None:
             annotate_no_data(axis, "No completed render data", font_size=FONT_SIZE_PT)
             continue
-        images.append(axis.imshow(difference, cmap="gray", vmin=-scale, vmax=scale, interpolation="nearest", origin="upper"))
+        images.append(axis.imshow(
+            difference, cmap=DIFFERENCE_CMAP, vmin=-scale, vmax=scale,
+            interpolation="nearest", origin="upper"
+        ))
         axis.set_xlabel("Pixel x", fontsize=AXIS_LABEL_FONT_SIZE_PT)
         axis.set_ylabel("Pixel y", fontsize=AXIS_LABEL_FONT_SIZE_PT)
     if images:
         colourbar = figure.colorbar(images[0], ax=list(axes.flat), shrink=0.86, pad=0.02)
         colourbar.set_label("Digitised difference [bits]", fontsize=AXIS_LABEL_FONT_SIZE_PT)
         colourbar.ax.tick_params(labelsize=TICK_FONT_SIZE_PT)
-    return save_figure(figure, PAPER_OUTPUT_DIR / "exp1_fig6_affine_eggbox_difference_maps", PAPER_FORMATS, PAPER_DPI)
+    return save_figure(figure, PAPER_OUTPUT_DIR / "exp1_fig4_affine_eggbox_difference_maps", PAPER_FORMATS, PAPER_DPI)
+
+
+def figure_texture_difference_maps() -> list[Path]:
+    """Fig. 5: 4×4 signed 8-bit difference maps for the rigid 0.3 px case."""
+    case, frame = EXP1_DIFF_TEX_CASE, EXP1_DIFF_TEX_FRAME
+    reference_image, _ = analytic_reference(case, frame)
+    ssaa_levels = EXP2_DIFF_SSAA_LEVELS
+    oversamples = EXP2_DIFF_OVERSAMPLES
+    root = TEXFLOAT_RENDER / f"{case}_{PAPER_TEXTURE_INTERPOLATOR}"
+    figure, axes = make_figure(
+        FIGURE_4X4_CM, rows=4, columns=4, tick_font_size=TICK_FONT_SIZE_PT,
+    )
+    differences: dict[tuple[int, int], np.ndarray | None] = {}
+    for ssaa in ssaa_levels:
+        for oversamp in oversamples:
+            found_path = None
+            for suffix in ("", "_f"):
+                path = (
+                    root
+                    / f"ss{ssaa}_os{oversamp}{suffix}"
+                    / f"image_c00_f{frame:02d}.npy"
+                )
+                if path.is_file():
+                    found_path = path
+                    break
+            if found_path is not None:
+                image = load_normalised(found_path)
+                if image.shape == reference_image.shape:
+                    differences[(ssaa, oversamp)] = (
+                        quantise_camera(image, 8).astype(np.float64)
+                        - quantise_camera(reference_image, 8).astype(np.float64)
+                    )
+                    continue
+            differences[(ssaa, oversamp)] = None
+    scale = max(
+        (float(np.max(np.abs(value))) for value in differences.values()
+         if value is not None),
+        default=1.0,
+    )
+    images = []
+    for row, ssaa in enumerate(ssaa_levels):
+        for column, oversamp in enumerate(oversamples):
+            axis = axes[row, column]
+            difference = differences[(ssaa, oversamp)]
+            axis.set_title(
+                f"{panel_prefix(row * len(oversamples) + column)} "
+                f"Px-SS={ssaa}, Tex-OS={oversamp}",
+                fontsize=FONT_SIZE_PT,
+            )
+            if difference is None:
+                annotate_no_data(
+                    axis, "No completed render data",
+                    font_size=FONT_SIZE_PT,
+                )
+                continue
+            images.append(axis.imshow(
+                difference, cmap=DIFFERENCE_CMAP, vmin=-scale, vmax=scale,
+                interpolation="nearest", origin="upper",
+            ))
+            if row == len(ssaa_levels) - 1:
+                axis.set_xlabel("Pixel x", fontsize=AXIS_LABEL_FONT_SIZE_PT)
+            if column == 0:
+                axis.set_ylabel("Pixel y", fontsize=AXIS_LABEL_FONT_SIZE_PT)
+    if images:
+        colourbar = figure.colorbar(
+            images[0], ax=list(axes.flat), shrink=0.9, pad=0.015,
+        )
+        colourbar.set_label(
+            "Digitised difference [bits]", fontsize=AXIS_LABEL_FONT_SIZE_PT,
+        )
+        colourbar.ax.tick_params(labelsize=TICK_FONT_SIZE_PT)
+    return save_figure(
+        figure,
+        PAPER_OUTPUT_DIR / "exp1_fig5_riley_texf_difference_maps",
+        PAPER_FORMATS, PAPER_DPI,
+    )
 
 
 def remove_superseded_figures() -> None:
@@ -277,47 +469,32 @@ def remove_superseded_figures() -> None:
         "exp1_fig2_riley_textures_pt42_cam32_q9_rig",
         "exp1_fig3_riley_textures_pt42_cam32_q9_aff",
         "exp1_fig4_riley_textures_pt42_cam32_q9_qsadd",
+        "exp1_fig2_riley_texf_b8_rmse",
+        "exp1_fig2_riley_texf_b8_max_eb",
+        "exp1_fig3_riley_texu8_b8_rmse",
+        "exp1_fig3_riley_texu8_b8_max_eb",
+        "exp1_fig4_riley_texu12_b12_rmse",
+        "exp1_fig4_riley_texu12_b12_max_eb",
+        "exp1_fig5_riley_texf_b12_rmse",
+        "exp1_fig5_riley_texf_b12_max_eb",
+        "exp2_fig3_riley_texf_rmse",
+        "exp2_fig3_riley_texf_max_eb",
+        "exp1_fig2_riley_textures_rmse",
+        "exp1_fig2_riley_textures_max_eb",
+        "exp2_fig3_riley_textures_disk_rmse",
+        "exp2_fig3_riley_textures_disk_max_eb",
+        "exp2_fig3_riley_textures_gauss_rmse",
+        "exp2_fig3_riley_textures_gauss_max_eb",
     )
-    for stem in stems:
-        for extension in (*PAPER_FORMATS, "tex"):
-            (PAPER_OUTPUT_DIR / stem).with_suffix(f".{extension}").unlink(missing_ok=True)
+    for output_dir in paper_output_directories():
+        for stem in stems:
+            for extension in (*PAPER_FORMATS, "tex"):
+                (output_dir / stem).with_suffix(f".{extension}").unlink(missing_ok=True)
 
 
 def write_tex_preview() -> list[Path]:
     """Write editable figure blocks and compile a minimal A4 preview article."""
-    stems = exp1_figure_stems()
-    blocks: list[Path] = []
-    for stem in stems:
-        block = PAPER_OUTPUT_DIR / f"{stem}.tex"
-        block.write_text(
-            "\\begin{figure}[p]\n"
-            "  \\centering\n"
-            f"  \\includegraphics[width=\\textwidth]{{{stem}.pdf}}\n"
-            f"  \\caption{{{FIGURE_CAPTIONS[stem]}}}\n"
-            f"  \\label{{{FIGURE_LABELS[stem]}}}\n"
-            "\\end{figure}\n",
-            encoding="utf-8",
-        )
-        blocks.append(block)
-    article = PAPER_OUTPUT_DIR / "article.tex"
-    inputs = "\n".join(f"\\input{{{block.stem}}}\n\\clearpage" for block in blocks)
-    article.write_text(
-        "\\documentclass[10pt,a4paper]{article}\n"
-        "\\usepackage[a4paper,margin=2.5cm]{geometry}\n"
-        "\\usepackage[T1]{fontenc}\n"
-        "\\usepackage{lmodern}\n"
-        "\\usepackage{graphicx}\n"
-        "\\begin{document}\n"
-        f"{inputs}\n"
-        "\\end{document}\n",
-        encoding="utf-8",
-    )
-    subprocess.run(
-        ["latexmk", "-pdf", "-interaction=nonstopmode", "-halt-on-error", article.name],
-        cwd=PAPER_OUTPUT_DIR,
-        check=True,
-    )
-    return [article, *blocks, PAPER_OUTPUT_DIR / "article.pdf"]
+    return write_latex_preview(exp1_figure_stems(), FIGURE_CAPTIONS, FIGURE_LABELS)
 
 
 def main() -> None:

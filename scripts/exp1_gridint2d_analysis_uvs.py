@@ -11,10 +11,11 @@ from pathlib import Path
 
 import exp1_gridint2d_analysis as analytic_analysis
 from exp1params import exp1_output_dir
+from modules.output_naming import analysis_output_root
 from modules.script_timing import ScriptTimer
 
 analytic_analysis.OUTPUT_DIR = exp1_output_dir("exp1_gridint2d_render_uvs")
-analytic_analysis.RESULTS_DIR = exp1_output_dir("exp1_gridint2d_analysis_uvs")
+analytic_analysis.RESULTS_DIR = analysis_output_root("exp1", "gridint2d_uvs")
 
 
 if __name__ == "__main__":

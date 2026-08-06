@@ -101,6 +101,20 @@ def output_root(name: str) -> Path:
     return Path("out") / root_name(name)
 
 
+def analysis_output_root(experiment: str, render_case: str) -> Path:
+    """Return the consolidated analysis root for one renderer/case family.
+
+    Render products retain their own top-level roots.  Analysis products are
+    deliberately grouped beneath ``out/expN_analysis`` so they cannot be
+    mistaken for source renders and the top-level output tree stays compact.
+    ``render_case`` is canonicalised with the same abbreviations as render
+    roots (for example ``gridint2d_uvs`` becomes ``grid2d_uvs``).
+    """
+    if experiment not in {"exp1", "exp2", "exp3"}:
+        raise ValueError(f"Unsupported experiment analysis root: {experiment!r}")
+    return Path("out") / f"{experiment}_analysis" / root_name(render_case)
+
+
 def canonical_path_component(name: str, depth: int) -> str:
     """Map an existing component by its position under ``out``.
 

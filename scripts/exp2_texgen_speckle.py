@@ -13,6 +13,7 @@ import numpy as np
 
 from exp2params import (
     BIT_DEPTHS,
+    ENABLE_TRUE_UINT_TEXTURES,
     BLACK_AREA_FRACTIONS,
     FORCE_RENDER_OVER,
     GAUSSIAN_CUTOFF_SIGMAS,
@@ -62,7 +63,7 @@ def generate_texture(
         f"{tag(pattern_type, black_fraction, distribution, fraction)}"
         f"_pad{TEX_PX_PAD}_oversamp{oversample}_ssaa{ssaa}"
     )
-    texture_bits = BIT_DEPTHS if uint_textures_enabled() else ()
+    texture_bits = BIT_DEPTHS if ENABLE_TRUE_UINT_TEXTURES and uint_textures_enabled() else ()
     float_path = TEXTURE_OUTPUT_DIR / f"{prefix}.npy"
     preview_path = TEXTURE_OUTPUT_DIR / f"{prefix}_preview_b8.tiff"
     coverage_to_intensity = lambda coverage: np.clip(

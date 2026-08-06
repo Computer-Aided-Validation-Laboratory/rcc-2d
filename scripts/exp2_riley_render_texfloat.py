@@ -48,8 +48,10 @@ from exp2params import (
 )
 from modules.psf_riley_common import camera_kwargs, configure_raster_config, enabled as psf_enabled, output_name as psf_output_name
 from modules.render_selection import float_textures_enabled
+from modules.render_selection import quantised_float_textures_enabled
 from modules.render_logging import case_label, render_log
 from modules.output_naming import config_name
+from modules.texture_quantisation import quantise_texture_f64
 from modules.exp12_geometry import ROI_PIXELS, TEXTURE_PAD_PIXELS, roi_corners, texture_world_uvs
 from exp0params_common import EXP12_TEST_SAMPLE_LEVELS, RUN_MODE, RunMode
 from exp2_texgen_speckle_analytic import generate_texture
@@ -71,6 +73,12 @@ def get_texture_oversamples() -> list[int]:
         levels = list(TEX_OVERSAMPLES)
         return sorted(set(levels) | set(EXP12_TEST_SAMPLE_LEVELS)) if RUN_MODE is RunMode.BIG else levels
     return [int(item.strip()) for item in value.split(",") if item.strip()]
+
+
+def get_input_bit_depths() -> list[int]:
+    """Input precisions for the simulated quantised-f64 texture family."""
+    value = os.environ.get("EXP2_BIT_DEPTHS")
+    return list(BIT_DEPTHS) if not value else [int(item.strip()) for item in value.split(",") if item.strip()]
 
 
 def should_render_pair(ssaa: int, oversamp: int) -> bool:
@@ -186,18 +194,21 @@ def write_missing_camera_depths(case_out: Path, frames: range) -> None:
                 Image.fromarray(codes.astype(np.uint8 if bits <= 8 else np.uint16)).save(output)
 
 
-def main() -> None:
-    if not float_textures_enabled(psf=psf_enabled()):
-        print("Experiment 2 Riley float-texture renderer disabled by RILEY_RENDER_CASES; skipping.")
+def main(*, quantised_input: bool = False) -> None:
+    enabled = quantised_float_textures_enabled(psf=psf_enabled()) if quantised_input else float_textures_enabled(psf=psf_enabled())
+    if not enabled:
+        print("Experiment 2 Riley quantised-f64 texture renderer disabled by RILEY_RENDER_CASES; skipping." if quantised_input else "Experiment 2 Riley float-texture renderer disabled by RILEY_RENDER_CASES; skipping.")
         return
-    print("Experiment 2: Riley raw floating coverage texture render")
+    family = "texfq" if quantised_input else "texfloat"
+    output_root = exp2_output_dir(psf_output_name(f"exp2_riley_render_{family}_psf") if psf_enabled() else f"exp2_riley_render_{family}")
+    print("Experiment 2: Riley simulated quantised-f64 coverage texture render" if quantised_input else "Experiment 2: Riley raw floating coverage texture render")
     timer = ScriptTimer(__file__)
     if len(sys.argv) > 1:
         cases = [Path(sys.argv[1])]
     else:
         cases = [Path("data") / name for name in DEFORMATION_CASES]
 
-    OUTPUT_ROOT.mkdir(parents=True, exist_ok=True)
+    output_root.mkdir(parents=True, exist_ok=True)
     p_val = max(TARG_PX_X, TARG_PX_Y)
     for case_path in cases:
         if not case_path.exists():
@@ -244,13 +255,17 @@ def main() -> None:
                         )
                         for interp_name in get_texture_interpolators():
                             for ssaa in get_ssaa_levels():
-                                for oversamp in get_texture_oversamples():
+                                for oversamp, input_bits in (
+                                    (oversamp, input_bits)
+                                    for input_bits in (get_input_bit_depths() if quantised_input else (None,))
+                                    for oversamp in get_texture_oversamples()
+                                ):
                                     if not should_render_pair(ssaa, oversamp):
                                         continue
                                     case_out = (
-                                        OUTPUT_ROOT
+                                        output_root
                                         / f"{output_case_name(case_path.name, TARG_PX_X)}_{tag}_{config_name(interp_name)}"
-                                        / config_name(f"ss{ssaa}_oversamp{oversamp}")
+                                        / config_name(f"ss{ssaa}{f'_q{input_bits}' if input_bits is not None else ''}_oversamp{oversamp}")
                                     )
                                     if not FORCE_RENDER_OVER:
                                         write_missing_camera_depths(case_out, frame_range)
@@ -272,8 +287,10 @@ def main() -> None:
                                     texture = load_raw_texture(
                                         texture_path, (tex_size, tex_size)
                                     )
-                                    render_log("EXP2", "riley-texfloat", case_label(case_path.name),
-                                               f"starting {pattern_type}; interp={interp_name}; SSAA={ssaa}; OS={oversamp}")
+                                    if input_bits is not None:
+                                        texture = quantise_texture_f64(texture, input_bits)
+                                    render_log("EXP2", f"riley-{family}", case_label(case_path.name),
+                                               f"starting {pattern_type}; interp={interp_name}; SSAA={ssaa}; OS={oversamp}" + (f"; input-bits={input_bits}" if input_bits is not None else ""))
                                     mesh = riley.Mesh(
                                         mesh_type=mesh_type,
                                         coords=coords,

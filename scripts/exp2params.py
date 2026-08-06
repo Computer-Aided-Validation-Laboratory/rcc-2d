@@ -139,6 +139,11 @@ TEX_PX_PAD: int = TEXTURE_PAD_PIXELS
 PSF_SIGMA_FINAL_PX: float = 1.0
 PSF_SUPPORT_SIGMAS: float = 4.0
 BIT_DEPTHS: List[int] = [8, 12]
+# Legacy native u8/u16 source textures clamp/scale the additive field before
+# Riley can integrate it.  Keep that distinct experiment disabled unless it
+# is explicitly needed; the recommended finite-input-precision study is
+# ``texfq`` (rounded raw f64 coverage) selected in exp0params_common.py.
+ENABLE_TRUE_UINT_TEXTURES: bool = False
 # Limit quadrature points held by each bespoke-renderer worker.  Exp2 keeps
 # additional pattern-coverage temporaries, hence its caps are lower than
 # Exp1's.  Retain the established 2M affine cap and use a lower VTK cap.

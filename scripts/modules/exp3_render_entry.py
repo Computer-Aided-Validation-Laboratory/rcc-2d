@@ -8,7 +8,8 @@ from modules.exp3_common import (
     ssaa_levels, texture_oversamples, texture_ssaa_oversample_pairs,
 )
 from exp3params import RILEY_TEXTURE_SAMPLERS, TEX_INTERPOLATORS
-from modules.render_selection import custom_enabled, float_textures_enabled, riley_enabled, uint_textures_enabled
+from modules.render_selection import custom_enabled, float_textures_enabled, quantised_float_textures_enabled, riley_enabled, uint_textures_enabled
+from exp3params import ENABLE_TRUE_UINT_TEXTURES
 
 
 def run(kind: str) -> None:
@@ -85,9 +86,22 @@ def run(kind: str) -> None:
         for case in cases:
             for ss in ssaa_levels(): riley_render(case, "eggbox", "func", ss)
         return
-    if kind in {"riley_texfloat_ssaa", "riley_texuint_ssaa"}:
+    if kind in {"riley_texfloat_ssaa", "riley_texuint_ssaa", "riley_texfq_ssaa"}:
+        if kind == "riley_texfq_ssaa":
+            if not quantised_float_textures_enabled():
+                return
+            interps = os.environ.get("EXP3_TEX_INTERPOLATORS", ",".join(TEX_INTERPOLATORS)).split(",")
+            for case in cases:
+                for pattern in ("diskaddsat", "gausscont"):
+                    for ss, osamp in texture_ssaa_oversample_pairs():
+                        for interp in interps:
+                            if interp.strip() not in RILEY_TEXTURE_SAMPLERS:
+                                raise ValueError(f"Unsupported Riley sampler {interp.strip()!r}; choose from {', '.join(RILEY_TEXTURE_SAMPLERS)}")
+                            for bits in bit_depths():
+                                riley_render(case, pattern, "texfq", ss, texture_os=osamp, interp=interp.strip(), storage="quantised_float", source_bits=bits)
+            return
         storage = "uint" if "texuint" in kind else "float"
-        if storage == "uint" and not uint_textures_enabled():
+        if storage == "uint" and (not ENABLE_TRUE_UINT_TEXTURES or not uint_textures_enabled()):
             return
         if storage == "float" and not float_textures_enabled():
             return
@@ -104,9 +118,21 @@ def run(kind: str) -> None:
                             else:
                                 riley_render(case, pattern, "tex" + storage, ss, texture_os=osamp, interp=interp.strip(), storage=storage)
         return
-    if kind in {"riley_texfloat_disk", "riley_texuint_disk"}:
+    if kind in {"riley_texfloat_disk", "riley_texuint_disk", "riley_texfq_disk"}:
+        if kind == "riley_texfq_disk":
+            if not quantised_float_textures_enabled(psf=True):
+                return
+            interps = os.environ.get("EXP3_TEX_INTERPOLATORS", ",".join(TEX_INTERPOLATORS)).split(",")
+            for case in cases:
+                for ss, osamp in texture_ssaa_oversample_pairs():
+                    for interp in interps:
+                        if interp.strip() not in RILEY_TEXTURE_SAMPLERS:
+                            raise ValueError(f"Unsupported Riley sampler {interp.strip()!r}; choose from {', '.join(RILEY_TEXTURE_SAMPLERS)}")
+                        for bits in bit_depths():
+                            riley_render(case, "diskaddsat", "texfq", ss, texture_os=osamp, interp=interp.strip(), storage="quantised_float", source_bits=bits, psf=psf)
+            return
         storage = "uint" if "texuint" in kind else "float"
-        if storage == "uint" and not uint_textures_enabled(psf=True):
+        if storage == "uint" and (not ENABLE_TRUE_UINT_TEXTURES or not uint_textures_enabled(psf=True)):
             return
         if storage == "float" and not float_textures_enabled(psf=True):
             return

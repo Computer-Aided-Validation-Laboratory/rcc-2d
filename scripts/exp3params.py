@@ -11,6 +11,10 @@ import riley
 from exp0params_common import CORES, FORCE_RENDER_OVER, NUM_PROCESSES, RILEY_RASTER_THREADS, RUN_MODE, RunMode
 
 BIT_DEPTHS = [8, 12]
+# Legacy native u8/u16 source textures are a bounded display-texture model.
+# Keep them disabled by default; use the Exp0 ``texfq`` switch for simulated
+# b-bit-equivalent precision of unbounded raw additive f64 coverage.
+ENABLE_TRUE_UINT_TEXTURES = False
 # Measurement analyses re-quantise the canonical post-integration float image;
 # adding a depth here never triggers a rerender or regenerates non-preview TIFFs.
 MEASUREMENT_BIT_DEPTHS = [8, 12]
@@ -53,8 +57,8 @@ DIC_POSTPROCESS_JOBS = CORES
 GRIDMETHOD_WINDOW = "triangular"
 GRIDMETHOD_WINDOW_WIDTH_PERIODS = 1.0
 
-TEST_SSAA_LEVELS = [1, 2, 4, 8, 16]
-TEST_TEX_OVERSAMPLES = [1, 2, 4, 8, 16]
+TEST_SSAA_LEVELS = [1, 2, 4, 8, 16, 32]
+TEST_TEX_OVERSAMPLES = [1, 2, 4, 8, 16, 32]
 # Needed for the 8-bit convergence study; sharp texture cases may need a
 # higher SSAA reference once their streamed texture path is available.
 ALL_SSAA_LEVELS = [1, 2, 4, 8, 16, 32, 64, 128]

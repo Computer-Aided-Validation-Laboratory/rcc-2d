@@ -6,7 +6,8 @@ import sys
 from pathlib import Path
 
 from modules.render_logging import render_log
-from modules.render_selection import custom_enabled, float_textures_enabled, riley_enabled
+from modules.render_selection import custom_enabled, float_textures_enabled, quantised_float_textures_enabled, riley_enabled
+from exp2params import ENABLE_TRUE_UINT_TEXTURES
 from modules.script_timing import ScriptTimer, timed_call
 
 
@@ -14,9 +15,11 @@ SCRIPTS = (
     "exp2_texgen_speckle_analytic.py",
     "exp2_speckint2d_render_uvs.py",
     "exp2_riley_render_texfloat.py",
+    "exp2_riley_render_texfq.py",
     "exp2_riley_render_texuint.py",
     "exp2_speckint2d_render_uvs_psf.py",
     "exp2_riley_render_texfloat_psf.py",
+    "exp2_riley_render_texfq_psf.py",
     # The integer PSF script remains available but deliberately deferred.
     # "exp2_riley_render_texuint_psf.py",
 )
@@ -27,7 +30,9 @@ def selected_scripts() -> tuple[str, ...]:
     selected: list[str] = []
     for script in SCRIPTS:
         psf = "psf" in script
-        if "texuint" in script and not riley_enabled("texuint_psf" if psf else "texuint"):
+        if "texuint" in script and (not ENABLE_TRUE_UINT_TEXTURES or not riley_enabled("texuint_psf" if psf else "texuint")):
+            continue
+        if "texfq" in script and not quantised_float_textures_enabled(psf=psf):
             continue
         if "texfloat" in script and not float_textures_enabled(psf=psf):
             continue

@@ -38,8 +38,10 @@ RILEY_RASTER_THREADS: int = CORES
 
 # Render-family selection shared by Exp1--3 and their all-render launchers.
 # Custom names select procedural/pixel-integration pattern families; Riley
-# names select shader/storage families.  To re-enable digitised source-texture
-# studies, add ``"texuint"`` (and, if wanted, ``"texuint_psf"``) below.
+# names select shader/storage families.  ``texfq`` is the recommended
+# simulated finite-precision input: raw f64 additive coverage is rounded to a
+# b-bit-equivalent increment without clipping.  ``texuint`` is the legacy,
+# true bounded unsigned-texture study and remains disabled by default.
 CUSTOM_RENDER_CASES: tuple[str, ...] = (
     "eggbox",
     "eggbox_psf",
@@ -52,8 +54,10 @@ RILEY_RENDER_CASES: tuple[str, ...] = (
     "texfloat",
     "func_psf",
     "texfloat_psf",
-    "texuint",       # Re-enable digitised texture source studies here.
-    # "texuint_psf",   # Re-enable digitised PSF texture source studies here.
+    # "texfq",         # Enable simulated quantised-f64 input textures.
+    # "texfq_psf",     # Enable their disk-PSF variants.
+    # "texuint",       # Enable legacy true unsigned source textures.
+    # "texuint_psf",
 )
 
 # Analysis-family selection for Exp3 image-measurement workflows.  These use

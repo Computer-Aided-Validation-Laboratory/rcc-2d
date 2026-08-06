@@ -1,0 +1,187 @@
+\documentclass[11pt,a4paper]{article}
+\usepackage[margin=25mm]{geometry}
+\usepackage{amsmath,amssymb,bm}
+\usepackage{booktabs}
+\usepackage{microtype}
+\usepackage[T1]{fontenc}
+\usepackage{lmodern}
+\usepackage[hidelinks]{hyperref}
+\usepackage{xcolor}
+\usepackage{enumitem}
+\setlist{nosep,leftmargin=*}
+\setlength{\parindent}{0pt}
+\setlength{\parskip}{0.7em}
+
+\title{Simulating Digitised Input Textures in Riley}
+\author{}
+\date{}
+
+\begin{document}
+\maketitle
+
+\section{Purpose}
+
+Riley normally accepts floating-point texture samples, reconstructs the texture continuously, performs the pixel or point-spread-function integral, and only then applies the output scaling, clamping, and final camera digitisation. This ordering is retained when simulating a digitised input texture.
+
+The input texture is still stored and passed to Riley as floating-point data. Input digitisation is simulated only by rounding each floating-point texel to a prescribed grey-level increment before rendering. The post-integration scale, clamp, and final image quantisation remain unchanged.
+
+This creates a controlled input representation error while preserving Riley's existing floating-point texture-to-image pipeline.
+
+\section{Reference additive texture}
+
+Let the sampled additive texture be
+\begin{equation}
+    T[i,j] \in \mathbb{R},
+\end{equation}
+where overlapping Gaussian blobs or disks may give
+\begin{equation}
+    T[i,j] > 1.
+\end{equation}
+No pre-render clamping is applied. Values greater than unity remain valid because the additive field is scaled and clamped only after rendering and pixel integration.
+
+\section{Simulated input digitisation}
+
+For a nominal input precision of $b$ bits over the normalised interval $[0,1]$, define the quantisation increment
+\begin{equation}
+    \Delta_b = \frac{1}{2^b-1}.
+\end{equation}
+
+The digitised texture samples are
+\begin{equation}
+    T_b[i,j]
+    = \Delta_b\,\operatorname{round}\!\left(\frac{T[i,j]}{\Delta_b}\right)
+    = \frac{\operatorname{round}\!\left[(2^b-1)T[i,j]\right]}{2^b-1}.
+    \label{eq:input_quantisation}
+\end{equation}
+
+Equation~\eqref{eq:input_quantisation} changes only the precision of the floating-point texels. It does not restrict their range. For example, with $b=8$,
+\begin{equation}
+    \Delta_8 = \frac{1}{255},
+\end{equation}
+and a texel value greater than one is rounded to the nearest multiple of $1/255$ while remaining greater than one.
+
+The phrase ``$b$-bit-equivalent input precision'' is therefore preferable to ``$b$-bit texture'', because the decoded texture values are not restricted to the integer code range $0,\ldots,2^b-1$.
+
+\section{Rendering pipeline}
+
+For the original floating-point texture, the Riley pipeline is
+\begin{equation}
+    T
+    \xrightarrow{\mathcal I}
+    \widetilde T(\bm{x})
+    \xrightarrow{\mathcal P_h}
+    P_h
+    \xrightarrow{\mathcal C}
+    G_h
+    \xrightarrow{Q_c}
+    I_h,
+\end{equation}
+where
+\begin{itemize}
+    \item $\mathcal I$ is texture reconstruction;
+    \item $\mathcal P_h$ is the finite SSAA or pixel-integration operator;
+    \item $\mathcal C$ is the existing post-integration scaling and clamping operation;
+    \item $Q_c$ is the final camera digitisation at output bit depth $c$.
+\end{itemize}
+
+For the simulated digitised input texture, the only added operation is the input rounding:
+\begin{equation}
+    T
+    \xrightarrow{Q_b^{\mathrm{in}}}
+    T_b
+    \xrightarrow{\mathcal I}
+    \widetilde T_b(\bm{x})
+    \xrightarrow{\mathcal P_h}
+    P_{h,b}
+    \xrightarrow{\mathcal C}
+    G_{h,b}
+    \xrightarrow{Q_c}
+    I_{h,b}.
+\end{equation}
+
+The same reconstruction, SSAA, scale, clamp, and output digitisation settings must be used for $T$ and $T_b$.
+
+\section{Why pre-render clamping must not be added}
+
+The additive texture should not be clipped to $[0,1]$ before rendering. In general,
+\begin{equation}
+    \mathcal P\!\left[\min(T,1)\right]
+    \neq
+    \min\!\left(\mathcal P[T],1\right).
+\end{equation}
+
+Pre-render clamping therefore changes the image-formation model. It would remove additive overlap before the pixel integral rather than applying the intended saturation rule after integration.
+
+The correct simulated input digitisation changes only the texel increment. It leaves the additive range and the placement of scale and clamp operations unchanged.
+
+\section{Demonstrating that SSAA cannot remove input digitisation error}
+
+Choose a fixed spatial texture resolution and a fixed texture realisation. Render both the original and rounded textures over a sequence of increasing SSAA levels:
+\begin{align}
+    I_h &= \mathcal R_h[T],\\
+    I_{h,b} &= \mathcal R_h[T_b].
+\end{align}
+
+At sufficiently high SSAA,
+\begin{align}
+    I_h &\rightarrow I_{\infty},\\
+    I_{h,b} &\rightarrow I_{\infty,b}.
+\end{align}
+
+Because $T_b \neq T$ at fixed $b$, the limiting images will generally differ:
+\begin{equation}
+    I_{\infty,b} \neq I_{\infty}.
+\end{equation}
+
+Thus increasing SSAA removes pixel-quadrature error but cannot remove input digitisation error.
+
+A clean demonstration uses two metrics.
+
+\subsection*{Self-convergence of the rounded texture}
+\begin{equation}
+    e_{\mathrm{self}}(h,b)
+    = \left\|I_{h,b}-I_{\mathrm{ref},b}\right\|,
+\end{equation}
+where $I_{\mathrm{ref},b}$ is produced with the highest available SSAA using the same rounded input texture. This error should tend to zero.
+
+\subsection*{Error relative to the floating-point texture}
+\begin{equation}
+    e_{\mathrm{input}}(h,b)
+    = \left\|I_{h,b}-I_{\mathrm{ref}}\right\|,
+\end{equation}
+where $I_{\mathrm{ref}}$ is the high-SSAA result from the original floating-point texture. This error should approach a non-zero plateau set by the input texture quantisation.
+
+The expected behaviour is therefore
+\begin{equation}
+    e_{\mathrm{self}} \rightarrow 0,
+    \qquad
+    e_{\mathrm{input}} \rightarrow e_{\mathrm{floor}} > 0.
+\end{equation}
+
+This directly shows that SSAA can accurately integrate the reconstructed rounded texture, but cannot restore grey-level information discarded before rendering.
+
+\section{Recommended minimal experiment}
+
+A compact study can use a single additive texture realisation and a single sufficiently high spatial texture oversampling level. For each selected input precision $b$:
+
+\begin{enumerate}
+    \item Generate the original $f64$ additive texture $T$.
+    \item Form $T_b$ using Equation~\eqref{eq:input_quantisation}, without clamping.
+    \item Render $T$ and $T_b$ with identical texture reconstruction, SSAA, scaling, clamping, and output bit depth.
+    \item Increase only SSAA.
+    \item Plot self-convergence and error relative to the floating-point reference.
+\end{enumerate}
+
+Suitable image metrics are root-mean-square error and maximum absolute error. If required, the same comparison may be propagated through DIC, but this is not necessary to demonstrate the irreducible image-level floor.
+
+\section{Interpretation}
+
+The experiment does not reproduce every feature of a real experimental image, which would also contain optical blur, sensor integration, noise, clipping, and camera-specific processing. It isolates one narrower mechanism: finite grey-level precision in the texture supplied to Riley.
+
+The result should be described as follows:
+
+\begin{quote}
+Input digitisation was simulated by rounding floating-point additive texels to the normalised increment associated with a nominal $b$-bit representation, while retaining values greater than unity. Riley's existing post-integration scaling, clipping, and final camera digitisation were left unchanged. Increasing SSAA converged the rendering of the rounded texture but could not remove the non-zero error relative to the original floating-point texture, because the discarded input grey-level information is not recoverable through finer pixel quadrature.
+\end{quote}
+
+\end{document}

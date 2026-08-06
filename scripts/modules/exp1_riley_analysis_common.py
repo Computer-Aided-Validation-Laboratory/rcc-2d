@@ -36,7 +36,7 @@ from exp1params import (
     exp1_output_dir,
 )
 from modules.script_timing import ScriptTimer, timed_call
-from modules.output_naming import config_name
+from modules.output_naming import analysis_output_root, config_name
 from modules.analysis_selection import analysis_should_run, mark_analysis_complete
 from modules.analysis_parallel import run_analysis_jobs
 from modules.analysis_memory import make_agg_figure, release_batch, release_figure
@@ -51,8 +51,8 @@ OUTPUT_DIR = exp1_output_dir("exp1_gridint2d_render_world")
 RILEY_FUNC_DIR = exp1_output_dir("exp1_riley_render_func_world")
 RILEY_TEX_DIR = exp1_output_dir("exp1_riley_render_texuint")
 
-RESULTS_DIR_FUNC = exp1_output_dir("exp1_riley_analysis_func_world")
-RESULTS_DIR_TEX = exp1_output_dir("exp1_riley_analysis_texuint")
+RESULTS_DIR_FUNC = analysis_output_root("exp1", "riley_func_world")
+RESULTS_DIR_TEX = analysis_output_root("exp1", "riley_texuint")
 ANALYSIS_MODE = "both"
 CUSTOM_RENDER_SUFFIX = ""
 WRITE_RECTCONV = True
@@ -1776,7 +1776,7 @@ def main() -> None:
     if not analysis_should_run(results_dir, f"Experiment 1 Riley {ANALYSIS_MODE} analysis"):
         return
     _include_completed_levels()
-    rectconv_dir = Path(f"{results_dir}_rectconv")
+    rectconv_dir = results_dir / "rectconv"
     if CLEAR_DIR and not is_subset_analysis:
         shutil.rmtree(results_dir, ignore_errors=True)
         shutil.rmtree(rectconv_dir, ignore_errors=True)

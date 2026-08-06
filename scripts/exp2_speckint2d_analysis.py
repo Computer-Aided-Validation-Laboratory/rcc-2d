@@ -27,6 +27,7 @@ from exp2params import (
     exp2_output_dir,
 )
 from modules.exp1common import output_case_name
+from modules.output_naming import analysis_output_root
 from modules.analysis_memory import release_batch
 from modules.expplots import plot_bespoke_four_panel, samples_for_method
 from modules.script_timing import ScriptTimer, timed_call
@@ -37,7 +38,7 @@ from modules.render_outputs import quantise_camera
 from modules.exp_common_analysis import image_error_metrics
 
 
-RESULTS_DIR = exp2_output_dir("exp2_speckint2d_analysis")
+RESULTS_DIR = analysis_output_root("exp2", "speckint2d")
 RENDER_SUFFIX = ""
 WRITE_RECTCONV = True
 JOB_RE = re.compile(
@@ -170,7 +171,7 @@ def analyse_rectangular_self_convergence(
     jobs: dict[tuple[str, int], Path],
 ) -> list[dict[str, object]]:
     """Compare each rectangular rule to the highest available rule itself."""
-    output_dir = Path(f"{RESULTS_DIR}_rectconv") / group_name
+    output_dir = RESULTS_DIR / "rectconv" / group_name
     rect_params = sorted(param for method, param in jobs if method == "rect")
     rows: list[dict[str, object]] = []
     for frame in ACTIVE_FRAMES:
@@ -264,7 +265,7 @@ def main() -> None:
         return
     timer = ScriptTimer(__file__)
     RESULTS_DIR.mkdir(parents=True, exist_ok=True)
-    rectconv_dir = Path(f"{RESULTS_DIR}_rectconv")
+    rectconv_dir = RESULTS_DIR / "rectconv"
     if not WRITE_RECTCONV:
         shutil.rmtree(rectconv_dir, ignore_errors=True)
     else:

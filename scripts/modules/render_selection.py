@@ -20,11 +20,18 @@ def float_textures_enabled(*, psf: bool = False) -> bool:
     return riley_enabled("texfloat_psf" if psf else "texfloat")
 
 
+def quantised_float_textures_enabled(*, psf: bool = False) -> bool:
+    """Whether simulated b-bit-equivalent f64 input textures are enabled."""
+    return riley_enabled("texfq_psf" if psf else "texfq")
+
+
 def measurement_family(render_root: str) -> str:
     """Classify an Exp3 render root for DIC/Grid Method selection."""
     name = render_root.lower()
     if "texuint" in name or "texu" in name:
         return "texuint"
+    if "texfq" in name:
+        return "texfq"
     if "texfloat" in name or "texf" in name:
         return "texfloat"
     if "riley_render_func" in name:
@@ -50,6 +57,8 @@ def analysis_enabled(render_root: str, pattern: str | None = None) -> bool:
     if "riley" in name:
         if "func" in name:
             return riley_enabled("func_psf" if psf else "func")
+        if "texfq" in name:
+            return riley_enabled("texfq_psf" if psf else "texfq")
         if "texu" in name or "texuint" in name:
             return riley_enabled("texuint_psf" if psf else "texuint")
         if "texf" in name or "texfloat" in name:

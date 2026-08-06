@@ -40,7 +40,7 @@ from modules.render_selection import uint_textures_enabled
 from modules.render_logging import render_log
 from modules.texture_preview import write_preview_b8
 from modules.output_naming import config_name
-from exp2params import BIT_DEPTHS
+from exp2params import BIT_DEPTHS, ENABLE_TRUE_UINT_TEXTURES
 
 NUM_PROCESSES_RUN = max(1, min(
     NUM_PROCESSES,
@@ -138,7 +138,7 @@ def generate_texture(
         f"_pad{TEX_PX_PAD}_oversamp{oversample}_analytic"
     )
     texture_bits = (
-        (BIT_DEPTHS if uint_textures_enabled() else ())
+        (BIT_DEPTHS if ENABLE_TRUE_UINT_TEXTURES and uint_textures_enabled() else ())
         if bit_depths is None else bit_depths
     )
     float_path = TEXTURE_OUTPUT_DIR / f"{prefix}.npy"

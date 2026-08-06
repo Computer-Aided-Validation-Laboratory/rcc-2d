@@ -36,7 +36,7 @@ from exp2params import (
 from modules.exp1common import output_case_name
 from modules.analysis_memory import make_agg_figure, release_batch, release_figure
 from modules.script_timing import ScriptTimer, timed_call
-from modules.output_naming import config_name
+from modules.output_naming import analysis_output_root, config_name
 from modules.render_selection import riley_enabled
 from modules.analysis_selection import analysis_should_run, mark_analysis_complete
 from modules.analysis_parallel import run_analysis_jobs
@@ -46,7 +46,7 @@ from modules.exp_common_analysis import image_error_metrics
 
 RILEY_OUTPUT_DIR = exp2_output_dir("exp2_riley_render_texfloat")
 REFERENCE_OUTPUT_DIR = exp2_output_dir("exp2_speckint2d_render_uvs")
-RESULTS_DIR = exp2_output_dir("exp2_riley_analysis_texfloat")
+RESULTS_DIR = analysis_output_root("exp2", "riley_texfloat")
 REFERENCE_SUFFIX = ""
 WRITE_RECTCONV = True
 # The bespoke Exp2 renderer and Riley share row order.  The bespoke
@@ -510,7 +510,7 @@ def _analyse_riley_self_convergence_frame(
             del image, metrics_by_bit
         del reference
 
-    rectconv_root = Path(f"{RESULTS_DIR}_rectconv") / group_name
+    rectconv_root = RESULTS_DIR / "rectconv" / group_name
     for interpolator, rows in rows_by_interpolator.items():
         output_dir = rectconv_root / config_name(interpolator)
         output_dir.mkdir(parents=True, exist_ok=True)
@@ -651,7 +651,7 @@ def main() -> None:
     timer = ScriptTimer(__file__)
     RESULTS_DIR.mkdir(parents=True, exist_ok=True)
     if not WRITE_RECTCONV:
-        shutil.rmtree(Path(f"{RESULTS_DIR}_rectconv"), ignore_errors=True)
+        shutil.rmtree(RESULTS_DIR / "rectconv", ignore_errors=True)
     frames = _selected_frames()
     allowed_interpolators = _selected_interpolators()
     cases = _selected_cases()
