@@ -19,7 +19,7 @@ from matplotlib import rcParams
 from matplotlib.lines import Line2D
 from matplotlib.ticker import FixedFormatter, FixedLocator
 
-from exp3params import BIT_DEPTHS
+from exp3params import BIT_DEPTHS, FORCE_CONV_OVERWRITE
 from modules.analysis_memory import make_agg_figure, release_batch, release_figure
 from modules.analysis_parallel import run_analysis_jobs
 from modules.analysis_selection import analysis_should_run, mark_analysis_complete
@@ -351,7 +351,11 @@ def write_summary(directory: Path, rows: list[dict[str, object]]) -> None:
 
 
 def main() -> None:
-    if not analysis_should_run(RESULTS, "Experiment 3 convergence analysis"):
+    if not analysis_should_run(
+        RESULTS,
+        "Experiment 3 convergence analysis",
+        force_overwrite=FORCE_CONV_OVERWRITE,
+    ):
         return
     renders = [item for item in discover_renders() if "_oldver" not in item.root]
     all_by_case_pattern: dict[tuple[str, str, bool], list[Render]] = defaultdict(list)

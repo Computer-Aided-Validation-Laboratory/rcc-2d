@@ -15,9 +15,13 @@ def force_analysis() -> bool:
     return FORCE_ANALYSIS_OVER if value is None else value.strip().lower() in {"1", "true", "yes"}
 
 
-def analysis_should_run(results_dir: Path, label: str) -> bool:
+def analysis_should_run(
+    results_dir: Path,
+    label: str,
+    force_overwrite: bool = False,
+) -> bool:
     marker = results_dir / MARKER
-    if not force_analysis() and marker.is_file():
+    if not force_analysis() and not force_overwrite and marker.is_file():
         print(f"{label}: completed analysis exists; skipping.")
         return False
     return True

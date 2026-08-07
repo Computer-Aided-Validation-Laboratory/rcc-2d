@@ -1,0 +1,162 @@
+\documentclass[11pt,a4paper]{article}
+\usepackage[margin=22mm]{geometry}
+\usepackage{amsmath,amssymb}
+\usepackage{enumitem}
+\usepackage{microtype}
+\usepackage[T1]{fontenc}
+\usepackage{lmodern}
+\usepackage[hidelinks]{hyperref}
+\setlist[itemize]{leftmargin=*,itemsep=0.55em,topsep=0.6em}
+\setlength{\parindent}{0pt}
+\setlength{\parskip}{0.5em}
+
+\title{Rigid-Body DIC Renderer Convergence: Analysis and Conclusions}
+\author{}
+\date{}
+
+\begin{document}
+\maketitle
+
+\section*{Detailed analysis and conclusions}
+
+\begin{itemize}
+
+\item \textbf{The analytic-reference RMSE is the appropriate primary metric.}
+The quantity \texttt{RmseAnalRefUx/Uy} directly measures the pointwise change in the DIC displacement field caused by the rendering approximation. This is more revealing than \texttt{RmseExactDisp}, because the latter contains the intrinsic DIC error and can improve when renderer error accidentally cancels DIC error.
+
+\item \textbf{A renderer can look better against the prescribed displacement while actually being further from the correct DIC measurement.}
+The clearest example is Gaussian speckles with B-spline at $OS=SSAA=1$. Its total DIC error against the imposed displacement is only about $1.2\times10^{-3}$ px, smaller than the analytic result at about $1.8\times10^{-3}$ px, yet its displacement field differs from the analytic-render DIC field by about
+\[
+\boxed{1.57\times10^{-3}\ \mathrm{px\ RMSE}}.
+\]
+The apparently improved DIC performance is therefore artificial cancellation or smoothing, not renderer accuracy.
+
+\item \textbf{The B-spline $1\times1$ ``zero-bias'' resonance is decisively exposed by the pointwise RMSE.}
+Its mean renderer-induced displacement difference is relatively modest, while the spatially varying component is large. For 12-bit Gaussian speckles, the analytic-reference RMSE is $1.57\times10^{-3}$ px, with the difference-field standard deviation around $1.38\times10^{-3}$ px. The near-zero conventional mean bias therefore hides a substantial spatially varying renderer error.
+
+\item \textbf{Spatial scatter matters, but the analytic-reference RMSE already captures it in a single robust measure.}
+For Gaussian speckles at fixed $OS=1$, increasing SSAA makes the mean renderer-induced displacement difference almost vanish (only a few $10^{-5}$ px), while the pointwise RMSE plateaus near
+\[
+\boxed{6.7\times10^{-4}\ \mathrm{px}}
+\]
+for both B-spline and Catmull--Rom. Almost all of this residual is spatially varying error rather than mean bias. This explains why a traditional rigid-body bias curve can look converged while the displacement field is not.
+
+\item \textbf{Rossi-style convergence of the mean rigid bias at $OS=1$ does not imply convergence of the DIC measurement field.}
+For smooth Gaussian speckles, high SSAA accurately integrates the $OS=1$ reconstructed texture and happens to recover nearly the correct \emph{average} displacement, but the local DIC values remain systematically different from those obtained from the analytic image. This is one of the strongest findings in the dataset.
+
+\item \textbf{Fixing $SSAA=1$ is clearly insufficient even if OS is made arbitrarily large.}
+For 12-bit Gaussian speckles, B-spline plateaus near $1.52\times10^{-3}$ px analytic-reference RMSE as $OS\rightarrow32$, while Catmull--Rom plateaus around $1.79\times10^{-3}$ px. Increasing texture resolution cannot compensate for an unconverged camera-pixel integral.
+
+\item \textbf{Texture representation and pixel integration are distinct numerical errors.}
+The two limiting processes behave differently:
+\[
+OS\rightarrow\infty,\quad SSAA=1
+\]
+converges to an inadequately integrated pixel value, while
+\[
+OS=1,\quad SSAA\rightarrow\infty
+\]
+accurately integrates the wrong reconstructed texture. Only simultaneous refinement of both axes can approach the analytic image-formation limit.
+
+\item \textbf{For smooth Gaussian speckles, simultaneous OS/SSAA refinement gives convincing convergence to the analytic DIC result.}
+At 12 bit, the diagonal analytic-reference RMSE for B-spline falls approximately as
+\[
+1.57\times10^{-3},\;
+5.61\times10^{-4},\;
+1.86\times10^{-4},\;
+1.02\times10^{-4},\;
+9.3\times10^{-5},\;
+5.8\times10^{-5}\ \mathrm{px}
+\]
+for $OS=SSAA=1,2,4,8,16,32$.
+
+\item \textbf{Catmull--Rom starts dramatically worse but converges rapidly once sufficiently resolved.}
+For the same Gaussian case, its diagonal analytic-reference RMSE is approximately
+\[
+1.12\times10^{-2},\;
+1.26\times10^{-3},\;
+1.63\times10^{-4},\;
+2.8\times10^{-5},\;
+1.1\times10^{-5},\;
+9\times10^{-6}\ \mathrm{px}.
+\]
+The large low-resolution Catmull--Rom bias is therefore a sampling/ringing effect rather than evidence of a different asymptotic solution.
+
+\item \textbf{The statement that ``anything above $1\times1$ on the diagonal collapses to analytic'' is too strong.}
+The conventional mean-bias curves may appear to collapse that quickly, but the pointwise analytic-reference RMSE shows residual error. B-spline still has about $5.6\times10^{-4}$ px error at $2\times2$, and even $8\times8$ is around $10^{-4}$ px. Catmull--Rom is effectively below $10^{-4}$ px by about $8\times8$.
+
+\item \textbf{Agreement between B-spline and Catmull--Rom at high resolution is strong evidence for a common continuum limit.}
+The two kernels have radically different low-resolution behaviour and reconstruction properties, yet both approach the analytic DIC result as OS and SSAA are refined. This directly supports using high-OS/high-SSAA Riley calculations as numerical references for later affine and finite-star cases where an analytic rendered reference is unavailable.
+
+\item \textbf{Sharp additive disks are a substantially more severe convergence problem.}
+At 12 bit, B-spline diagonal analytic-reference RMSE decreases roughly as
+\[
+1.15\times10^{-2}
+\rightarrow 5.35\times10^{-3}
+\rightarrow 2.20\times10^{-3}
+\rightarrow 7.7\times10^{-4}
+\rightarrow 2.5\times10^{-4}
+\rightarrow 9.6\times10^{-5}\ \mathrm{px},
+\]
+from $1\times1$ to $32\times32$. The discontinuity therefore requires much greater resolution than the smooth Gaussian field.
+
+\item \textbf{Catmull--Rom is much worse than B-spline for severely under-resolved disks, as expected from ringing, but ultimately converges faster.}
+Its disk analytic-reference RMSE begins at a very large $4.28\times10^{-2}$ px at $1\times1$, then falls to approximately
+\[
+6.0\times10^{-3},\;
+1.14\times10^{-3},\;
+2.42\times10^{-4},\;
+7.7\times10^{-5},\;
+5.2\times10^{-5}\ \mathrm{px}
+\]
+along the diagonal. B-spline is therefore safer at very coarse resolution because smoothing suppresses ringing, whereas Catmull--Rom gives a rapidly convergent approximation once the edge is adequately sampled.
+
+\item \textbf{For sharp disks, high SSAA with $OS=1$ can make the DIC result progressively worse.}
+For B-spline, the analytic-reference RMSE goes from $1.15\times10^{-2}$ at $1\times1$, briefly improves at $1\times2$ to $4.55\times10^{-3}$, then increases to approximately
+\[
+2.27\times10^{-2},\;
+3.81\times10^{-2},\;
+4.79\times10^{-2},\;
+5.35\times10^{-2}\ \mathrm{px}
+\]
+as SSAA increases to 4, 8, 16 and 32. Catmull--Rom shows the same qualitative phenomenon. This is a particularly clear demonstration that converging the quadrature of an inadequately represented texture does not converge the physical image.
+
+\item \textbf{The hard-disk error at $OS=1$ and high SSAA is predominantly spatially varying rather than a simple rigid bias.}
+At $OS=1,SSAA=32$, B-spline has a difference-field standard deviation around $5.2\times10^{-2}$ px, while the magnitude of the mean difference is only around $1.5\times10^{-2}$ px. A mean-bias plot alone therefore dramatically understates the rendering error.
+
+\item \textbf{The bespoke/function-shader SSAA sequence independently demonstrates pixel-integration convergence.}
+For 12-bit Gaussian speckles, analytic-reference RMSE drops from about $6.7\times10^{-4}$ at $SSAA=1$ to $3.1\times10^{-5}$ at $SSAA=32$. For sharp disks, the same progression is much slower:
+\[
+5.98\times10^{-2}
+\rightarrow 2.36\times10^{-2}
+\rightarrow 7.98\times10^{-3}
+\rightarrow 2.73\times10^{-3}
+\rightarrow 9.74\times10^{-4}
+\rightarrow 3.49\times10^{-4}\ \mathrm{px}.
+\]
+This provides a clean smooth-versus-discontinuous comparison.
+
+\item \textbf{The 8-bit results show a visible quantisation floor, particularly for B-spline.}
+At $32\times32$, Gaussian analytic-reference RMSE is about $2.36\times10^{-4}$ px for 8-bit B-spline versus $5.8\times10^{-5}$ px at 12 bit. Catmull--Rom reaches about $1.3\times10^{-5}$ versus $9\times10^{-6}$ px. A similar effect is visible for disks. Once renderer discretisation becomes sufficiently small, image quantisation becomes the next limiting perturbation.
+
+\item \textbf{Twelve-bit data are therefore preferable for demonstrating numerical convergence.}
+Eight-bit results remain practically important because 8-bit DIC images are common, but quantisation can mask the asymptotic renderer behaviour. The 12-bit results expose the OS/SSAA convergence more cleanly.
+
+\item \textbf{The PSF-filtered disk cases should be treated separately unless an analytic or independently converged PSF reference is available.}
+Their exact-displacement statistics nevertheless show that smoothing the discontinuous disks dramatically improves DIC behaviour: the high-resolution texture cases settle around $1.7\times10^{-3}$ px total DIC RMSE, comparable to Gaussian speckles and far below the roughly $1.16\times10^{-2}$ px of unblurred disks.
+
+\end{itemize}
+
+\section*{Paper-level conclusions}
+
+\begin{enumerate}[leftmargin=*,itemsep=0.8em]
+\item \textbf{Synthetic-image convergence cannot be assessed from DIC bias against the prescribed displacement alone.} Renderer error can cancel intrinsic DIC error and make an unconverged image appear superior.
+
+\item \textbf{Texture representation and pixel integration are independent convergence requirements.} Refining only one does not generally recover the analytic DIC measurement, even when conventional mean-bias curves suggest that it does.
+
+\item \textbf{Pointwise DIC RMSE against the analytic-render reference exposes errors that are almost completely hidden by mean rigid-body bias.} In particular, the $OS=1$, high-SSAA Gaussian cases reproduce the mean displacement extremely well while retaining approximately $7\times10^{-4}$ px spatially varying renderer-induced measurement error.
+
+\item \textbf{When both OS and SSAA are refined, different reconstruction kernels converge toward the same analytic DIC solution.} This provides the key validation needed to use a demonstrably self-converged high-OS/high-SSAA Riley render as the reference for affine, finite-star and other deformation fields for which an analytic rendered reference is unavailable.
+\end{enumerate}
+
+\end{document}

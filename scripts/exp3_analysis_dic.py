@@ -19,6 +19,7 @@ from matplotlib.backends.backend_agg import FigureCanvasAgg
 from matplotlib.figure import Figure
 
 from exp0params_common import CORES
+from exp3params import FORCE_DIC_OVERWRITE
 from modules.exp3_analysis_common import OUT, OS_RE, SS_RE, interpolator_of, numeric_y_axis, parameter, pattern_of, release, title_lines
 from modules.exp3_dic_data import (
     load_result, result_path, parse_config, reconstruct_config_name,
@@ -342,7 +343,11 @@ def convergence(rows: list[dict[str, object]]) -> None:
 
 
 def main()->None:
-    if not analysis_should_run(RESULTS, "Experiment 3 DIC analysis"):
+    if not analysis_should_run(
+        RESULTS,
+        "Experiment 3 DIC analysis",
+        force_overwrite=FORCE_DIC_OVERWRITE,
+    ):
         return
     records=discover()
     rows=[]

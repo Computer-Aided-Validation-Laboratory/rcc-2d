@@ -12,6 +12,7 @@ ANALYSIS_SCRIPTS = (
     "exp3_analysis_conv.py",
     "exp3_analysis_dic.py",
     "exp3_analysis_gridmethod.py",
+    "exp3_analysis_dic_rigid_s_interp_err.py",
 )
 
 

@@ -19,6 +19,7 @@ from matplotlib.backends.backend_agg import FigureCanvasAgg
 from matplotlib.figure import Figure
 
 from exp0params_common import CORES
+from exp3params import FORCE_GRIDMETHOD_OVERWRITE
 from modules.exp3_analysis_common import OUT, OS_RE, SS_RE, numeric_y_axis, parameter, pattern_of, release, title_lines
 from modules.analysis_selection import analysis_should_run, mark_analysis_complete
 from modules.analysis_parallel import run_analysis_jobs
@@ -243,7 +244,11 @@ def convergence(rows: list[dict[str, object]]) -> None:
         release()
 
 def main()->None:
-    if not analysis_should_run(RESULTS, "Experiment 3 Grid Method analysis"):
+    if not analysis_should_run(
+        RESULTS,
+        "Experiment 3 Grid Method analysis",
+        force_overwrite=FORCE_GRIDMETHOD_OVERWRITE,
+    ):
         return
     records=discover();groups=defaultdict(list)
     for record in records:groups[(record.case,record.bit_depth)].append(record)

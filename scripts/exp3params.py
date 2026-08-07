@@ -147,3 +147,10 @@ def additive_jitter_for(pattern: str) -> tuple[str, float]:
     if pattern == "gausscont":
         return ADDITIVE_GAUSS_JITTER_DISTRIBUTION, ADDITIVE_GAUSS_JITTER_FRACTION
     raise ValueError(f"Unknown additive pattern {pattern!r}")
+
+
+# Force overwrite switches for Exp3 analysis scripts
+FORCE_CONV_OVERWRITE = True
+FORCE_DIC_OVERWRITE = True
+FORCE_GRIDMETHOD_OVERWRITE = True
+FORCE_INTERP_BIAS_OVERWRITE = True
