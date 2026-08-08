@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Compare and plot rigid body interpolation bias in DIC."""
+"""Compare and plot rigid body interpolation bias in grid method."""
 
 from __future__ import annotations
 
@@ -20,19 +20,26 @@ HERE = Path(__file__).resolve().parent
 if str(HERE) not in sys.path:
     sys.path.insert(0, str(HERE))
 
-from exp3_analysis_dic import Record, discover
+from exp3_analysis_gridmethod import Record, discover
 from exp3params import FORCE_INTERP_BIAS_OVERWRITE
 from modules.analysis_parallel import run_analysis_jobs
 from modules.analysis_selection import (
     analysis_should_run,
     mark_analysis_complete,
 )
-from modules.exp3_analysis_common import release
-from modules.exp3_dic_data import parse_config
+from modules.exp3_analysis_common import (
+    OUT,
+    OS_RE,
+    SS_RE,
+    interpolator_of,
+    parameter,
+    pattern_of,
+    release,
+)
 from modules.output_naming import is_rigid_case
 from exp0params_common import DIAGNOSTIC_FIGURE_DPI
 
-EDGE_EXCLUSION_PX = 15
+EDGE_EXCLUSION_PX = 12
 
 COLOR_BY_LEVEL = {
     1: "tab:blue",
@@ -48,6 +55,15 @@ COLOR_BY_LEVEL = {
 
 def is_psf(record: Record) -> bool:
     return "_psf" in record.root or "_psf" in record.config
+
+
+def clean_pattern_name(pattern: str) -> str:
+    mapping = {
+        "diskaddsat": "Disk-addition Speckle",
+        "gausscont": "Gaussian-continuous Speckle",
+        "eggb": "Eggbox Grid",
+    }
+    return mapping.get(pattern, pattern)
 
 
 def physical_expected_rigid(
@@ -88,38 +104,42 @@ def process_record_data(
     record: Record,
     expected_ux_arr: np.ndarray,
     expected_uy_arr: np.ndarray,
-    analytic_ref_fields: dict[int, tuple[np.ndarray, np.ndarray]] | None,
+    reference_fields: dict[int, tuple[np.ndarray, np.ndarray]] | None,
 ) -> list[dict] | None:
-    from modules.exp3_dic_data import result_path, load_result
-    _, suffix = parse_config(record.config)
-
     rows = []
     psf_val = is_psf(record)
+    interpolator = interpolator_of(record.config)
 
-    if "speck2d_render_analytic" in record.root:
+    if (
+        "speck2d_render_analytic" in record.root
+        or "grid2d_render_analytic" in record.root
+    ):
         renderer = "Analytic"
         interpolant = "None"
         method = "None"
         samples = "1"
-    elif "speck2d_render_ssaa" in record.root:
+    elif (
+        "speck2d_render_ssaa" in record.root
+        or "grid2d_render_ssaa" in record.root
+    ):
         renderer = "Bespoke Shader"
         interpolant = "None"
         method = "SSAA"
         samples = str(record.ssaa)
     elif "riley_render_texf" in record.root:
         renderer = "Riley Texture"
-        interpolant = clean_interpolator_name(record.interpolator)
+        interpolant = clean_interpolator_name(interpolator)
         method = "SSAA+OS"
         samples = f"{record.ssaa}x{record.osamp}"
     else:
         renderer = record.root
-        interpolant = record.interpolator
+        interpolant = interpolator
         method = "Unknown"
         samples = "Unknown"
 
     rows.append({
         "Case": record.case,
-        "Pattern": record.pattern,
+        "Pattern": record.config.split("_")[0],
         "BitDepth": record.bit_depth,
         "PSF": psf_val,
         "Renderer": renderer,
@@ -146,39 +166,29 @@ def process_record_data(
     })
 
     for frame in range(1, 11):
-        path = result_path(
-            record.directory,
-            suffix,
-            record.bit_depth,
-            frame,
-        )
+        path = record.directory / f"displacement_frame{frame:02d}.npz"
         if not path.is_file():
             return None
         try:
-            data = load_result(path)
-            ss_x = data["ss_x"]
-            ss_y = data["ss_y"]
-            u = data["u_px"][0]
-            v = -data["v_px"][0]
+            with np.load(path) as value:
+                ux = np.asarray(value["ux"], dtype=np.float64)
+                uy = np.asarray(value["uy"], dtype=np.float64)
 
             # Exclude boundary region
-            x_min, x_max = ss_x.min(), ss_x.max()
-            y_min, y_max = ss_y.min(), ss_y.max()
-            mask = (
-                (ss_x < x_min + EDGE_EXCLUSION_PX)
-                | (ss_x > x_max - EDGE_EXCLUSION_PX)
-                | (ss_y < y_min + EDGE_EXCLUSION_PX)
-                | (ss_y > y_max - EDGE_EXCLUSION_PX)
-            )
-            u_masked = np.where(mask, np.nan, u)
-            v_masked = np.where(mask, np.nan, v)
+            mask = np.ones(ux.shape, dtype=bool)
+            mask[
+                EDGE_EXCLUSION_PX:-EDGE_EXCLUSION_PX,
+                EDGE_EXCLUSION_PX:-EDGE_EXCLUSION_PX
+            ] = False
+            u_masked = np.where(mask, np.nan, ux)
+            v_masked = np.where(mask, np.nan, uy)
 
             mean_ux_case = float(np.nanmean(u_masked))
             mean_uy_case = float(np.nanmean(v_masked))
             std_case_ux = float(np.nanstd(u_masked))
             std_case_uy = float(np.nanstd(v_masked))
 
-            # Calculate metrics relative to analytic reference
+            # Calculate metrics relative to reference
             rmse_anal_ref_ux = 0.0
             rmse_anal_ref_uy = 0.0
             mean_diff_anal_ux = 0.0
@@ -188,10 +198,10 @@ def process_record_data(
             max_abs_err_ux = 0.0
             max_abs_err_uy = 0.0
             if (
-                analytic_ref_fields is not None
-                and frame in analytic_ref_fields
+                reference_fields is not None
+                and frame in reference_fields
             ):
-                ref_u, ref_v = analytic_ref_fields[frame]
+                ref_u, ref_v = reference_fields[frame]
                 diff_u = u_masked - ref_u
                 diff_v = v_masked - ref_v
                 rmse_anal_ref_ux = float(np.sqrt(np.nanmean(diff_u * diff_u)))
@@ -218,7 +228,7 @@ def process_record_data(
 
             rows.append({
                 "Case": record.case,
-                "Pattern": record.pattern,
+                "Pattern": record.config.split("_")[0],
                 "BitDepth": record.bit_depth,
                 "PSF": psf_val,
                 "Renderer": renderer,
@@ -279,7 +289,8 @@ def find_record(
     for r in records:
         if not r.root.startswith(render_root_prefix):
             continue
-        if interpolator is not None and r.interpolator != interpolator:
+        r_interp = interpolator_of(r.config)
+        if interpolator is not None and r_interp != interpolator:
             continue
         if ssaa is not None and r.ssaa != ssaa:
             continue
@@ -297,22 +308,6 @@ def find_record(
         return candidates[0]
 
     return candidates[0]
-
-
-def clean_pattern_name(pattern: str) -> str:
-    mapping = {
-        "diskaddsat": "Disk-addition Speckle",
-        "gausscont": "Gaussian-continuous Speckle",
-    }
-    return mapping.get(pattern, pattern)
-
-
-def file_pattern_name(pattern: str) -> str:
-    mapping = {
-        "diskaddsat": "diskadd",
-        "gausscont": "gaussadd",
-    }
-    return mapping.get(pattern, pattern)
 
 
 def plot_bias_lines(
@@ -615,7 +610,7 @@ def load_reference_fields(
     reference_fields = {}
     reference_labels = {}
 
-    from modules.exp3_dic_data import result_path, load_result
+    from modules.exp3_dic_data import load_result
 
     for group_key, records_group in groups.items():
         case, pattern, bit_depth, psf = group_key
@@ -623,9 +618,10 @@ def load_reference_fields(
         # Try to find matching analytic record first
         ref_rec = None
         for r in records:
+            r_interp = interpolator_of(r.config)
             if (
                 r.analytic
-                and r.pattern == pattern
+                and pattern_of(r.config) == pattern
                 and r.bit_depth == bit_depth
                 and is_psf(r) == psf
             ):
@@ -642,40 +638,29 @@ def load_reference_fields(
                     key=lambda r: (r.ssaa, r.osamp), reverse=True
                 )
                 ref_rec = group_candidates[0]
-                if "speck2d_render_ssaa" in ref_rec.root:
+                if "grid2d_render_ssaa" in ref_rec.root:
                     label = f"SSAA={ref_rec.ssaa}"
                 else:
                     label = f"SSAA={ref_rec.ssaa}, OS={ref_rec.osamp}"
                 reference_labels[group_key] = f"Highest Quality Ref ({label})"
 
         if ref_rec is not None:
-            _, suffix = parse_config(ref_rec.config)
             for frame in range(1, 11):
-                path = result_path(
-                    ref_rec.directory,
-                    suffix,
-                    ref_rec.bit_depth,
-                    frame,
-                )
+                path = ref_rec.directory / f"displacement_frame{frame:02d}.npz"
                 if path.is_file():
                     try:
-                        data = load_result(path)
-                        ss_x = data["ss_x"]
-                        ss_y = data["ss_y"]
-                        u = data["u_px"][0]
-                        v = -data["v_px"][0]
+                        with np.load(path) as data:
+                            ux = np.asarray(data["ux"], dtype=np.float64)
+                            uy = np.asarray(data["uy"], dtype=np.float64)
 
                         # Mask boundary
-                        x_min, x_max = ss_x.min(), ss_x.max()
-                        y_min, y_max = ss_y.min(), ss_y.max()
-                        mask = (
-                            (ss_x < x_min + EDGE_EXCLUSION_PX)
-                            | (ss_x > x_max - EDGE_EXCLUSION_PX)
-                            | (ss_y < y_min + EDGE_EXCLUSION_PX)
-                            | (ss_y > y_max - EDGE_EXCLUSION_PX)
-                        )
-                        u_masked = np.where(mask, np.nan, u)
-                        v_masked = np.where(mask, np.nan, v)
+                        mask = np.ones(ux.shape, dtype=bool)
+                        mask[
+                            EDGE_EXCLUSION_PX:-EDGE_EXCLUSION_PX,
+                            EDGE_EXCLUSION_PX:-EDGE_EXCLUSION_PX
+                        ] = False
+                        u_masked = np.where(mask, np.nan, ux)
+                        v_masked = np.where(mask, np.nan, uy)
                         key = (case, pattern, bit_depth, psf, frame)
                         reference_fields[key] = (u_masked, v_masked)
                     except Exception:
@@ -684,10 +669,10 @@ def load_reference_fields(
 
 
 def main() -> None:
-    out_dir_base = Path("out/exp3_analysis_dic/dic_rigid_interp_bias")
+    out_dir_base = Path("out/exp3_analysis_gridmethod/grid_rigid_interp_bias")
     if not analysis_should_run(
         out_dir_base,
-        "DIC Rigid Interpolation Bias analysis",
+        "Grid Method Rigid Interpolation Bias analysis",
         force_overwrite=FORCE_INTERP_BIAS_OVERWRITE,
     ):
         return
@@ -695,14 +680,14 @@ def main() -> None:
     records = discover()
     rigid_records = [r for r in records if is_rigid_case(r.case)]
     if not rigid_records:
-        print("No rigid case records discovered.")
+        print("No rigid gridmethod records discovered.")
         return
 
     # Group records by (case, pattern, bit_depth, psf) for plotting
     groups = defaultdict(list)
     for r in rigid_records:
         psf_val = is_psf(r)
-        key = (r.case, r.pattern, r.bit_depth, psf_val)
+        key = (r.case, pattern_of(r.config), r.bit_depth, psf_val)
         groups[key].append(r)
 
     # Load reference fields (analytic or highest quality fallback)
@@ -717,10 +702,11 @@ def main() -> None:
     for r in rigid_records:
         case_fields = {}
         psf_val = is_psf(r)
+        key = (r.case, pattern_of(r.config), r.bit_depth, psf_val)
         for frame in range(1, 11):
-            key = (r.case, r.pattern, r.bit_depth, psf_val, frame)
-            if key in reference_fields_db:
-                case_fields[frame] = reference_fields_db[key]
+            ref_key = (r.case, key[1], r.bit_depth, psf_val, frame)
+            if ref_key in reference_fields_db:
+                case_fields[frame] = reference_fields_db[ref_key]
         jobs.append((r, case_fields))
 
     results = run_analysis_jobs(
@@ -779,17 +765,11 @@ def main() -> None:
                 "rmse_exact_disp_uy": np.array(
                     [row["RmseExactDispUy"] for row in res]
                 ),
-                "max_abs_err_ux": np.array(
-                    [row["MaxAbsErrUx"] for row in res]
-                ),
-                "max_abs_err_uy": np.array(
-                    [row["MaxAbsErrUy"] for row in res]
-                ),
             }
 
     out_dir_base.mkdir(parents=True, exist_ok=True)
 
-    csv_path = out_dir_base / "rigid_interpolation_bias_results.csv"
+    csv_path = out_dir_base / "grid_interpolation_bias_results.csv"
     print(f"Writing CSV of results to {csv_path}...")
     if csv_rows:
         with csv_path.open("w", newline="") as f:
@@ -807,7 +787,7 @@ def main() -> None:
 
         analytic_rec = find_record(
             records,
-            "exp3_speck2d_render_analytic",
+            "exp3_grid2d_render_analytic",
             analytic=True,
         )
 
@@ -835,12 +815,12 @@ def main() -> None:
         if l_analytic:
             lines_f1.append(l_analytic)
 
-        ssaa_conv = find_record(records_group, "exp3_speck2d_render_ssaa", highest_quality=True)
+        ssaa_conv = find_record(records_group, "exp3_grid2d_render_ssaa", highest_quality=True)
         l_ssaa_conv = make_line(ssaa_conv, f"Bespoke SSAA (ss={ssaa_conv.ssaa if ssaa_conv else 0})", "tab:green", "-", "o", 1.5)
         if l_ssaa_conv:
             lines_f1.append(l_ssaa_conv)
 
-        ssaa_alias = find_record(records_group, "exp3_speck2d_render_ssaa", ssaa=1)
+        ssaa_alias = find_record(records_group, "exp3_grid2d_render_ssaa", ssaa=1)
         l_ssaa_alias = make_line(ssaa_alias, "Bespoke SSAA (ss=1)", "tab:green", "--", "x", 1.0)
         if l_ssaa_alias:
             lines_f1.append(l_ssaa_alias)
@@ -861,13 +841,21 @@ def main() -> None:
 
         f1_name = (
             f"dicbias_compare_{case}_"
-            f"{file_pattern_name(pattern)}_b{bit_depth:02d}"
+            f"{pattern}_b{bit_depth:02d}"
             f"{'_psf' if psf else ''}"
         )
         plotting_tasks.append((
-            out_dir, f1_name, "DIC Rigid Interpolation Bias",
+            out_dir, f1_name, "Grid Method Rigid Interpolation Bias",
             case, pattern, bit_depth, psf, lines_f1, ref_label
         ))
+
+        # ----------------------------------------------------
+        # Figure 2: OS=1, Sweeping SSAA
+        # ----------------------------------------------------
+        lines_f2 = []
+        l_analytic = make_line(analytic_rec, "Analytic Reference", "black", "--", None, 1.5)
+        if l_analytic:
+            lines_f2.append(l_analytic)
 
         # Get unique levels present in this records group
         group_ssaa_levels = sorted({
@@ -903,11 +891,11 @@ def main() -> None:
 
         f2_name = (
             f"dicbias_sweep_ssaa_os1_{case}_"
-            f"{file_pattern_name(pattern)}_b{bit_depth:02d}"
+            f"{pattern}_b{bit_depth:02d}"
             f"{'_psf' if psf else ''}"
         )
         plotting_tasks.append((
-            out_dir, f2_name, "DIC Interpolation Bias (OS=1, Sweeping SSAA)",
+            out_dir, f2_name, "Grid Method Interpolation Bias (OS=1, Sweeping SSAA)",
             case, pattern, bit_depth, psf, lines_f2, ref_label
         ))
 
@@ -931,11 +919,11 @@ def main() -> None:
 
             diag_name = (
                 f"dicbias_diagonal_{f_key}_{case}_"
-                f"{file_pattern_name(pattern)}_b{bit_depth:02d}"
+                f"{pattern}_b{bit_depth:02d}"
                 f"{'_psf' if psf else ''}"
             )
             plotting_tasks.append((
-                out_dir, diag_name, f"DIC Interpolation Bias ({name} Diagonal Refinement)",
+                out_dir, diag_name, f"Grid Method Interpolation Bias ({name} Diagonal Refinement)",
                 case, pattern, bit_depth, psf, lines_diag, ref_label
             ))
 
@@ -948,7 +936,7 @@ def main() -> None:
         ]:
             riley_interp_recs = [
                 r for r in records_group
-                if "riley_render_texf" in r.root and r.interpolator == interp
+                if "riley_render_texf" in r.root and interpolator_of(r.config) == interp
             ]
             max_os = (
                 max(r.osamp for r in riley_interp_recs)
@@ -968,11 +956,11 @@ def main() -> None:
 
             ssaa_name = (
                 f"dicbias_sweep_ssaa_osmax_{f_key}_{case}_"
-                f"{file_pattern_name(pattern)}_b{bit_depth:02d}"
+                f"{pattern}_b{bit_depth:02d}"
                 f"{'_psf' if psf else ''}"
             )
             plotting_tasks.append((
-                out_dir, ssaa_name, f"DIC Interpolation Bias ({name}, OS={max_os}, Sweeping SSAA)",
+                out_dir, ssaa_name, f"Grid Method Interpolation Bias ({name}, OS={max_os}, Sweeping SSAA)",
                 case, pattern, bit_depth, psf, lines_ssaa, ref_label
             ))
 
@@ -985,7 +973,7 @@ def main() -> None:
         ]:
             riley_interp_recs = [
                 r for r in records_group
-                if "riley_render_texf" in r.root and r.interpolator == interp
+                if "riley_render_texf" in r.root and interpolator_of(r.config) == interp
             ]
             max_ss = (
                 max(r.ssaa for r in riley_interp_recs)
@@ -1005,11 +993,11 @@ def main() -> None:
 
             os_name = (
                 f"dicbias_sweep_osamp_ssmax_{f_key}_{case}_"
-                f"{file_pattern_name(pattern)}_b{bit_depth:02d}"
+                f"{pattern}_b{bit_depth:02d}"
                 f"{'_psf' if psf else ''}"
             )
             plotting_tasks.append((
-                out_dir, os_name, f"DIC Interpolation Bias ({name}, SSAA={max_ss}, Sweeping OS)",
+                out_dir, os_name, f"Grid Method Interpolation Bias ({name}, SSAA={max_ss}, Sweeping OS)",
                 case, pattern, bit_depth, psf, lines_os, ref_label
             ))
 
@@ -1022,7 +1010,7 @@ def main() -> None:
         mp_context=get_context("spawn"),
     )
 
-    print("Rigid interpolation bias plots complete.")
+    print("Grid method interpolation bias plots complete.")
     mark_analysis_complete(out_dir_base)
 
 

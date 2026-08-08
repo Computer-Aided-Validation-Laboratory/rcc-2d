@@ -106,7 +106,7 @@ RILEY_TEXTURE_SAMPLERS = {
 # Conservative default run matrix.  Set EXP3_TEX_INTERPOLATORS to a
 # comma-separated subset of RILEY_TEXTURE_SAMPLERS to enable others.
 TEX_INTERPOLATORS = {name: RILEY_TEXTURE_SAMPLERS[name] for name in (
-    #"linear",
+    "linear",
     "cubic_catmull_rom",
     "cubic_bspline",)}
 

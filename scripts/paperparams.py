@@ -31,6 +31,11 @@ GRID_MARKER_SIZE_PT = 3.0
 RILEY_LINE_WIDTH_PT = 1.0
 RILEY_MARKER_SIZE_PT = 2.0
 
+# Experiment 3 specific plot styling constants
+EXP3_LINE_WIDTH_PT = 1.0
+EXP3_MARKER_SIZE_PT = 3.2
+EXP3_ANALYTIC_LINE_WIDTH_PT = 0.8
+
 AR = 1.2
 FIG_DIM = CONTENT_WIDTH_CM/3
 # (HEIGHT,WIDTH)
@@ -199,3 +204,46 @@ FIGURE_LABELS = {
         "fig:exp2-riley-texf-gauss-difference"
     ),
 }
+
+# ----------------------------------------------------
+# Experiment 3 Paper Selection Constants
+# ----------------------------------------------------
+EXP3_RIGID_CASE = "pt516_cam512_q9_rig"
+EXP3_AFFINE_CASE = "pt516_cam512_q9_aff"
+EXP3_CHIRP_CASE = "pt260x65_cam256_q9_chirp"
+EXP3_BIT_DEPTH = 12
+
+FIGURE_CAPTIONS.update({
+    "exp3_riley_gauss_fig1_conventional_bias_rmse": (
+        "Rigid-body translation convergence: (a) mean displacement bias "
+        "and (b) displacement field RMSE relative to analytic reference."
+    ),
+    "exp3_riley_gauss_fig2_texture_pixel_refinement": (
+        "Displacement RMSE convergence: (a) fixed oversampling Tex-OS=1 "
+        "sweeping Px-SS, (b) fixed pixel integration Px-SS=1 sweeping "
+        "Tex-OS, and (c) simultaneous Tex-OS=Px-SS refinement."
+    ),
+    "exp3_riley_gauss_fig3_affine_self_convergence": (
+        "Self-convergence RMSE of DIC and Grid Method displacement "
+        "fields under affine deformation."
+    ),
+    "exp3_riley_gauss_fig4_finite_star_spatial_frequency": (
+        "Finite-star displacement error: spatial distribution and "
+        "column-wise RMSE versus horizontal coordinate."
+    ),
+})
+
+FIGURE_LABELS.update({
+    "exp3_riley_gauss_fig1_conventional_bias_rmse": (
+        "fig:exp3-conventional-bias-rmse"
+    ),
+    "exp3_riley_gauss_fig2_texture_pixel_refinement": (
+        "fig:exp3-texture-pixel-refinement"
+    ),
+    "exp3_riley_gauss_fig3_affine_self_convergence": (
+        "fig:exp3-affine-self-convergence"
+    ),
+    "exp3_riley_gauss_fig4_finite_star_spatial_frequency": (
+        "fig:exp3-finite-star-spatial-frequency"
+    ),
+})

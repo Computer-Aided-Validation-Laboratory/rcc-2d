@@ -30,7 +30,7 @@ HERE = Path(__file__).resolve().parent
 if str(HERE) not in sys.path:
     sys.path.insert(0, str(HERE))
 
-from exp0params_common import GRIDMETHOD_CASES
+from exp0params_common import DIAGNOSTIC_FIGURE_DPI, GRIDMETHOD_CASES
 from exp3params import EGGBOX_PERIOD_FINAL_PX, GRIDMETHOD_WINDOW, GRIDMETHOD_WINDOW_WIDTH_PERIODS, MEASUREMENT_BIT_DEPTHS
 from modules.gridmethod import GridMethodConfig, analyse_sequence
 from modules.render_selection import analysis_enabled, measurement_enabled
@@ -203,7 +203,7 @@ def save_field(path: Path, ux: np.ndarray, uy: np.ndarray, frame: int, pitch: fl
         axis.set_xlabel("column [px]")
         axis.set_ylabel("row [px]")
         fig.colorbar(image, ax=axis, label="displacement [px]")
-    fig.savefig(path, dpi=160)
+    fig.savefig(path, dpi=DIAGNOSTIC_FIGURE_DPI)
     plt.close(fig)
 
 
@@ -219,7 +219,7 @@ def save_rigid_summary(path: Path, rows: list[dict[str, float | int]], label: st
         axis.grid(alpha=0.3)
         axis.legend(fontsize=8)
     fig.suptitle(label)
-    fig.savefig(path, dpi=170)
+    fig.savefig(path, dpi=DIAGNOSTIC_FIGURE_DPI)
     plt.close(fig)
 
 

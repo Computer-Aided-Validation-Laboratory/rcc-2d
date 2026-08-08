@@ -45,7 +45,7 @@ from modules.render_selection import analysis_enabled, measurement_enabled
 from modules.output_naming import data_case_name, is_rigid_case
 from modules.analysis_parallel import run_analysis_jobs
 from modules.render_outputs import quantise_camera
-from exp0params_common import DIC_CASES
+from exp0params_common import DIC_CASES, DIAGNOSTIC_FIGURE_DPI
 from exp3params import (
     DIC_CORRELATION_THRESHOLD,
     DIC_SHAPE_FUNCTION,
@@ -166,7 +166,7 @@ def save_field_arrays(path: Path, ux: np.ndarray, uy: np.ndarray, x: np.ndarray,
         ax.set_ylabel("row [px]")
         ax.set_title(field_title(label, frame + 1, name), fontsize=9)
         fig.colorbar(im, ax=ax, label="displacement [px]")
-    fig.savefig(path, dpi=160)
+    fig.savefig(path, dpi=DIAGNOSTIC_FIGURE_DPI)
     plt.close(fig)
 
 
@@ -186,7 +186,7 @@ def save_rigid_bias(path: Path, rows: list[dict[str, float | int]], title: str) 
         ax.set_title(label)
         ax.grid(alpha=0.3)
     fig.suptitle(title)
-    fig.savefig(path, dpi=170)
+    fig.savefig(path, dpi=DIAGNOSTIC_FIGURE_DPI)
     plt.close(fig)
 
 
@@ -322,6 +322,10 @@ def postprocess_frame(raw_path: str | None, compact_path: str, image_path: str, 
         del result
         # ``save_result`` atomically reopens and validates before this removal.
         raw.unlink()
+    elif raw_path is not None:
+        raw = Path(raw_path)
+        if raw.exists():
+            raw.unlink()
     if not Path(image_path).is_file():
         data = load_result(compact)
         save_field_arrays(Path(image_path), data["u_px"][0], data["v_px"][0], data["ss_x"], data["ss_y"], 0, label)

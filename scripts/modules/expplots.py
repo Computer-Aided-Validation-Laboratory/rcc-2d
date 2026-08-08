@@ -14,6 +14,7 @@ from typing import Mapping, Sequence
 
 import numpy as np
 
+from exp0params_common import DIAGNOSTIC_FIGURE_DPI
 from modules.exp_common_analysis import (
     explicit_log_ticks,
     make_agg_figure,
@@ -177,7 +178,7 @@ def plot_bespoke_four_panel(
             )
     figure.suptitle(f"{case_name} (Frame {frame:02d}) | Reference: {reference_name}", fontweight="bold")
     path = output_dir / f"{case_name}_metrics_frame{frame:02d}.png"
-    figure.savefig(path, dpi=150)
+    figure.savefig(path, dpi=DIAGNOSTIC_FIGURE_DPI)
     # This also breaks renderer/artist cycles and trims released allocator pages.
     release_figure(figure)
     mismatch, mismatch_axes = make_agg_figure(2, 2, figsize=(12, 9), constrained_layout=True)
@@ -193,6 +194,6 @@ def plot_bespoke_four_panel(
         axis.set_xlabel("Samples Along One Pixel Axis"); _set_sample_axis(axis, all_samples); axis.set_title(title); axis.set_ylabel(ylabel); axis.grid(True, which="both", ls="--", alpha=0.4)
         axis.legend(loc="lower left", fontsize=6, frameon=True, facecolor="white", edgecolor="none")
     mismatch.suptitle(f"{case_name} (Frame {frame:02d}) | Reference: {reference_name}", fontweight="bold")
-    mismatch.savefig(output_dir / f"{case_name}_mismatch_frame{frame:02d}.png", dpi=150)
+    mismatch.savefig(output_dir / f"{case_name}_mismatch_frame{frame:02d}.png", dpi=DIAGNOSTIC_FIGURE_DPI)
     release_figure(mismatch)
     return path

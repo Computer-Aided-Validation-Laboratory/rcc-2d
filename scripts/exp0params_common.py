@@ -21,7 +21,12 @@ FORCE_RENDER_OVER: bool = False
 # Rebuild analysis outputs even when a completed-suite marker exists.  Set
 # false after a full analysis pass to make the all-analysis launcher resume
 # only incomplete suites.
-FORCE_ANALYSIS_OVER: bool = True
+FORCE_ANALYSIS_OVER: bool = False
+
+# Raster resolution for diagnostic PNGs produced during DIC and Grid Method
+# processing.  Paper figures have independent publication settings in
+# ``paperparams.py``.
+DIAGNOSTIC_FIGURE_DPI: int = 150
 
 # Maximum independent analysis scripts launched by ``expall_analysis.py``.
 ANALYSIS_JOBS: int = CORES

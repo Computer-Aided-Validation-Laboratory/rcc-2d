@@ -26,6 +26,7 @@ from modules.analysis_selection import analysis_should_run, mark_analysis_comple
 from modules.exp_common_analysis import image_error_metrics
 from modules.exp3_analysis_common import Render, discover_renders, image_frames, load_image
 from modules.render_outputs import quantise_camera
+from exp0params_common import DIAGNOSTIC_FIGURE_DPI
 
 
 RESULTS = Path("out/exp3_analysis_conv")
@@ -191,7 +192,7 @@ def plot_four_panel(
             axis.legend(unique.values(), unique.keys(), loc="lower left", fontsize=6, frameon=True, facecolor="white", edgecolor="none")
     figure.suptitle(f"{title} | {bit_depth}-bit", fontweight="bold")
     output_path.parent.mkdir(parents=True, exist_ok=True)
-    figure.savefig(output_path, dpi=150)
+    figure.savefig(output_path, dpi=DIAGNOSTIC_FIGURE_DPI)
     release_figure(figure)
 
 
@@ -215,7 +216,7 @@ def plot_mismatch_panel(rows, bit_depth, x_key, line_key, x_label, title, output
         axis.legend(loc="lower left", fontsize=6, frameon=True, facecolor="white", edgecolor="none")
     figure.suptitle(f"{title} | {bit_depth}-bit", fontweight="bold")
     output_path.parent.mkdir(parents=True, exist_ok=True)
-    figure.savefig(output_path, dpi=150)
+    figure.savefig(output_path, dpi=DIAGNOSTIC_FIGURE_DPI)
     release_figure(figure)
 
 
@@ -252,7 +253,7 @@ def plot_limit_cuts(rows: list[dict[str, object]], title: str, output_dir: Path,
         set_samples_axis(axes[1], [int(row[x_key]) for row in fixed], x_label)
         axes[1].set_title("Maximum Digitised Mismatch"); axes[1].set_ylabel("LSB levels"); axes[1].grid(True, which="both", ls="--", alpha=0.4); axes[1].legend(loc="lower left", fontsize=7)
         figure.suptitle(f"{title}\nLimit: {fixed_name}={fixed_value}", fontweight="bold")
-        figure.savefig(output_dir / f"limit_{suffix}_frame{frame:02d}.png", dpi=150)
+        figure.savefig(output_dir / f"limit_{suffix}_frame{frame:02d}.png", dpi=DIAGNOSTIC_FIGURE_DPI)
         release_figure(figure)
 
 

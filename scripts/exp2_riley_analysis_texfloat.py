@@ -42,6 +42,7 @@ from modules.analysis_selection import analysis_should_run, mark_analysis_comple
 from modules.analysis_parallel import run_analysis_jobs
 from modules.render_outputs import quantise_camera
 from modules.exp_common_analysis import image_error_metrics
+from exp0params_common import DIAGNOSTIC_FIGURE_DPI
 
 
 RILEY_OUTPUT_DIR = exp2_output_dir("exp2_riley_render_texfloat")
@@ -294,7 +295,7 @@ def _plot_four_panel(
         if handles:
             axis.legend(loc="lower left", fontsize=6, frameon=True, facecolor="white", edgecolor="none")
     figure.suptitle(title, fontweight="bold")
-    figure.savefig(output_path, dpi=150)
+    figure.savefig(output_path, dpi=DIAGNOSTIC_FIGURE_DPI)
     release_figure(figure)
 
 
@@ -352,7 +353,7 @@ def _plot_limit_cuts(
         axes[1].grid(True, which="both", ls="--", alpha=0.4)
         axes[1].legend(loc="lower left", fontsize=7, frameon=True, facecolor="white", edgecolor="none")
         figure.suptitle(f"{title}\nLimit: {fixed_name}={fixed_value}", fontweight="bold")
-        figure.savefig(output_dir / f"limit_{suffix}_frame{frame:02d}.png", dpi=150)
+        figure.savefig(output_dir / f"limit_{suffix}_frame{frame:02d}.png", dpi=DIAGNOSTIC_FIGURE_DPI)
         release_figure(figure)
 
 
@@ -392,7 +393,7 @@ def _write_analysis_figures(
                 _axis_samples(axis, [int(row["SSAA"]) for row in selected], "Riley Samples Along One Pixel Axis")
                 axis.set_title(name); axis.set_ylabel(ylabel); axis.grid(True, which="both", ls="--", alpha=0.4); axis.legend(loc="lower left", fontsize=6)
             figure.suptitle(bit_title, fontweight="bold")
-            figure.savefig(output_dir / f"mismatch_b{bit_depth:02d}_frame{frame:02d}.png", dpi=150)
+            figure.savefig(output_dir / f"mismatch_b{bit_depth:02d}_frame{frame:02d}.png", dpi=DIAGNOSTIC_FIGURE_DPI)
             release_figure(figure)
     _plot_limit_cuts(
         float_rows, digitised_rows, title, output_dir, frame,

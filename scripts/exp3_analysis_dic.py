@@ -18,7 +18,7 @@ import numpy as np
 from matplotlib.backends.backend_agg import FigureCanvasAgg
 from matplotlib.figure import Figure
 
-from exp0params_common import CORES
+from exp0params_common import CORES, DIAGNOSTIC_FIGURE_DPI
 from exp3params import FORCE_DIC_OVERWRITE
 from modules.exp3_analysis_common import OUT, OS_RE, SS_RE, interpolator_of, numeric_y_axis, parameter, pattern_of, release, title_lines
 from modules.exp3_dic_data import (
@@ -158,10 +158,55 @@ def field_plot(
     maximum = float(max(np.nanmax(abs(du)), np.nanmax(abs(dv))))
     rms = float(np.sqrt(np.nanmean(du * du + dv * dv)))
 
-    fig = Figure(figsize=(12, 7), constrained_layout=True)
-    FigureCanvasAgg(fig)
-    axes = fig.subplots(2, 3)
-    for row, (ref_field, current, diff, name) in enumerate(
+    is_chirp = "chirp" in rec.case
+    if is_chirp:
+        # Create freq err folder
+        freq_dir = Path("out/exp3_analysis_dic/dic_disp_freq_err")
+        freq_dir.mkdir(parents=True, exist_ok=True)
+
+        # Compute column-wise RMSE
+        unique_x = np.unique(x[np.isfinite(x)])
+        col_rmses = []
+        for ux_val in unique_x:
+            col_mask = (x == ux_val)
+            err2 = du[col_mask]**2 + dv[col_mask]**2
+            col_rmses.append(float(np.sqrt(np.nanmean(err2))))
+
+        fig_freq = Figure(figsize=(6, 4.5), constrained_layout=True)
+        FigureCanvasAgg(fig_freq)
+        ax_freq = fig_freq.subplots()
+        ax_freq.plot(unique_x, col_rmses, color="tab:red", label="Local RMSE")
+        ax_freq.set_xlabel("Horizontal coordinate [px]")
+        ax_freq.set_ylabel("Displacement RMSE [px]")
+        ax_freq.set_title(
+            f"Local RMSE along spatial frequency gradient\n"
+            f"{rec.config} | Frame {frame:02d}",
+            fontsize=10, fontweight="bold"
+        )
+        ax_freq.grid(alpha=0.3)
+        ax_freq.legend(fontsize=8)
+
+        series = rec.root.replace("_render_ssaa", "")
+        if "riley_render_tex" in rec.root:
+            series = f"riley_texf_{rec.interpolator}"
+
+        freq_path = (
+            freq_dir /
+            f"freq_err_{rec.case}_{rec.pattern}_{series}_"
+            f"b{rec.bit_depth:02d}_frame{frame:02d}.png"
+        )
+        fig_freq.savefig(freq_path, dpi=DIAGNOSTIC_FIGURE_DPI)
+        fig_freq.clear()
+
+        fig = Figure(figsize=(11, 5), constrained_layout=True)
+        FigureCanvasAgg(fig)
+        axes = fig.subplots(3, 2)
+    else:
+        fig = Figure(figsize=(12, 7), constrained_layout=True)
+        FigureCanvasAgg(fig)
+        axes = fig.subplots(2, 3)
+
+    for field_idx, (ref_field, current, diff, name) in enumerate(
         ((ru, cu, du, "$u_x$"), (rv, cv, dv, "$u_y$"))
     ):
         center_target = (
@@ -169,14 +214,26 @@ def field_plot(
             if np.any(np.isfinite(ref_field))
             else 0.0
         )
+        if is_chirp:
+            field_axes = [
+                axes[0, field_idx],
+                axes[1, field_idx],
+                axes[2, field_idx],
+            ]
+        else:
+            field_axes = list(axes[field_idx])
+
         for axis, field, part, center in zip(
-            axes[row], (ref_field, current, diff),
+            field_axes, (ref_field, current, diff),
             ("reference", "current", "difference"),
             (center_target, center_target, 0.0)
         ):
             if np.any(np.isfinite(field)):
                 max_dev = float(np.nanmax(np.abs(field - center)))
-                r = max(max_dev, 0.05)
+                if part == "difference":
+                    r = max(max_dev, 1e-6)
+                else:
+                    r = max(max_dev, 0.05)
             else:
                 r = 0.05
             im = axis.imshow(
@@ -196,7 +253,7 @@ def field_plot(
         fontsize=10, fontweight="bold"
     )
     path.parent.mkdir(parents=True, exist_ok=True)
-    fig.savefig(path, dpi=150)
+    fig.savefig(path, dpi=DIAGNOSTIC_FIGURE_DPI)
     fig.clear()
     release()
     return maximum, rms
@@ -337,7 +394,7 @@ def convergence(rows: list[dict[str, object]]) -> None:
         dir_path = RESULTS / case / f"{series_name}_disp_err_conv"
         dir_path.mkdir(parents=True, exist_ok=True)
         path = dir_path / f"{pattern}_convergence_b{int(bit_depth):02d}.png"
-        fig.savefig(path, dpi=150)
+        fig.savefig(path, dpi=DIAGNOSTIC_FIGURE_DPI)
         fig.clear()
         release()
 

@@ -18,27 +18,83 @@ import numpy as np
 from matplotlib.backends.backend_agg import FigureCanvasAgg
 from matplotlib.figure import Figure
 
-from exp0params_common import CORES
+from exp0params_common import CORES, DIAGNOSTIC_FIGURE_DPI
 from exp3params import FORCE_GRIDMETHOD_OVERWRITE
-from modules.exp3_analysis_common import OUT, OS_RE, SS_RE, numeric_y_axis, parameter, pattern_of, release, title_lines
-from modules.analysis_selection import analysis_should_run, mark_analysis_complete
+from modules.exp3_analysis_common import (
+    OUT,
+    OS_RE,
+    SS_RE,
+    interpolator_of,
+    numeric_y_axis,
+    parameter,
+    pattern_of,
+    release,
+    title_lines,
+)
+from modules.analysis_selection import (
+    analysis_should_run,
+    mark_analysis_complete,
+)
 from modules.analysis_parallel import run_analysis_jobs
 
-RESULTS=OUT/"exp3_analysis_gridmethod"
+RESULTS = OUT / "exp3_analysis_gridmethod"
 EDGE_EXCLUSION_PX = 12
+
+from modules.render_outputs import quantise_camera
+
+
+def load_render_image(render_dir: Path, frame: int) -> np.ndarray | None:
+    p1 = render_dir / f"frame{frame:02d}.npy"
+    if p1.is_file():
+        return np.load(p1)
+    p2 = render_dir / f"image_c00_f{frame:02d}.npy"
+    if p2.is_file():
+        return np.load(p2)
+    return None
+
 
 @dataclass(frozen=True)
 class Record:
-    case:str;root:str;config:str;directory:Path;bit_depth:int;ssaa:int;osamp:int;analytic:bool
+    case: str
+    root: str
+    config: str
+    directory: Path
+    bit_depth: int
+    pattern: str
+    ssaa: int
+    osamp: int
+    interpolator: str
+    analytic: bool
 
-def discover()->list[Record]:
-    values=[]
-    for directory in (OUT/"exp3_gridmethod").glob("*/*/*/b*"):
-        if not directory.is_dir() or not list(directory.glob("displacement_frame*.npz")):continue
-        try:bit_depth=int(directory.name.removeprefix("b"))
-        except ValueError:continue
-        case,root,config=directory.parent.parent.parent.name,directory.parent.parent.name,directory.parent.name
-        values.append(Record(case,root,config,directory,bit_depth,parameter(config,SS_RE),parameter(config,OS_RE),"_analytic_" in config))
+
+def discover() -> list[Record]:
+    values = []
+    for directory in (OUT / "exp3_gridmethod").glob("*/*/*/b*"):
+        if not directory.is_dir():
+            continue
+        if not list(directory.glob("displacement_frame*.npz")):
+            continue
+        try:
+            bit_depth = int(directory.name.removeprefix("b"))
+        except ValueError:
+            continue
+        case = directory.parent.parent.parent.name
+        root = directory.parent.parent.name
+        config = directory.parent.name
+        values.append(
+            Record(
+                case=case,
+                root=root,
+                config=config,
+                directory=directory,
+                bit_depth=bit_depth,
+                pattern=pattern_of(config),
+                ssaa=parameter(config, SS_RE),
+                osamp=parameter(config, OS_RE),
+                interpolator=interpolator_of(config),
+                analytic=("_analytic" in config),
+            )
+        )
     return values
 
 _reference_cache = {}
@@ -92,19 +148,80 @@ def plot(path: Path, rec: Record, ref: Record, label: str, frame: int, ru: np.nd
     maximum = float(max(np.nanmax(abs(du)), np.nanmax(abs(dv))))
     rms = float(np.sqrt(np.nanmean(du * du + dv * dv)))
 
-    fig = Figure(figsize=(12, 7), constrained_layout=True)
-    FigureCanvasAgg(fig)
-    axes = fig.subplots(2, 3)
-    for row, (r, c, d, name) in enumerate(((ru, cu, du, "$u_x$"), (rv, cv, dv, "$u_y$"))):
-        center_target = float(np.nanmean(r)) if np.any(np.isfinite(r)) else 0.0
+    is_chirp = "chirp" in rec.case
+    if is_chirp:
+        # Create freq err folder
+        freq_dir = Path("out/exp3_analysis_gridmethod/grid_disp_freq_err")
+        freq_dir.mkdir(parents=True, exist_ok=True)
+
+        # Compute column-wise RMSE
+        H, W = du.shape
+        unique_x = np.arange(W)
+        col_rmses = []
+        for col_idx in range(W):
+            err2 = du[:, col_idx]**2 + dv[:, col_idx]**2
+            col_rmses.append(float(np.sqrt(np.nanmean(err2))))
+
+        fig_freq = Figure(figsize=(6, 4.5), constrained_layout=True)
+        FigureCanvasAgg(fig_freq)
+        ax_freq = fig_freq.subplots()
+        ax_freq.plot(unique_x, col_rmses, color="tab:red", label="Local RMSE")
+        ax_freq.set_xlabel("Horizontal coordinate [px]")
+        ax_freq.set_ylabel("Displacement RMSE [px]")
+        ax_freq.set_title(
+            f"Local RMSE along spatial frequency gradient\n"
+            f"{rec.config} | Frame {frame:02d}",
+            fontsize=10, fontweight="bold"
+        )
+        ax_freq.grid(alpha=0.3)
+        ax_freq.legend(fontsize=8)
+
+        series = rec.root.replace("_render_ssaa", "")
+        if "riley_render_tex" in rec.root:
+            series = f"riley_texf_{rec.interpolator}"
+
+        freq_path = (
+            freq_dir /
+            f"freq_err_{rec.case}_{rec.pattern}_{series}_"
+            f"b{rec.bit_depth:02d}_frame{frame:02d}.png"
+        )
+        fig_freq.savefig(freq_path, dpi=DIAGNOSTIC_FIGURE_DPI)
+        fig_freq.clear()
+
+        fig = Figure(figsize=(11, 5), constrained_layout=True)
+        FigureCanvasAgg(fig)
+        axes = fig.subplots(3, 2)
+    else:
+        fig = Figure(figsize=(12, 7), constrained_layout=True)
+        FigureCanvasAgg(fig)
+        axes = fig.subplots(2, 3)
+
+    for field_idx, (r, c, d, name) in enumerate(
+        ((ru, cu, du, "$u_x$"), (rv, cv, dv, "$u_y$"))
+    ):
+        center_target = (
+            float(np.nanmean(r)) if np.any(np.isfinite(r)) else 0.0
+        )
+        if is_chirp:
+            field_axes = [
+                axes[0, field_idx],
+                axes[1, field_idx],
+                axes[2, field_idx],
+            ]
+        else:
+            field_axes = list(axes[field_idx])
+
         for axis, field, part, center in zip(
-            axes[row], (r, c, d),
+            field_axes, (r, c, d),
             ("reference", "current", "difference"),
             (center_target, center_target, 0.0)
         ):
             if np.any(np.isfinite(field)):
                 max_dev = float(np.nanmax(np.abs(field - center)))
-                radius = max(max_dev, 0.05)
+                if part == "difference":
+                    radius = max(max_dev, 1e-6)
+                else:
+                    radius = max(max_dev, 0.05)
             else:
                 radius = 0.05
             im = axis.imshow(
@@ -115,15 +232,31 @@ def plot(path: Path, rec: Record, ref: Record, label: str, frame: int, ru: np.nd
             axis.set_xlabel("column [px]")
             axis.set_ylabel("row [px]")
             fig.colorbar(im, ax=axis, label="px")
-    fig.suptitle(f"{title_lines(rec.case + ': ' + rec.config)} | {rec.bit_depth}-bit, frame {frame:02d}\nReference: {title_lines(ref.config)} ({label}); max difference={maximum:.4g} px", fontsize=10, fontweight="bold")
+    fig.suptitle(
+        f"{title_lines(rec.case + ': ' + rec.config)} | "
+        f"{rec.bit_depth}-bit, frame {frame:02d}\n"
+        f"Reference: {title_lines(ref.config)} ({label}); "
+        f"max difference={maximum:.4g} px",
+        fontsize=10, fontweight="bold"
+    )
     path.parent.mkdir(parents=True, exist_ok=True)
-    fig.savefig(path, dpi=150)
+    fig.savefig(path, dpi=DIAGNOSTIC_FIGURE_DPI)
     fig.clear()
     release()
     return maximum, rms
 
 
-def analyse(payload: tuple[Record, list[Record]]) -> list[dict[str, object]]:
+def get_series_label(record: Record) -> str:
+    psf = "_psf" in record.root or "_psf" in record.config
+    if "riley_render_tex" in record.root:
+        return f"riley_texf_{record.interpolator}{'_psf' if psf else ''}"
+    suffix = "_psf" if psf and "_psf" not in record.root else ""
+    return f"{record.root.replace('_render_ssaa', '')}{suffix}"
+
+
+def analyse(
+    payload: tuple[Record, list[Record]]
+) -> list[dict[str, object]]:
     rec, candidates = payload
     ref, label = reference(candidates)
     if ref is None or rec == ref:
@@ -133,18 +266,47 @@ def analyse(payload: tuple[Record, list[Record]]) -> list[dict[str, object]]:
         a, b = load(ref, frame), load(rec, frame)
         if a is None or b is None or a[0].shape != b[0].shape:
             continue
-        maximum, rms = plot(RESULTS / rec.case / rec.root / rec.config / f"b{rec.bit_depth:02d}" / f"frame{frame:02d}_difference.png", rec, ref, label, frame, *a, *b)
+        diff_path = (
+            RESULTS
+            / rec.case
+            / rec.root
+            / rec.config
+            / f"b{rec.bit_depth:02d}"
+            / f"frame{frame:02d}_difference.png"
+        )
+        maximum, rms = plot(diff_path, rec, ref, label, frame, *a, *b)
+
+        rec_render_dir = OUT / rec.root / rec.case / rec.config
+        ref_render_dir = OUT / ref.root / ref.case / ref.config
+        rec_img = load_render_image(rec_render_dir, frame)
+        ref_img = load_render_image(ref_render_dir, frame)
+        if rec_img is not None and ref_img is not None:
+            rec_codes = quantise_camera(
+                rec_img, rec.bit_depth
+            ).astype(np.int64)
+            ref_codes = quantise_camera(
+                ref_img, rec.bit_depth
+            ).astype(np.int64)
+            code_diff = rec_codes - ref_codes
+            digitised_rmse = float(np.sqrt(np.mean(code_diff ** 2)))
+            digitised_max_err = float(np.max(np.abs(code_diff)))
+        else:
+            digitised_rmse = np.nan
+            digitised_max_err = np.nan
+
         rows.append({
             "Case": rec.case,
-            "Root": rec.root,
+            "Pattern": rec.pattern,
+            "Series": get_series_label(rec),
             "Config": rec.config,
             "BitDepth": rec.bit_depth,
             "Frame": frame,
             "SSAA": rec.ssaa or 1,
             "OS": rec.osamp or 1,
             "Reference": label,
-            "max_difference_px": maximum,
-            "rms_difference_px": rms,
+            "Rmse": rms,
+            "DigitisedRMSE(bits)": digitised_rmse,
+            "DigitisedMaxErr(bits)": digitised_max_err,
         })
         del a, b
         release()
@@ -154,12 +316,12 @@ def analyse(payload: tuple[Record, list[Record]]) -> list[dict[str, object]]:
 def convergence(rows: list[dict[str, object]]) -> None:
     groups = defaultdict(list)
     for row in rows:
-        groups[(row["Case"], row["Root"], row["BitDepth"])].append(row)
+        groups[(row["Case"], row["Series"], row["BitDepth"])].append(row)
     target_frames = [1, 3, 5, 7, 10]
-    for (case, root, bit_depth), values in groups.items():
-        fig = Figure(figsize=(10, 15), constrained_layout=True)
+    for (case, series, bit_depth), values in groups.items():
+        fig = Figure(figsize=(6, 12), constrained_layout=True)
         FigureCanvasAgg(fig)
-        axes = fig.subplots(5, 2)
+        axes = fig.subplots(5, 1)
 
         val_by_frame = defaultdict(list)
         for row in values:
@@ -169,77 +331,70 @@ def convergence(rows: list[dict[str, object]]) -> None:
 
         for row_idx, frame in enumerate(target_frames):
             frame_vals = val_by_frame[frame]
-
-            ax_rms = axes[row_idx, 0]
-            ax_max = axes[row_idx, 1]
+            ax = axes[row_idx]
 
             if not frame_vals:
-                ax_rms.text(0.5, 0.5, "No Data", ha='center', va='center')
-                ax_max.text(0.5, 0.5, "No Data", ha='center', va='center')
+                ax.text(0.5, 0.5, "No Data", ha='center', va='center')
                 continue
 
             by_os = defaultdict(list)
             for row in frame_vals:
                 by_os[int(row["OS"])].append(row)
 
-            plotted_rms = []
-            plotted_max = []
-            for osamp, series in sorted(by_os.items(), reverse=True):
-                series.sort(key=lambda r: int(r["SSAA"]))
+            plotted = []
+            for osamp, s_list in sorted(by_os.items(), reverse=True):
+                s_list.sort(key=lambda r: int(r["SSAA"]))
 
-                ssaa_vals = [int(r["SSAA"]) for r in series]
-                rms_errs = [float(r["rms_difference_px"]) for r in series]
-                max_errs = [float(r["max_difference_px"]) for r in series]
+                ssaa_vals = [int(r["SSAA"]) for r in s_list]
+                rms_errs = [float(r["Rmse"]) for r in s_list]
 
                 label = f"OS={osamp}" if len(by_os) > 1 else "SSAA series"
-
-                ax_rms.plot(ssaa_vals, rms_errs, "o-", label=label)
-                ax_max.plot(ssaa_vals, max_errs, "o-", label=label)
-
-                plotted_rms.extend(rms_errs)
-                plotted_max.extend(max_errs)
+                ax.plot(ssaa_vals, rms_errs, "o-", label=label)
+                plotted.extend(rms_errs)
 
             ssaa_ticks = sorted({int(r["SSAA"]) for r in frame_vals})
             if not ssaa_ticks:
                 ssaa_ticks = [1, 2, 4, 8, 16]
 
-            for ax, plotted, title in zip(
-                (ax_rms, ax_max),
-                (plotted_rms, plotted_max),
-                (f"Frame {frame} - RMSE", f"Frame {frame} - Max. Abs. Error")
-            ):
-                ax.set_xscale("log", base=2)
-                numeric_y_axis(ax, plotted)
+            ax.set_xscale("log", base=2)
+            numeric_y_axis(ax, plotted)
 
-                ylim = ax.get_ylim()
-                if ax.get_yscale() == "log":
-                    ymin = min(ylim[0], 0.005)
-                    ymax = max(ylim[1], 0.02)
-                    ax.set_ylim(ymin, ymax)
-                else:
-                    ymin = min(ylim[0], -0.001)
-                    ymax = max(ylim[1], 0.015)
-                    ax.set_ylim(ymin, ymax)
+            ylim = ax.get_ylim()
+            if ax.get_yscale() == "log":
+                ymin = min(ylim[0], 0.005)
+                ymax = max(ylim[1], 0.02)
+                ax.set_ylim(ymin, ymax)
+            else:
+                ymin = min(ylim[0], -0.001)
+                ymax = max(ylim[1], 0.015)
+                ax.set_ylim(ymin, ymax)
 
-                ax.axhline(0.01, color="red", linestyle="--", alpha=0.5, label="0.01 px")
-                ax.set_xticks(ssaa_ticks)
-                ax.set_xticklabels([str(t) for t in ssaa_ticks])
-                ax.set_xlabel("Axis integration samples")
-                ax.set_ylabel("Disp. Err. [px]")
-                ax.set_title(title, fontsize=9)
-                ax.grid(alpha=.3)
-                ax.legend(fontsize=8)
+            ax.axhline(
+                0.01, color="red", linestyle="--", alpha=0.5,
+                label="0.01 px"
+            )
+            ax.set_xticks(ssaa_ticks)
+            ax.set_xticklabels([str(t) for t in ssaa_ticks])
+            ax.set_xlabel("Axis integration samples")
+            ax.set_ylabel("Disp. Err. [px]")
+            ax.set_title(f"Frame {frame} - RMSE", fontsize=9)
+            ax.grid(alpha=.3)
+            ax.legend(fontsize=8)
 
+        title_str = (
+            f"{case}: {series} grid-method convergence\n"
+            f"{bit_depth}-bit\n"
+        )
         fig.suptitle(
-            f"{title_lines(case + ': ' + root + ' grid-method convergence')} | {bit_depth}-bit\n"
+            f"{title_lines(title_str)}"
             f"Reference: {title_lines(str(values[0]['Reference']))}",
             fontsize=11, fontweight="bold"
         )
 
-        dir_path = RESULTS / case / f"{root}_disp_err_conv"
+        dir_path = RESULTS / case / f"{series}_disp_err_conv"
         dir_path.mkdir(parents=True, exist_ok=True)
         path = dir_path / f"convergence_b{int(bit_depth):02d}.png"
-        fig.savefig(path, dpi=150)
+        fig.savefig(path, dpi=DIAGNOSTIC_FIGURE_DPI)
         fig.clear()
         release()
 

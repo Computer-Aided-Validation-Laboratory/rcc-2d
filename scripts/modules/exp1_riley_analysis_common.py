@@ -42,6 +42,7 @@ from modules.analysis_parallel import run_analysis_jobs
 from modules.analysis_memory import make_agg_figure, release_batch, release_figure
 from modules.render_outputs import quantise_camera
 from modules.exp_common_analysis import image_error_metrics
+from exp0params_common import DIAGNOSTIC_FIGURE_DPI
 
 METRIC_KEYS = ("e_f64", "mean_f64", "e_inf", "e_b", "mean_eb", "delta_b", "severe_b", "p95_eb", "p99_eb", "max_eb")
 
@@ -321,7 +322,7 @@ def _plot_texture_oversample_metrics(
                   ncol=3, fontsize=6, frameon=True, facecolor="white", edgecolor="none")
     figure.tight_layout(rect=(0, 0, 1, 0.86))
     suffix = f"_b{bit_depth:02d}" if bit_depth is not None else ""
-    figure.savefig(output_dir / f"{case_name}_tex_oversamp_{group_name}{suffix}_metrics_frame{frame:02d}.png", dpi=150)
+    figure.savefig(output_dir / f"{case_name}_tex_oversamp_{group_name}{suffix}_metrics_frame{frame:02d}.png", dpi=DIAGNOSTIC_FIGURE_DPI)
     _release_figure(figure)
 
 
@@ -412,7 +413,7 @@ def _plot_texture_ssaa_metrics(
     figure.legend(handles=handles, loc="upper center", bbox_to_anchor=(0.5, 0.93), ncol=3, fontsize=6, frameon=True, facecolor="white", edgecolor="none")
     figure.tight_layout(rect=(0, 0, 1, 0.86))
     suffix = f"_b{bit_depth:02d}" if bit_depth is not None else ""
-    figure.savefig(output_dir / f"{case_name}_tex_ssaa_{group_name}{suffix}_metrics_frame{frame:02d}.png", dpi=150)
+    figure.savefig(output_dir / f"{case_name}_tex_ssaa_{group_name}{suffix}_metrics_frame{frame:02d}.png", dpi=DIAGNOSTIC_FIGURE_DPI)
     _release_figure(figure)
 
 
@@ -495,7 +496,7 @@ def _plot_texture_limit_curves(
             f"Texture Limit ({fixed_name}={fixed_value}): {case_name} (Frame {frame:02d})\n"
             f"Reference: {reference_name}", fontweight="bold",
         )
-        figure.savefig(output_dir / f"{case_name}_tex_limit_{suffix}_frame{frame:02d}.png", dpi=150)
+        figure.savefig(output_dir / f"{case_name}_tex_limit_{suffix}_frame{frame:02d}.png", dpi=DIAGNOSTIC_FIGURE_DPI)
         _release_figure(figure)
 
 
@@ -563,7 +564,7 @@ def _write_texture_analysis_figures(
         for axis, name, ylabel in zip(axes.flat, ("Mismatch Fraction (≥1 LSB)", "Severe Mismatch Fraction (≥2 LSB)", "95th Percentile Absolute Digitised Error", "99th Percentile Absolute Digitised Error"), ("Fraction of pixels", "Fraction of pixels", "LSB levels", "LSB levels")):
             axis.set_title(name); axis.set_ylabel(ylabel); axis.set_xlabel("Riley Samples Along One Pixel Axis"); _set_explicit_sample_ticks(axis, available_ssaa); axis.grid(True, which="both", ls="--", alpha=0.4); axis.legend(loc="lower left", fontsize=6)
         figure.suptitle(f"Riley, Tex: {case_name} (Frame {frame:02d}) | {bit_depth}-bit\nReference: {reference_name}", fontweight="bold")
-        figure.savefig(output_dir / f"{case_name}_tex_mismatch_b{bit_depth:02d}_frame{frame:02d}.png", dpi=150)
+        figure.savefig(output_dir / f"{case_name}_tex_mismatch_b{bit_depth:02d}_frame{frame:02d}.png", dpi=DIAGNOSTIC_FIGURE_DPI)
         _release_figure(figure)
     _plot_texture_limit_curves(riley_tex, case_name, frame, output_dir, reference_name)
 
@@ -663,7 +664,7 @@ def _write_function_analysis_figure(
         f"Riley, Func: {case_name} (Frame {frame:02d}) | Reference: {reference_name}",
         fontweight="bold",
     )
-    figure.savefig(output_dir / f"{case_name}_func_metrics_frame{frame:02d}.png", dpi=150)
+    figure.savefig(output_dir / f"{case_name}_func_metrics_frame{frame:02d}.png", dpi=DIAGNOSTIC_FIGURE_DPI)
     _release_figure(figure)
     mismatch, axes = _make_figure(figsize=(12, 9), constrained_layout=True)
     for bit_depth in BIT_DEPTHS:
@@ -676,7 +677,7 @@ def _write_function_analysis_figure(
     for axis, name, ylabel in zip(axes.flat, ("Mismatch Fraction (≥1 LSB)", "Severe Mismatch Fraction (≥2 LSB)", "95th Percentile Absolute Digitised Error", "99th Percentile Absolute Digitised Error"), ("Fraction of pixels", "Fraction of pixels", "LSB levels", "LSB levels")):
         axis.set_title(name); axis.set_ylabel(ylabel); axis.set_xlabel("Samples Along One Pixel Axis"); _set_explicit_sample_ticks(axis, sample_ticks); axis.grid(True, which="both", ls="--", alpha=0.4); axis.legend(loc="lower left", fontsize=6)
     mismatch.suptitle(f"Riley, Func: {case_name} (Frame {frame:02d}) | Reference: {reference_name}", fontweight="bold")
-    mismatch.savefig(output_dir / f"{case_name}_func_mismatch_frame{frame:02d}.png", dpi=150)
+    mismatch.savefig(output_dir / f"{case_name}_func_mismatch_frame{frame:02d}.png", dpi=DIAGNOSTIC_FIGURE_DPI)
     _release_figure(mismatch)
 
 
@@ -953,7 +954,7 @@ def analyze_riley_case(case_name: str, tex_interp: str) -> None:
             plt.savefig(
                 RESULTS_DIR_FUNC
                 / f"{case_name}_func_float_rmse_frame{ff:02d}.png",
-                dpi=150,
+                dpi=DIAGNOSTIC_FIGURE_DPI,
             )
             plt.close()
     
@@ -1038,7 +1039,7 @@ def analyze_riley_case(case_name: str, tex_interp: str) -> None:
             plt.savefig(
                 RESULTS_DIR_FUNC
                 / f"{case_name}_func_float_max_frame{ff:02d}.png",
-                dpi=150,
+                dpi=DIAGNOSTIC_FIGURE_DPI,
             )
             plt.close()
     
@@ -1103,7 +1104,7 @@ def analyze_riley_case(case_name: str, tex_interp: str) -> None:
             plt.savefig(
                 RESULTS_DIR_FUNC
                 / f"{case_name}_func_bits_frame{ff:02d}.png",
-                dpi=150,
+                dpi=DIAGNOSTIC_FIGURE_DPI,
             )
             plt.close()
     
@@ -1191,7 +1192,7 @@ def analyze_riley_case(case_name: str, tex_interp: str) -> None:
             plt.savefig(
                 RESULTS_DIR_FUNC
                 / f"{case_name}_func_max_eb_frame{ff:02d}.png",
-                dpi=150,
+                dpi=DIAGNOSTIC_FIGURE_DPI,
             )
             plt.close()
             func_paths = [
@@ -1299,7 +1300,7 @@ def analyze_riley_case(case_name: str, tex_interp: str) -> None:
             plt.savefig(
                 results_dir_tex
                 / f"{case_name}_tex_float_rmse_frame{ff:02d}.png",
-                dpi=150,
+                dpi=DIAGNOSTIC_FIGURE_DPI,
             )
             plt.close()
     
@@ -1376,7 +1377,7 @@ def analyze_riley_case(case_name: str, tex_interp: str) -> None:
             plt.savefig(
                 results_dir_tex
                 / f"{case_name}_tex_float_max_frame{ff:02d}.png",
-                dpi=150,
+                dpi=DIAGNOSTIC_FIGURE_DPI,
             )
             plt.close()
     
@@ -1437,7 +1438,7 @@ def analyze_riley_case(case_name: str, tex_interp: str) -> None:
             plt.savefig(
                 results_dir_tex
                 / f"{case_name}_tex_bits_frame{ff:02d}.png",
-                dpi=150,
+                dpi=DIAGNOSTIC_FIGURE_DPI,
             )
             plt.close()
     
@@ -1522,7 +1523,7 @@ def analyze_riley_case(case_name: str, tex_interp: str) -> None:
             plt.savefig(
                 results_dir_tex
                 / f"{case_name}_tex_max_eb_frame{ff:02d}.png",
-                dpi=150,
+                dpi=DIAGNOSTIC_FIGURE_DPI,
             )
             plt.close()
             tex_paths = [

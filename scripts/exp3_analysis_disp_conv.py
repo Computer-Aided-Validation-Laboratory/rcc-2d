@@ -38,6 +38,7 @@ from exp3_analysis_dic import (
     reference_candidates as reference_candidates_dic,
     series_label as series_label_dic,
 )
+from exp0params_common import DIAGNOSTIC_FIGURE_DPI
 from exp3_analysis_gridmethod import (
     Record as GridRecord,
     discover as discover_grid,
@@ -393,7 +394,7 @@ def plot_dic_convergence(rows: list[dict[str, object]]) -> None:
         dir_path.mkdir(parents=True, exist_ok=True)
         suffix = "_selfconv" if type_name == "selfconv" else ""
         path = dir_path / f"{pattern}_convergence{suffix}_b{int(bit_depth):02d}.png"
-        fig.savefig(path, dpi=150)
+        fig.savefig(path, dpi=DIAGNOSTIC_FIGURE_DPI)
         fig.clear()
         release()
 
@@ -489,7 +490,7 @@ def plot_grid_convergence(rows: list[dict[str, object]]) -> None:
         dir_path.mkdir(parents=True, exist_ok=True)
         suffix = "_selfconv" if type_name == "selfconv" else ""
         path = dir_path / f"convergence{suffix}_b{int(bit_depth):02d}.png"
-        fig.savefig(path, dpi=150)
+        fig.savefig(path, dpi=DIAGNOSTIC_FIGURE_DPI)
         fig.clear()
         release()
 

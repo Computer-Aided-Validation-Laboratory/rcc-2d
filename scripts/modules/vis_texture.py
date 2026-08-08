@@ -11,6 +11,7 @@ from pathlib import Path
 
 import matplotlib.pyplot as plt
 import numpy as np
+from exp0params_common import DIAGNOSTIC_FIGURE_DPI
 
 
 # Change this single path to select the analytic f64 texture to visualise.
@@ -46,7 +47,7 @@ def main() -> None:
     axes.set_xlabel("Texture column")
     axes.set_ylabel("Texture row")
     figure.colorbar(image, ax=axes, label="Raw texture value")
-    figure.savefig(output_path, dpi=180)
+    figure.savefig(output_path, dpi=DIAGNOSTIC_FIGURE_DPI)
     plt.close(figure)
     print(f"Saved {output_path}")
 
