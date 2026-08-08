@@ -49,16 +49,16 @@ RILEY_RASTER_THREADS: int = CORES
 # true bounded unsigned-texture study and remains disabled by default.
 CUSTOM_RENDER_CASES: tuple[str, ...] = (
     "eggbox",
-    "eggbox_psf",
+    #"eggbox_psf",
     "disk",
     "gauss",
-    "disk_psf",
+    #"disk_psf",
 )
 RILEY_RENDER_CASES: tuple[str, ...] = (
     "func",
     "texfloat",
-    "func_psf",
-    "texfloat_psf",
+    # "func_psf",
+    # "texfloat_psf",
     # "texfq",         # Enable simulated quantised-f64 input textures.
     # "texfq_psf",     # Enable their disk-PSF variants.
     # "texuint",       # Enable legacy true unsigned source textures.
