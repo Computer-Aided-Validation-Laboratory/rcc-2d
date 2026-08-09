@@ -59,7 +59,7 @@ RILEY_RENDER_CASES: tuple[str, ...] = (
     "texfloat",
     # "func_psf",
     # "texfloat_psf",
-    # "texfq",         # Enable simulated quantised-f64 input textures.
+    "texfq",         # Enable simulated quantised-f64 input textures.
     # "texfq_psf",     # Enable their disk-PSF variants.
     # "texuint",       # Enable legacy true unsigned source textures.
     # "texuint_psf",

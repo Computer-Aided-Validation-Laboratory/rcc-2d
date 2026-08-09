@@ -79,7 +79,7 @@ COLOR_BY_LEVEL = {
 # Layout sizing in centimetres (adjusted to prevent constrained layout collapse)
 FIGURE1_CM = (11.3, 10.4)
 FIGURE2_CM = (17.0, 5.2)
-FIGURE3_CM = (11.3, 5.2)
+FIGURE3_CM = (11.3, 10.4)
 FIGURE4_CM = (17.0, 16.0)
 
 
@@ -187,6 +187,13 @@ def generate_figure1(dic_records) -> None:
                 "o",
             ),
             (
+                find_rec(subset, "riley_render_texf", "cubic_bspline", 4, 4),
+                "Riley B-spline (Tex-OS=4, Px-SS=4)",
+                "tab:purple",
+                "-",
+                "v",
+            ),
+            (
                 find_rec(subset, "riley_render_texf", "cubic_bspline", 32, 1),
                 "Riley B-spline (Tex-OS=1, Px-SS=32)",
                 "tab:cyan",
@@ -211,6 +218,13 @@ def generate_figure1(dic_records) -> None:
                 COLOR_CUBICCM,
                 "--",
                 "x",
+            ),
+            (
+                find_rec(subset, "riley_render_texf", "cubiccm", 4, 4),
+                "Riley Catmull-Rom (Tex-OS=4, Px-SS=4)",
+                "tab:brown",
+                "--",
+                "*",
             ),
             (
                 find_rec(
@@ -477,12 +491,12 @@ def generate_figure1(dic_records) -> None:
             handles,
             font_size=LEGEND_FONT_SIZE_PT,
             columns=2,
-            y_offset=-0.11,
+            y_offset=-0.13,
         )
 
     save_path = (
         Path(PAPER_OUTPUT_DIR)
-        / "exp3_riley_gauss_fig1_conventional_bias_rmse"
+        / "exp3_riley_gauss_fig1_rigid_translation_bias_rmse_refinement"
     )
     save_figure(fig, save_path, PAPER_FORMATS, PAPER_DPI)
     fig.clear()
@@ -523,9 +537,9 @@ def generate_figure2(dic_records) -> None:
                 )
                 if rec:
                     rmses = get_rmse_vs_ref(rec, anal_ref, is_dic=True)
-                    if rmses:
+                    if rmses and len(rmses) > 3:
                         x_vals.append(ss)
-                        y_vals.append(np.nanmean(rmses))
+                        y_vals.append(rmses[3])
             axes_flat[0].plot(
                 x_vals,
                 y_vals,
@@ -548,9 +562,9 @@ def generate_figure2(dic_records) -> None:
                 )
                 if rec:
                     rmses = get_rmse_vs_ref(rec, anal_ref, is_dic=True)
-                    if rmses:
+                    if rmses and len(rmses) > 3:
                         x_vals.append(osamp)
-                        y_vals.append(np.nanmean(rmses))
+                        y_vals.append(rmses[3])
             axes_flat[1].plot(
                 x_vals,
                 y_vals,
@@ -577,9 +591,9 @@ def generate_figure2(dic_records) -> None:
                 )
                 if rec:
                     rmses = get_rmse_vs_ref(rec, anal_ref, is_dic=True)
-                    if rmses:
+                    if rmses and len(rmses) > 3:
                         x_vals.append(lvl)
-                        y_vals.append(np.nanmean(rmses))
+                        y_vals.append(rmses[3])
             axes_flat[2].plot(
                 x_vals,
                 y_vals,
@@ -590,6 +604,23 @@ def generate_figure2(dic_records) -> None:
                 markersize=EXP3_MARKER_SIZE_PT,
                 label=f"{name} (Tex-OS=Px-SS)",
             )
+            # Inset on panel c
+            x_in = [x for x in x_vals if x >= 4]
+            y_in = [y_vals[i] for i, x in enumerate(x_vals) if x >= 4]
+            if x_in:
+                if not hasattr(axes_flat[2], "inset_ax"):
+                    axes_flat[2].inset_ax = axes_flat[2].inset_axes(
+                        [0.45, 0.45, 0.5, 0.5]
+                    )
+                axes_flat[2].inset_ax.plot(
+                    x_in,
+                    y_in,
+                    color=col,
+                    marker=marker,
+                    linestyle=lstyle,
+                    linewidth=EXP3_LINE_WIDTH_PT * 0.8,
+                    markersize=EXP3_MARKER_SIZE_PT * 0.8,
+                )
 
         set_sample_axis(
             axes_flat[0],
@@ -614,7 +645,26 @@ def generate_figure2(dic_records) -> None:
             ax.grid(True, which="both", linestyle=":", alpha=0.6)
             ax.set_ylim(bottom=0.0)
 
-        axes_flat[0].set_ylabel("Mean RMSE [px]", fontsize=FONT_SIZE_PT)
+        # Format inset axis if present on panel c
+        if hasattr(axes_flat[2], "inset_ax"):
+            inset_levels = [4, 8, 16, 32, 64, 128]
+            set_sample_axis(
+                axes_flat[2].inset_ax,
+                inset_levels,
+                "",
+                FONT_SIZE_PT - 1,
+            )
+            axes_flat[2].inset_ax.grid(
+                True, which="both", linestyle=":", alpha=0.4
+            )
+            axes_flat[2].inset_ax.tick_params(
+                labelsize=TICK_FONT_SIZE_PT - 1
+            )
+            axes_flat[2].inset_ax.set_ylim(bottom=0.0)
+
+        axes_flat[0].set_ylabel(
+            "RMSE [px] at 0.3 px translation", fontsize=FONT_SIZE_PT
+        )
         axes_flat[0].set_title(
             "(a) Fixed Tex-OS=1, Refine Px-SS", fontsize=FONT_SIZE_PT
         )
@@ -647,58 +697,56 @@ def generate_figure2(dic_records) -> None:
 
     save_path = (
         Path(PAPER_OUTPUT_DIR)
-        / "exp3_riley_gauss_fig2_texture_pixel_refinement"
+        / "exp3_riley_gauss_fig2_rigid_refinement_independence_os_vs_ss"
     )
     save_figure(fig, save_path, PAPER_FORMATS, PAPER_DPI)
     fig.clear()
 
 
 def generate_figure3(dic_records, grid_records) -> None:
-    """Figure 3: Numerical-reference self-convergence (Affine Case)."""
+    """Figure 3: Numerical-reference self-convergence (Rigid & Affine)."""
     fig, axes = make_figure(
-        FIGURE3_CM, rows=1, columns=2, tick_font_size=TICK_FONT_SIZE_PT
+        FIGURE3_CM, rows=2, columns=2, tick_font_size=TICK_FONT_SIZE_PT
     )
     axes_flat = axes.flatten()
     diag_levels = [1, 2, 4, 8, 16, 32, 64, 128]
-
-    # 1. Left Subplot: DIC Self-Convergence
-    dic_subset = [
-        r for r in dic_records
-        if r.case == EXP3_AFFINE_CASE
-        and r.pattern == "gausscont"
-        and r.bit_depth == EXP3_BIT_DEPTH
-    ]
-    dic_ref = find_rec(
-        dic_subset, "riley_render_texf", "cubic_bspline", 128, 16
-    )
-
     samplers = [
         ("cubic_bspline", "B-spline", COLOR_BSPLINE, "-", "o"),
         ("cubiccm", "Catmull-Rom", COLOR_CUBICCM, "--", "x"),
     ]
 
-    if dic_ref is None:
+    # --- TOP ROW: RIGID TRANSLATION ---
+    # 1. Top-Left: DIC Rigid
+    dic_subset_rig = [
+        r for r in dic_records
+        if r.case == EXP3_RIGID_CASE
+        and r.pattern == "gausscont"
+        and r.bit_depth == EXP3_BIT_DEPTH
+    ]
+    dic_ref_rig = find_rec(
+        dic_subset_rig, "riley_render_texf", "cubic_bspline", 128, 16
+    )
+    if dic_ref_rig is None:
         annotate_no_data(
-            axes_flat[0], "No DIC Reference", font_size=FONT_SIZE_PT
+            axes_flat[0], "No DIC Rigid Reference", font_size=FONT_SIZE_PT
         )
     else:
-        diag_levels = [1, 2, 4, 8, 16, 32, 64, 128]
         for interp, name, col, lstyle, marker in samplers:
             x_vals = []
             y_vals = []
             for lvl in diag_levels:
                 rec = find_rec(
-                    dic_subset,
+                    dic_subset_rig,
                     "riley_render_texf",
                     interp,
                     ssaa=lvl,
                     osamp=lvl,
                 )
                 if rec:
-                    rmses = get_rmse_vs_ref(rec, dic_ref, is_dic=True)
-                    if rmses:
+                    rmses = get_rmse_vs_ref(rec, dic_ref_rig, is_dic=True)
+                    if rmses and len(rmses) > 3:
                         x_vals.append(lvl)
-                        y_vals.append(np.nanmean(rmses))
+                        y_vals.append(rmses[3])
             axes_flat[0].plot(
                 x_vals,
                 y_vals,
@@ -710,39 +758,37 @@ def generate_figure3(dic_records, grid_records) -> None:
                 label=f"Riley {name}",
             )
 
-    # 2. Right Subplot: Grid Method Self-Convergence
-    grid_subset = [
+    # 2. Top-Right: Grid Rigid
+    grid_subset_rig = [
         r for r in grid_records
-        if r.case == EXP3_AFFINE_CASE
+        if r.case == EXP3_RIGID_CASE
         and r.pattern == "eggbox"
         and r.bit_depth == EXP3_BIT_DEPTH
     ]
-    grid_ref = find_rec(
-        grid_subset, "riley_render_texf", "cubic_bspline", 128, 16
+    grid_ref_rig = find_rec(
+        grid_subset_rig, "riley_render_texf", "cubic_bspline", 128, 16
     )
-
-    if grid_ref is None:
+    if grid_ref_rig is None:
         annotate_no_data(
-            axes_flat[1], "No Grid Reference", font_size=FONT_SIZE_PT
+            axes_flat[1], "No Grid Rigid Reference", font_size=FONT_SIZE_PT
         )
     else:
-        diag_levels = [1, 2, 4, 8, 16, 32, 64, 128]
         for interp, name, col, lstyle, marker in samplers:
             x_vals = []
             y_vals = []
             for lvl in diag_levels:
                 rec = find_rec(
-                    grid_subset,
+                    grid_subset_rig,
                     "riley_render_texf",
                     interp,
                     ssaa=lvl,
                     osamp=lvl,
                 )
                 if rec:
-                    rmses = get_rmse_vs_ref(rec, grid_ref, is_dic=False)
-                    if rmses:
+                    rmses = get_rmse_vs_ref(rec, grid_ref_rig, is_dic=False)
+                    if rmses and len(rmses) > 3:
                         x_vals.append(lvl)
-                        y_vals.append(np.nanmean(rmses))
+                        y_vals.append(rmses[3])
             axes_flat[1].plot(
                 x_vals,
                 y_vals,
@@ -754,6 +800,92 @@ def generate_figure3(dic_records, grid_records) -> None:
                 label=f"Grid Method ({name})",
             )
 
+    # --- BOTTOM ROW: AFFINE DEFORMATION ---
+    # 3. Bottom-Left: DIC Affine
+    dic_subset_aff = [
+        r for r in dic_records
+        if r.case == EXP3_AFFINE_CASE
+        and r.pattern == "gausscont"
+        and r.bit_depth == EXP3_BIT_DEPTH
+    ]
+    dic_ref_aff = find_rec(
+        dic_subset_aff, "riley_render_texf", "cubic_bspline", 128, 16
+    )
+    if dic_ref_aff is None:
+        annotate_no_data(
+            axes_flat[2], "No DIC Affine Reference", font_size=FONT_SIZE_PT
+        )
+    else:
+        for interp, name, col, lstyle, marker in samplers:
+            x_vals = []
+            y_vals = []
+            for lvl in diag_levels:
+                rec = find_rec(
+                    dic_subset_aff,
+                    "riley_render_texf",
+                    interp,
+                    ssaa=lvl,
+                    osamp=lvl,
+                )
+                if rec:
+                    rmses = get_rmse_vs_ref(rec, dic_ref_aff, is_dic=True)
+                    if rmses and len(rmses) > 3:
+                        x_vals.append(lvl)
+                        y_vals.append(rmses[3])
+            axes_flat[2].plot(
+                x_vals,
+                y_vals,
+                color=col,
+                marker=marker,
+                linestyle=lstyle,
+                linewidth=EXP3_LINE_WIDTH_PT,
+                markersize=EXP3_MARKER_SIZE_PT,
+                label=f"Riley {name}",
+            )
+
+    # 4. Bottom-Right: Grid Affine
+    grid_subset_aff = [
+        r for r in grid_records
+        if r.case == EXP3_AFFINE_CASE
+        and r.pattern == "eggbox"
+        and r.bit_depth == EXP3_BIT_DEPTH
+    ]
+    grid_ref_aff = find_rec(
+        grid_subset_aff, "riley_render_texf", "cubic_bspline", 128, 16
+    )
+    if grid_ref_aff is None:
+        annotate_no_data(
+            axes_flat[3], "No Grid Affine Reference", font_size=FONT_SIZE_PT
+        )
+    else:
+        for interp, name, col, lstyle, marker in samplers:
+            x_vals = []
+            y_vals = []
+            for lvl in diag_levels:
+                rec = find_rec(
+                    grid_subset_aff,
+                    "riley_render_texf",
+                    interp,
+                    ssaa=lvl,
+                    osamp=lvl,
+                )
+                if rec:
+                    rmses = get_rmse_vs_ref(rec, grid_ref_aff, is_dic=False)
+                    if rmses and len(rmses) > 3:
+                        x_vals.append(lvl)
+                        y_vals.append(rmses[3])
+            axes_flat[3].plot(
+                x_vals,
+                y_vals,
+                color=col,
+                marker=marker,
+                linestyle=lstyle,
+                linewidth=EXP3_LINE_WIDTH_PT,
+                markersize=EXP3_MARKER_SIZE_PT,
+                label=f"Grid Method ({name})",
+            )
+
+    # Format all axes
     for ax in axes_flat:
         set_sample_axis(
             ax,
@@ -763,11 +895,17 @@ def generate_figure3(dic_records, grid_records) -> None:
         )
         ax.grid(True, which="both", linestyle=":", alpha=0.6)
         ax.set_ylim(bottom=0.0)
-        ax.set_ylabel("Mean self-conv. RMSE [px]", fontsize=FONT_SIZE_PT)
+        ax.set_ylabel(
+            "Self-conv. RMSE [px] at 0.3 px def.", fontsize=FONT_SIZE_PT
+        )
 
-    axes_flat[0].set_title("(a) DIC self-convergence", fontsize=FONT_SIZE_PT)
+    axes_flat[0].set_title("(a) DIC self-conv. (Rigid)", fontsize=FONT_SIZE_PT)
     axes_flat[1].set_title(
-        "(b) Grid Method self-convergence", fontsize=FONT_SIZE_PT
+        "(b) Grid Method self-conv. (Rigid)", fontsize=FONT_SIZE_PT
+    )
+    axes_flat[2].set_title("(c) DIC self-conv. (Affine)", fontsize=FONT_SIZE_PT)
+    axes_flat[3].set_title(
+        "(d) Grid Method self-conv. (Affine)", fontsize=FONT_SIZE_PT
     )
 
     handles = [
@@ -795,12 +933,12 @@ def generate_figure3(dic_records, grid_records) -> None:
         handles,
         font_size=LEGEND_FONT_SIZE_PT,
         columns=2,
-        y_offset=-0.18,
+        y_offset=-0.13,
     )
 
     save_path = (
         Path(PAPER_OUTPUT_DIR)
-        / "exp3_riley_gauss_fig3_affine_self_convergence"
+        / "exp3_riley_gauss_fig3_affine_self_convergence_dic_vs_grid"
     )
     save_figure(fig, save_path, PAPER_FORMATS, PAPER_DPI)
     fig.clear()
@@ -916,9 +1054,9 @@ def generate_figure4(dic_records) -> None:
                 ),
                 (
                     find_rec(
-                        subset, "riley_render_texf", "cubic_bspline", 32, 4
+                        subset, "riley_render_texf", "cubic_bspline", 32, 32
                     ),
-                    "B-spline (4, 32)",
+                    "B-spline (32, 32)",
                     "tab:purple",
                     "-",
                 ),
@@ -943,9 +1081,9 @@ def generate_figure4(dic_records) -> None:
                 ),
                 (
                     find_rec(
-                        subset, "riley_render_texf", "cubiccm", 32, 4
+                        subset, "riley_render_texf", "cubiccm", 32, 32
                     ),
-                    "Catmull-Rom (4, 32)",
+                    "Catmull-Rom (32, 32)",
                     "tab:brown",
                     "--",
                 ),
@@ -1007,7 +1145,8 @@ def generate_figure4(dic_records) -> None:
                 loc="center left",
                 bbox_to_anchor=(1.02, 0.5),
             )
-            leg.set_in_layout(False)
+            # Retain in layout to adjust Panel (d) width matching (a)-(c)
+            leg.set_in_layout(True)
 
             for ax in axes_flat:
                 ax.tick_params(labelsize=TICK_FONT_SIZE_PT)
@@ -1021,7 +1160,215 @@ def generate_figure4(dic_records) -> None:
 
     save_path = (
         Path(PAPER_OUTPUT_DIR)
-        / "exp3_riley_gauss_fig4_finite_star_spatial_frequency"
+        / "exp3_riley_gauss_fig4_chirp_spatial_frequency_error_star"
+    )
+    save_figure(fig, save_path, PAPER_FORMATS, PAPER_DPI)
+    fig.clear()
+
+
+def generate_figure5(grid_records) -> None:
+    """Figure 5: Finite-star frequency-based diagnostic (Grid Method)."""
+    fig, axes = make_figure(
+        FIGURE4_CM, rows=4, columns=1, tick_font_size=TICK_FONT_SIZE_PT
+    )
+    axes_flat = axes.flatten()
+
+    subset = [
+        r for r in grid_records
+        if r.case == EXP3_CHIRP_CASE
+        and r.pattern == "eggbox"
+        and r.bit_depth == EXP3_BIT_DEPTH
+    ]
+
+    ref = find_rec(subset, "riley_render_texf", "cubic_bspline", 128, 16)
+    rec_under = find_rec(
+        subset, "riley_render_texf", "cubic_bspline", 1, 1
+    )
+
+    if ref is None or rec_under is None:
+        for ax in axes_flat:
+            annotate_no_data(
+                ax, "Missing Chirp Records", font_size=FONT_SIZE_PT
+            )
+    else:
+        ref_data = load_grid(ref, 1)
+        rec_data = load_grid(rec_under, 1)
+
+        if ref_data is None or rec_data is None:
+            for ax in axes_flat:
+                annotate_no_data(
+                    ax, "Error Loading Frame 01", font_size=FONT_SIZE_PT
+                )
+        else:
+            ru, rv = ref_data
+            cu, cv = rec_data
+            du, dv = cu - ru, cv - rv
+            H, W = ru.shape
+
+            # Panel a: Converged Reference field u_y
+            im0 = axes_flat[0].imshow(
+                rv,
+                extent=(0, W, H, 0),
+                cmap="coolwarm",
+                aspect="auto",
+            )
+            fig.colorbar(im0, ax=axes_flat[0], label="px")
+            axes_flat[0].set_title(
+                "(a) Reference displacement $u_y$", fontsize=FONT_SIZE_PT
+            )
+
+            # Panel b: Under-resolved field u_y (Tex-OS=1, Px-SS=1)
+            im1 = axes_flat[1].imshow(
+                cv,
+                extent=(0, W, H, 0),
+                cmap="coolwarm",
+                aspect="auto",
+            )
+            fig.colorbar(im1, ax=axes_flat[1], label="px")
+            axes_flat[1].set_title(
+                "(b) Riley B-spline (Tex-OS=1, Px-SS=1) displacement $u_y$",
+                fontsize=FONT_SIZE_PT,
+            )
+
+            # Panel c: Spatial renderer-error map u_y difference
+            mask_edges = np.ones(ru.shape, dtype=bool)
+            mask_edges[
+                EDGE_EXCLUSION_GRID:-EDGE_EXCLUSION_GRID,
+                EDGE_EXCLUSION_GRID:-EDGE_EXCLUSION_GRID
+            ] = False
+            dv_masked = np.where(mask_edges, np.nan, dv)
+            limit = float(np.nanpercentile(np.abs(dv_masked), 95))
+            limit = max(limit, 1e-5)
+            im2 = axes_flat[2].imshow(
+                dv,
+                extent=(0, W, H, 0),
+                cmap="coolwarm",
+                aspect="auto",
+                vmin=-limit,
+                vmax=limit,
+            )
+            fig.colorbar(im2, ax=axes_flat[2], label="px")
+            axes_flat[2].set_title(
+                "(c) Riley B-spline (Tex-OS=1, Px-SS=1) $u_y$ difference map",
+                fontsize=FONT_SIZE_PT,
+            )
+
+            # Panel d: 1D Column-wise RMSE of u_y vs Horizontal coordinate x
+            bspline_profile = [
+                (
+                    find_rec(
+                        subset, "riley_render_texf", "cubic_bspline", 1, 1
+                    ),
+                    "B-spline (1, 1)",
+                    COLOR_BSPLINE,
+                    "-",
+                ),
+                (
+                    find_rec(
+                        subset, "riley_render_texf", "cubic_bspline", 4, 4
+                    ),
+                    "B-spline (4, 4)",
+                    "tab:green",
+                    "-",
+                ),
+                (
+                    find_rec(
+                        subset, "riley_render_texf", "cubic_bspline", 32, 32
+                    ),
+                    "B-spline (32, 32)",
+                    "tab:purple",
+                    "-",
+                ),
+            ]
+
+            cubiccm_profile = [
+                (
+                    find_rec(
+                        subset, "riley_render_texf", "cubiccm", 1, 1
+                    ),
+                    "Catmull-Rom (1, 1)",
+                    COLOR_CUBICCM,
+                    "--",
+                ),
+                (
+                    find_rec(
+                        subset, "riley_render_texf", "cubiccm", 4, 4
+                    ),
+                    "Catmull-Rom (4, 4)",
+                    "tab:red",
+                    "--",
+                ),
+                (
+                    find_rec(
+                        subset, "riley_render_texf", "cubiccm", 32, 32
+                    ),
+                    "Catmull-Rom (32, 32)",
+                    "tab:brown",
+                    "--",
+                ),
+            ]
+
+            cases_profile = bspline_profile + cubiccm_profile
+
+            for case_rec, label, col, lstyle in cases_profile:
+                if case_rec is None:
+                    continue
+                c_data = load_grid(case_rec, 1)
+                if c_data is None:
+                    continue
+                _, c_v = c_data
+                d_v = c_v - rv
+                d_v_masked = np.where(mask_edges, np.nan, d_v)
+
+                col_rmses = []
+                for col_idx in range(W):
+                    err2 = d_v_masked[:, col_idx] ** 2
+                    if np.any(np.isfinite(err2)):
+                        col_rmses.append(float(np.sqrt(np.nanmean(err2))))
+                    else:
+                        col_rmses.append(np.nan)
+
+                axes_flat[3].plot(
+                    np.arange(W),
+                    col_rmses,
+                    color=col,
+                    linestyle=lstyle,
+                    linewidth=EXP3_LINE_WIDTH_PT,
+                    label=label,
+                )
+
+            axes_flat[3].set_xlabel(
+                "Horizontal coordinate [px]", fontsize=FONT_SIZE_PT
+            )
+            axes_flat[3].set_ylabel(
+                "Column RMSE [px]", fontsize=FONT_SIZE_PT
+            )
+            axes_flat[3].set_title(
+                "(d) $u_y$ RMSE along frequency gradient", fontsize=FONT_SIZE_PT
+            )
+            axes_flat[3].set_ylim(bottom=0.0)
+            axes_flat[3].grid(True, linestyle=":", alpha=0.6)
+            leg = axes_flat[3].legend(
+                fontsize=LEGEND_FONT_SIZE_PT,
+                loc="center left",
+                bbox_to_anchor=(1.02, 0.5),
+            )
+            # Retain in layout to adjust Panel (d) width matching (a)-(c)
+            leg.set_in_layout(True)
+
+            for ax in axes_flat:
+                ax.tick_params(labelsize=TICK_FONT_SIZE_PT)
+                if ax != axes_flat[3]:
+                    ax.set_xlabel(
+                        "Horizontal coordinate [px]", fontsize=FONT_SIZE_PT
+                    )
+                    ax.set_ylabel(
+                        "Vertical coordinate [px]", fontsize=FONT_SIZE_PT
+                    )
+
+    save_path = (
+        Path(PAPER_OUTPUT_DIR)
+        / "exp3_riley_gauss_fig5_chirp_spatial_frequency_error_star_gridmethod"
     )
     save_figure(fig, save_path, PAPER_FORMATS, PAPER_DPI)
     fig.clear()
@@ -1044,11 +1391,15 @@ def main() -> None:
     print("Generating Figure 4 (Finite Star/Chirp Case)...")
     generate_figure4(dic_records)
 
+    print("Generating Figure 5 (Finite Star/Chirp Case - Grid Method)...")
+    generate_figure5(grid_records)
+
     stems = [
-        "exp3_riley_gauss_fig1_conventional_bias_rmse",
-        "exp3_riley_gauss_fig2_texture_pixel_refinement",
-        "exp3_riley_gauss_fig3_affine_self_convergence",
-        "exp3_riley_gauss_fig4_finite_star_spatial_frequency",
+        "exp3_riley_gauss_fig1_rigid_translation_bias_rmse_refinement",
+        "exp3_riley_gauss_fig2_rigid_refinement_independence_os_vs_ss",
+        "exp3_riley_gauss_fig3_affine_self_convergence_dic_vs_grid",
+        "exp3_riley_gauss_fig4_chirp_spatial_frequency_error_star",
+        "exp3_riley_gauss_fig5_chirp_spatial_frequency_error_star_gridmethod",
     ]
     print("Writing LaTeX previews...")
     write_latex_preview(stems, FIGURE_CAPTIONS, FIGURE_LABELS)

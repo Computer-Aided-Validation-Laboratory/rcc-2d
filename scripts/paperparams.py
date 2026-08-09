@@ -214,36 +214,44 @@ EXP3_CHIRP_CASE = "pt260x65_cam256_q9_chirp"
 EXP3_BIT_DEPTH = 12
 
 FIGURE_CAPTIONS.update({
-    "exp3_riley_gauss_fig1_conventional_bias_rmse": (
+    "exp3_riley_gauss_fig1_rigid_translation_bias_rmse_refinement": (
         "Rigid-body translation convergence: (a) mean displacement bias "
         "and (b) displacement field RMSE relative to analytic reference."
     ),
-    "exp3_riley_gauss_fig2_texture_pixel_refinement": (
-        "Displacement RMSE convergence: (a) fixed oversampling Tex-OS=1 "
-        "sweeping Px-SS, (b) fixed pixel integration Px-SS=1 sweeping "
-        "Tex-OS, and (c) simultaneous Tex-OS=Px-SS refinement."
+    "exp3_riley_gauss_fig2_rigid_refinement_independence_os_vs_ss": (
+        "Displacement RMSE convergence with panel (c) inset showing "
+        "SSAA/OS >= 4 zoom: (a) fixed oversampling Tex-OS=1 sweeping Px-SS, "
+        "(b) fixed pixel integration Px-SS=1 sweeping Tex-OS, and "
+        "(c) simultaneous Tex-OS=Px-SS refinement."
     ),
-    "exp3_riley_gauss_fig3_affine_self_convergence": (
-        "Self-convergence RMSE of DIC and Grid Method displacement "
-        "fields under affine deformation."
+    "exp3_riley_gauss_fig3_affine_self_convergence_dic_vs_grid": (
+        "Self-convergence displacement RMSE for DIC and Grid Method "
+        "under rigid translation (top row) and affine deformation (bottom)."
     ),
-    "exp3_riley_gauss_fig4_finite_star_spatial_frequency": (
+    "exp3_riley_gauss_fig4_chirp_spatial_frequency_error_star": (
         "Finite-star displacement error: spatial distribution and "
         "column-wise RMSE versus horizontal coordinate."
+    ),
+    "exp3_riley_gauss_fig5_chirp_spatial_frequency_error_star_gridmethod": (
+        "Finite-star displacement error (Grid Method): spatial distribution "
+        "and column-wise RMSE versus horizontal coordinate."
     ),
 })
 
 FIGURE_LABELS.update({
-    "exp3_riley_gauss_fig1_conventional_bias_rmse": (
-        "fig:exp3-conventional-bias-rmse"
+    "exp3_riley_gauss_fig1_rigid_translation_bias_rmse_refinement": (
+        "fig:exp3-rigid-translation-bias-rmse-refinement"
     ),
-    "exp3_riley_gauss_fig2_texture_pixel_refinement": (
-        "fig:exp3-texture-pixel-refinement"
+    "exp3_riley_gauss_fig2_rigid_refinement_independence_os_vs_ss": (
+        "fig:exp3-rigid-refinement-independence-os-vs-ss"
     ),
-    "exp3_riley_gauss_fig3_affine_self_convergence": (
-        "fig:exp3-affine-self-convergence"
+    "exp3_riley_gauss_fig3_affine_self_convergence_dic_vs_grid": (
+        "fig:exp3-affine-self-convergence-dic-vs-grid"
     ),
-    "exp3_riley_gauss_fig4_finite_star_spatial_frequency": (
-        "fig:exp3-finite-star-spatial-frequency"
+    "exp3_riley_gauss_fig4_chirp_spatial_frequency_error_star": (
+        "fig:exp3-chirp-spatial-frequency-error-star"
+    ),
+    "exp3_riley_gauss_fig5_chirp_spatial_frequency_error_star_gridmethod": (
+        "fig:exp3-chirp-spatial-frequency-error-star-gridmethod"
     ),
 })

@@ -80,13 +80,38 @@ def set_sample_axis(axis, samples: Iterable[int], label: str, label_font_size: f
     axis.set_xlabel(label, fontsize=label_font_size)
 
 
-def set_nonnegative_error_axis(axis, values: Iterable[float], *, bit_depth: int, ylabel: str, label_font_size: float) -> None:
+def set_nonnegative_error_axis(
+    axis, values: Iterable[float], *, bit_depth: int, ylabel: str,
+    label_font_size: float,
+) -> None:
     """Use zero-inclusive symlog axes for RMSE and maximum absolute error."""
-    valid = [float(value) for value in values if np.isfinite(value) and value >= 0.0]
+    valid = [
+        float(value) for value in values
+        if np.isfinite(value) and value >= 0.0
+    ]
     ceiling = 1.15 * max(valid + [1.0])
     axis.set_yscale("symlog", linthresh=0.25, linscale=0.8)
     axis.set_ylim(0.0, ceiling)
-    axis.axhline(1.0, color="0.25", linestyle="--", linewidth=0.8, alpha=0.8, label="1 LSB")
+    axis.axhline(
+        1.0, color="0.25", linestyle="--", linewidth=0.8, alpha=0.8,
+        label="1 LSB",
+    )
+    axis.axhline(
+        0.5, color="0.25", linestyle=":", linewidth=0.8, alpha=0.6,
+        label="0.5 LSB",
+    )
+
+    from matplotlib.ticker import FuncFormatter
+
+    def bit_formatter(x, pos):
+        if x == 0:
+            return "0"
+        rounded = round(x, 6)
+        if rounded == 0:
+            return f"{x:g}"
+        return f"{rounded:g}"
+
+    axis.yaxis.set_major_formatter(FuncFormatter(bit_formatter))
     axis.set_ylabel(ylabel, fontsize=label_font_size)
 
 
@@ -112,6 +137,24 @@ def set_signed_error_axis(
         label="1 LSB",
     )
     axis.axhline(-1.0, color="0.25", linestyle="--", linewidth=0.8, alpha=0.4)
+    axis.axhline(
+        0.5, color="0.25", linestyle=":", linewidth=0.8, alpha=0.6,
+    )
+    axis.axhline(
+        -0.5, color="0.25", linestyle=":", linewidth=0.8, alpha=0.6,
+    )
+
+    from matplotlib.ticker import FuncFormatter
+
+    def bit_formatter(x, pos):
+        if x == 0:
+            return "0"
+        rounded = round(x, 6)
+        if rounded == 0:
+            return f"{x:g}"
+        return f"{rounded:g}"
+
+    axis.yaxis.set_major_formatter(FuncFormatter(bit_formatter))
     axis.set_ylabel(ylabel, fontsize=label_font_size)
 
 
