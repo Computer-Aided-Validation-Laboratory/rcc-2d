@@ -34,6 +34,7 @@ from modules.exp3_analysis_common import (
     interpolator_of,
     parameter,
     pattern_of,
+    pattern_directory,
     release,
 )
 from modules.output_naming import is_rigid_case
@@ -782,7 +783,9 @@ def main() -> None:
     print("Preparing plotting tasks...")
     for key, records_group in sorted(groups.items()):
         case, pattern, bit_depth, psf = key
-        out_dir = out_dir_base / f"b{bit_depth:02d}"
+        out_dir = out_dir_base / pattern_directory(
+            pattern, bit_depth, psf=psf
+        )
         ref_label = reference_labels_db.get(key, "Analytic Ref")
 
         analytic_rec = find_record(

@@ -58,6 +58,47 @@ def interpolator_of(config: str) -> str:
     return "bespoke"
 
 
+def short_interpolator(name: str) -> str:
+    """Concise, stable interpolator token for analysis paths."""
+    return {
+        "cubic_catmull_rom": "cubiccm",
+        "cubic_bspline": "cubicbs",
+        "linear": "line",
+        "nearest": "near",
+    }.get(name, name)
+
+
+def short_analysis_root(root: str) -> str:
+    """Remove experiment/render noise from a renderer-family path token."""
+    value = root.removeprefix("exp3_").replace("_render_", "_")
+    return value.replace("texfloat", "texf").replace("texuint", "texu").replace(
+        "cubic_bspline", "cubicbs"
+    )
+
+
+def pattern_directory(pattern: str, bit_depth: int, *, psf: bool = False) -> str:
+    """Group analysis products by camera precision and texture family."""
+    short = {
+        "diskaddsat": "diskadd",
+        "gausscont": "gaussadd",
+        "eggbox": "eggb",
+    }.get(pattern, pattern)
+    return f"b{int(bit_depth):02d}_{short}{'_psf' if psf else ''}"
+
+
+def case_descriptor(case: str) -> str:
+    """Short deformation token for filenames within an already-grouped tree."""
+    if "chirp" in case:
+        return "chirp"
+    if case.endswith(("_aff", "_affine")):
+        return "aff"
+    if case.endswith(("_rig", "_rigid")):
+        return "rig"
+    if "qsadd" in case or "quadsaddle" in case:
+        return "qsadd"
+    return case
+
+
 def title_lines(text: str, width: int = 54) -> str:
     """Break long configuration names at underscores for figure titles."""
     if len(text) <= width:

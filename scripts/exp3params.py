@@ -150,7 +150,7 @@ def additive_jitter_for(pattern: str) -> tuple[str, float]:
 
 
 # Force overwrite switches for Exp3 analysis scripts
-FORCE_CONV_OVERWRITE = True
+FORCE_CONV_OVERWRITE = False
 FORCE_DIC_OVERWRITE = True
 FORCE_GRIDMETHOD_OVERWRITE = True
 FORCE_INTERP_BIAS_OVERWRITE = True

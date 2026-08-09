@@ -27,7 +27,7 @@ from modules.analysis_selection import (
     analysis_should_run,
     mark_analysis_complete,
 )
-from modules.exp3_analysis_common import release
+from modules.exp3_analysis_common import pattern_directory, release
 from modules.exp3_dic_data import parse_config
 from modules.output_naming import is_rigid_case
 from exp0params_common import DIAGNOSTIC_FIGURE_DPI
@@ -802,7 +802,9 @@ def main() -> None:
     print("Preparing plotting tasks...")
     for key, records_group in sorted(groups.items()):
         case, pattern, bit_depth, psf = key
-        out_dir = out_dir_base / f"b{bit_depth:02d}"
+        out_dir = out_dir_base / pattern_directory(
+            pattern, bit_depth, psf=psf
+        )
         ref_label = reference_labels_db.get(key, "Analytic Ref")
 
         analytic_rec = find_record(

@@ -20,7 +20,11 @@ from matplotlib.figure import Figure
 
 from exp0params_common import CORES, DIAGNOSTIC_FIGURE_DPI
 from exp3params import FORCE_DIC_OVERWRITE
-from modules.exp3_analysis_common import OUT, OS_RE, SS_RE, interpolator_of, numeric_y_axis, parameter, pattern_of, release, title_lines
+from modules.exp3_analysis_common import (
+    OUT, OS_RE, SS_RE, case_descriptor, interpolator_of, numeric_y_axis,
+    parameter, pattern_directory, pattern_of, release, short_analysis_root,
+    short_interpolator, title_lines,
+)
 from modules.exp3_dic_data import (
     load_result, result_path, parse_config, reconstruct_config_name,
 )
@@ -127,15 +131,15 @@ def series_label(record: Record) -> str:
     """A homogeneous plotting series: renderer/storage, sampler and PSF mode."""
     psf = "_psf" in record.root or "_psf" in record.config
     if "riley_render_tex" in record.root:
-        storage = "texuint" if "texuint" in record.root else "texfloat"
-        return f"riley_{storage}_{record.interpolator}{'_psf' if psf else ''}"
-    return f"{record.root.replace('_render_ssaa', '')}{'_psf' if psf and '_psf' not in record.root else ''}"
+        storage = "texu" if "texuint" in record.root else "texf"
+        return f"riley_{storage}_{short_interpolator(record.interpolator)}{'_psf' if psf else ''}"
+    return short_analysis_root(record.root)
 
 
 def field_plot(
-    path: Path, rec: Record, frame: int, ref: Record, ref_name: str,
+    path: Path | None, rec: Record, frame: int, ref: Record, ref_name: str,
     arrays: tuple[np.ndarray, ...]
-) -> tuple[float, float]:
+) -> tuple[float, float, list[float] | None, list[float] | None]:
     x, y, ru, rv, cu, cv = arrays
     du, dv = cu - ru, cv - rv
 
@@ -159,45 +163,23 @@ def field_plot(
     rms = float(np.sqrt(np.nanmean(du * du + dv * dv)))
 
     is_chirp = "chirp" in rec.case
+    frequency_x: list[float] | None = None
+    frequency_rmse: list[float] | None = None
     if is_chirp:
-        # Create freq err folder
-        freq_dir = Path("out/exp3_analysis_dic/dic_disp_freq_err")
-        freq_dir.mkdir(parents=True, exist_ok=True)
-
-        # Compute column-wise RMSE
         unique_x = np.unique(x[np.isfinite(x)])
-        col_rmses = []
-        for ux_val in unique_x:
-            col_mask = (x == ux_val)
-            err2 = du[col_mask]**2 + dv[col_mask]**2
-            col_rmses.append(float(np.sqrt(np.nanmean(err2))))
+        frequency_x = [float(value) for value in unique_x]
+        frequency_rmse = [
+            float(np.sqrt(np.nanmean(du[x == value] ** 2 + dv[x == value] ** 2)))
+            for value in unique_x
+        ]
 
-        fig_freq = Figure(figsize=(6, 4.5), constrained_layout=True)
-        FigureCanvasAgg(fig_freq)
-        ax_freq = fig_freq.subplots()
-        ax_freq.plot(unique_x, col_rmses, color="tab:red", label="Local RMSE")
-        ax_freq.set_xlabel("Horizontal coordinate [px]")
-        ax_freq.set_ylabel("Displacement RMSE [px]")
-        ax_freq.set_title(
-            f"Local RMSE along spatial frequency gradient\n"
-            f"{rec.config} | Frame {frame:02d}",
-            fontsize=10, fontweight="bold"
-        )
-        ax_freq.grid(alpha=0.3)
-        ax_freq.legend(fontsize=8)
+    # Keep collecting metrics for every frame, but only construct expensive full
+    # displacement-map figures for requested frames.
+    if path is None:
+        release()
+        return maximum, rms, frequency_x, frequency_rmse
 
-        series = rec.root.replace("_render_ssaa", "")
-        if "riley_render_tex" in rec.root:
-            series = f"riley_texf_{rec.interpolator}"
-
-        freq_path = (
-            freq_dir /
-            f"freq_err_{rec.case}_{rec.pattern}_{series}_"
-            f"b{rec.bit_depth:02d}_frame{frame:02d}.png"
-        )
-        fig_freq.savefig(freq_path, dpi=DIAGNOSTIC_FIGURE_DPI)
-        fig_freq.clear()
-
+    if is_chirp:
         fig = Figure(figsize=(11, 5), constrained_layout=True)
         FigureCanvasAgg(fig)
         axes = fig.subplots(3, 2)
@@ -252,11 +234,31 @@ def field_plot(
         f"max difference={maximum:.4g} px",
         fontsize=10, fontweight="bold"
     )
-    path.parent.mkdir(parents=True, exist_ok=True)
-    fig.savefig(path, dpi=DIAGNOSTIC_FIGURE_DPI)
+    if path is not None:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        fig.savefig(path, dpi=DIAGNOSTIC_FIGURE_DPI)
     fig.clear()
     release()
-    return maximum, rms
+    return maximum, rms, frequency_x, frequency_rmse
+
+
+def has_psf(record: Record) -> bool:
+    return "_psf" in record.root or "_psf" in record.config
+
+
+def difference_map_path(record: Record, base_config: str, suffix: str, frame: int) -> Path | None:
+    """Concise, bit-depth/pattern grouped paths for full displacement maps."""
+    # Rigid/affine map fields are diagnostic only; retain the first five DIC
+    # frames.  Chirp has its own geometry and is retained in full.
+    if "chirp" not in record.case and frame > 5:
+        return None
+    config = re.sub(r"_f$", "", base_config).replace("cubic_bspline", "cubicbs")
+    return (
+        RESULTS
+        / f"dispimdiff_{short_analysis_root(record.root)}"
+        / pattern_directory(record.pattern, record.bit_depth, psf=has_psf(record))
+        / f"{case_descriptor(record.case)}_{config}_{suffix}_frame{frame:02d}.png"
+    )
 
 
 def analyse(payload: tuple[Record, list[Record]]) -> list[dict[str, object]]:
@@ -274,14 +276,8 @@ def analyse(payload: tuple[Record, list[Record]]) -> list[dict[str, object]]:
         _, _, cu, cv = b
         if ru.shape != cu.shape:
             continue
-        image_path = (
-            RESULTS
-            / rec.case
-            / rec.root
-            / base_config
-            / f"difference_{rec_suffix}_b{rec.bit_depth:02d}_frame{frame:02d}.png"
-        )
-        maximum, rms = field_plot(
+        image_path = difference_map_path(rec, base_config, rec_suffix, frame)
+        maximum, rms, frequency_x, frequency_rmse = field_plot(
             image_path, rec, frame, ref, ref_name, (x, y, ru, rv, cu, cv)
         )
         rows.append({
@@ -297,6 +293,8 @@ def analyse(payload: tuple[Record, list[Record]]) -> list[dict[str, object]]:
             "Reference": ref_name,
             "max_difference_px": maximum,
             "rms_difference_px": rms,
+            "FrequencyX": frequency_x,
+            "FrequencyRMSE": frequency_rmse,
         })
         del a, b, x, y, ru, rv, cu, cv
         release()
@@ -391,10 +389,72 @@ def convergence(rows: list[dict[str, object]]) -> None:
             fontsize=11, fontweight="bold"
         )
 
-        dir_path = RESULTS / case / f"{series_name}_disp_err_conv"
+        dir_path = (
+            RESULTS
+            / f"disperrconv_{series_name}"
+            / pattern_directory(pattern, bit_depth, psf="_psf" in series_name)
+        )
         dir_path.mkdir(parents=True, exist_ok=True)
-        path = dir_path / f"{pattern}_convergence_b{int(bit_depth):02d}.png"
+        path = dir_path / f"{case_descriptor(case)}_convergence.png"
         fig.savefig(path, dpi=DIAGNOSTIC_FIGURE_DPI)
+        fig.clear()
+        release()
+
+
+def frequency_convergence(rows: list[dict[str, object]]) -> None:
+    """Compare chirp displacement error over its frequency gradient.
+
+    Each output has one panel per useful refinement path, making the SSAA/OS
+    relationship readable without a separate figure for every configuration.
+    """
+    groups = defaultdict(list)
+    for row in rows:
+        if "chirp" in str(row["Case"]) and row.get("FrequencyX") and row.get("FrequencyRMSE"):
+            groups[(row["Pattern"], row["Series"], row["BitDepth"], row["Frame"])].append(row)
+
+    paths = (
+        ("Diagonal SSAA=OS", lambda r: int(r["SSAA"]) == int(r["OS"])),
+        ("Fixed OS=1", lambda r: int(r["OS"]) == 1),
+        ("Fixed SSAA=1", lambda r: int(r["SSAA"]) == 1),
+    )
+    for (pattern, series, bit_depth, frame), values in groups.items():
+        fig = Figure(figsize=(13, 4.2), constrained_layout=True)
+        FigureCanvasAgg(fig)
+        axes = fig.subplots(1, 3)
+        for axis, (heading, predicate) in zip(axes, paths):
+            selected = sorted(
+                (row for row in values if predicate(row)),
+                key=lambda row: (int(row["SSAA"]), int(row["OS"])),
+            )
+            plotted: list[float] = []
+            for row in selected:
+                x = np.asarray(row["FrequencyX"], dtype=float)
+                y = np.asarray(row["FrequencyRMSE"], dtype=float)
+                if x.size == 0 or y.size == 0:
+                    continue
+                axis.plot(x, y, marker="o", markersize=3, linewidth=1.3,
+                          label=f"SS={int(row['SSAA'])}, OS={int(row['OS'])}")
+                plotted.extend(y[np.isfinite(y)].tolist())
+            if not plotted:
+                axis.text(0.5, 0.5, "No data", ha="center", va="center", transform=axis.transAxes)
+            numeric_y_axis(axis, plotted)
+            axis.set_title(heading, fontsize=9)
+            axis.set_xlabel("Horizontal coordinate [px]")
+            axis.set_ylabel("Displacement RMSE [px]")
+            axis.grid(alpha=0.3)
+            if selected:
+                axis.legend(fontsize=7, ncols=2)
+        fig.suptitle(
+            f"Chirp displacement-frequency error: {pattern}, {series}, {int(bit_depth)}-bit, frame {int(frame):02d}",
+            fontsize=10,
+            fontweight="bold",
+        )
+        out_dir = (
+            RESULTS / f"dispfreqerr_{series}"
+            / pattern_directory(pattern, int(bit_depth), psf="_psf" in str(series))
+        )
+        out_dir.mkdir(parents=True, exist_ok=True)
+        fig.savefig(out_dir / f"chirp_frame{int(frame):02d}.png", dpi=DIAGNOSTIC_FIGURE_DPI)
         fig.clear()
         release()
 
@@ -420,6 +480,7 @@ def main()->None:
         RESULTS.mkdir(parents=True,exist_ok=True)
         with (RESULTS/"summary.csv").open("w",newline="") as f: writer=csv.DictWriter(f,fieldnames=list(rows[0]));writer.writeheader();writer.writerows(rows)
         convergence(rows)
+        frequency_convergence(rows)
     mark_analysis_complete(RESULTS)
     print(f"Wrote {len(rows)} DIC displacement comparisons.")
 
