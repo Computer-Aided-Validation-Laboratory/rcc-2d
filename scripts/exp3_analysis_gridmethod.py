@@ -295,7 +295,8 @@ def analyse(
             "SSAA": rec.ssaa or 1,
             "OS": rec.osamp or 1,
             "Reference": label,
-            "Rmse": rms,
+            "DispErrRMSEToRef(px)": rms,
+            "DispErrMaxToRef(px)": maximum,
             "DigitisedRMSE(bits)": digitised_rmse,
             "DigitisedMaxErr(bits)": digitised_max_err,
             "FrequencyX": frequency_x,
@@ -339,7 +340,9 @@ def convergence(rows: list[dict[str, object]]) -> None:
                 s_list.sort(key=lambda r: int(r["SSAA"]))
 
                 ssaa_vals = [int(r["SSAA"]) for r in s_list]
-                rms_errs = [float(r["Rmse"]) for r in s_list]
+                rms_errs = [
+                    float(r["DispErrRMSEToRef(px)"]) for r in s_list
+                ]
 
                 label = f"OS={osamp}" if len(by_os) > 1 else "SSAA series"
                 ax.plot(ssaa_vals, rms_errs, "o-", label=label)

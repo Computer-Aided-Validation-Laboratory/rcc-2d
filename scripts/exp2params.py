@@ -42,7 +42,7 @@ if RUN_MODE is RunMode.TEST:
         "linear": riley.TextureSample.linear,
         "cubic_catmull_rom": riley.TextureSample.cubic_catmull_rom,
         "cubic_bspline": riley.TextureSample.cubic_bspline,
-        "lanczos3": riley.TextureSample.lanczos3,
+        #"lanczos3": riley.TextureSample.lanczos3,
     }
     # Integration methods and parameters
     INTEGRATION_METHODS: List[Tuple[str, int]] = [
@@ -77,7 +77,7 @@ else:
         "linear": riley.TextureSample.linear,
         "cubic_catmull_rom": riley.TextureSample.cubic_catmull_rom,
         "cubic_bspline": riley.TextureSample.cubic_bspline,
-        "lanczos3": riley.TextureSample.lanczos3,
+        #"lanczos3": riley.TextureSample.lanczos3,
     }
     # Integration methods and parameters
     INTEGRATION_METHODS: List[Tuple[str, int]] = [

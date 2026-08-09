@@ -258,6 +258,12 @@ def analyse_dic_job(
         dv = np.where(mask, np.nan, dv)
 
         rmse = float(np.sqrt(np.nanmean(du * du + dv * dv)))
+        stacked = np.stack((du, dv))
+        disp_max = (
+            float(np.nanmax(np.abs(stacked)))
+            if np.any(np.isfinite(stacked))
+            else np.nan
+        )
 
         rec_render_dir = OUT / rec.root / rec.case / rec.config
         ref_render_dir = OUT / ref.root / ref.case / ref.config
@@ -287,7 +293,8 @@ def analyse_dic_job(
             "SSAA": rec.ssaa or 1,
             "OS": rec.osamp or 1,
             "Reference": ref_name,
-            "Rmse": rmse,
+            "DispErrRMSEToRef(px)": rmse,
+            "DispErrMaxToRef(px)": disp_max,
             "DigitisedRMSE(bits)": digitised_rmse,
             "DigitisedMaxErr(bits)": digitised_max_err,
         })
@@ -323,6 +330,12 @@ def analyse_grid_job(
         dv = np.where(mask, np.nan, dv)
 
         rmse = float(np.sqrt(np.nanmean(du * du + dv * dv)))
+        stacked = np.stack((du, dv))
+        disp_max = (
+            float(np.nanmax(np.abs(stacked)))
+            if np.any(np.isfinite(stacked))
+            else np.nan
+        )
 
         rec_render_dir = OUT / rec.root / rec.case / rec.config
         ref_render_dir = OUT / ref.root / ref.case / ref.config
@@ -352,7 +365,8 @@ def analyse_grid_job(
             "SSAA": rec.ssaa or 1,
             "OS": rec.osamp or 1,
             "Reference": ref_name,
-            "Rmse": rmse,
+            "DispErrRMSEToRef(px)": rmse,
+            "DispErrMaxToRef(px)": disp_max,
             "DigitisedRMSE(bits)": digitised_rmse,
             "DigitisedMaxErr(bits)": digitised_max_err,
         })
@@ -388,7 +402,7 @@ def plot_convergence_grid(
         for osamp, series in sorted(by_os.items(), reverse=True):
             series.sort(key=lambda r: int(r["SSAA"]))
             ssaa_vals = [int(r["SSAA"]) for r in series]
-            rmse_errs = [float(r["Rmse"]) for r in series]
+            rmse_errs = [float(r["DispErrRMSEToRef(px)"]) for r in series]
             label = f"OS={osamp}" if len(by_os) > 1 else "SSAA Series"
             ax.plot(
                 ssaa_vals, rmse_errs, "o-",
@@ -443,12 +457,11 @@ def plot_convergence_grid(
             by_os = defaultdict(list)
             for r in frame_vals:
                 by_os[int(r["OS"])].append(r)
-
             plotted = []
             for osamp, series in sorted(by_os.items(), reverse=True):
                 series.sort(key=lambda r: int(r["SSAA"]))
                 ssaa_vals = [int(r["SSAA"]) for r in series]
-                rmse_errs = [float(r["Rmse"]) for r in series]
+                rmse_errs = [float(r["DispErrRMSEToRef(px)"]) for r in series]
                 label = f"OS={osamp}" if len(by_os) > 1 else "SSAA Series"
                 ax.plot(
                     ssaa_vals, rmse_errs, "o-",
