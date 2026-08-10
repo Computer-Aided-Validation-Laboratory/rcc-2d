@@ -12,6 +12,7 @@ import numpy as np
 from matplotlib.figure import Figure
 from matplotlib.ticker import FixedFormatter, FixedLocator
 from matplotlib.backends.backend_agg import FigureCanvasAgg
+from paperfiglabels import LABEL_025_LSB, LABEL_AXIS_INTEGRATION
 
 
 # Stable texture-OS styles shared by every paper figure.  The render matrix
@@ -92,14 +93,11 @@ def set_nonnegative_error_axis(
     ceiling = 1.15 * max(valid + [1.0])
     axis.set_yscale("symlog", linthresh=0.25, linscale=0.8)
     axis.set_ylim(0.0, ceiling)
-    axis.axhline(
-        1.0, color="0.25", linestyle="--", linewidth=0.8, alpha=0.8,
-        label="1 LSB",
-    )
-    axis.axhline(
-        0.5, color="0.25", linestyle=":", linewidth=0.8, alpha=0.6,
-        label="0.5 LSB",
-    )
+    if "rmse" in ylabel.lower():
+        axis.axhline(
+            0.25, color="0.25", linestyle=":", linewidth=0.8, alpha=0.6,
+            label=LABEL_025_LSB,
+        )
 
     from matplotlib.ticker import FuncFormatter
 
@@ -117,7 +115,9 @@ def set_nonnegative_error_axis(
 
 def finish_axis(axis, *, title: str, samples: Sequence[int], bit_depth: int, values: Iterable[float], ylabel: str, title_font_size: float, axis_label_font_size: float) -> None:
     set_nonnegative_error_axis(axis, values, bit_depth=bit_depth, ylabel=ylabel, label_font_size=axis_label_font_size)
-    set_sample_axis(axis, samples, "Axis integration samples", axis_label_font_size)
+    set_sample_axis(
+        axis, samples, LABEL_AXIS_INTEGRATION, axis_label_font_size
+    )
     axis.set_title(title, fontsize=title_font_size, pad=4)
     axis.grid(True, which="both", linestyle=":", linewidth=0.6, alpha=0.55)
 
@@ -132,17 +132,7 @@ def set_signed_error_axis(
     axis.set_yscale("symlog", linthresh=0.25, linscale=0.8)
     axis.set_ylim(-ceiling, ceiling)
     axis.axhline(0.0, color="0.25", linestyle=":", linewidth=0.8, alpha=0.8)
-    axis.axhline(
-        1.0, color="0.25", linestyle="--", linewidth=0.8, alpha=0.4,
-        label="1 LSB",
-    )
-    axis.axhline(-1.0, color="0.25", linestyle="--", linewidth=0.8, alpha=0.4)
-    axis.axhline(
-        0.5, color="0.25", linestyle=":", linewidth=0.8, alpha=0.6,
-    )
-    axis.axhline(
-        -0.5, color="0.25", linestyle=":", linewidth=0.8, alpha=0.6,
-    )
+
 
     from matplotlib.ticker import FuncFormatter
 
@@ -168,7 +158,7 @@ def finish_signed_axis(
         label_font_size=axis_label_font_size,
     )
     set_sample_axis(
-        axis, samples, "Axis integration samples", axis_label_font_size,
+        axis, samples, LABEL_AXIS_INTEGRATION, axis_label_font_size,
     )
     axis.set_title(title, fontsize=title_font_size, pad=4)
     axis.grid(True, which="both", linestyle=":", linewidth=0.6, alpha=0.55)
@@ -217,13 +207,27 @@ def _mirrored_stems(stem: Path) -> tuple[Path, ...]:
     return (stem,)
 
 
-def save_figure(figure: Figure, stem: Path, formats: Sequence[str], dpi: int) -> list[Path]:
+def save_figure(
+    figure: Figure, stem: Path, formats: Sequence[str], dpi: int
+) -> list[Path]:
     written: list[Path] = []
     for output_stem in _mirrored_stems(stem):
         output_stem.parent.mkdir(parents=True, exist_ok=True)
         for extension in formats:
             path = output_stem.with_suffix(f".{extension.lstrip('.')}")
-            figure.savefig(path, dpi=dpi, bbox_inches="tight")
+            extra_artists = []
+            for ax in figure.axes:
+                if ax.legend_ is not None:
+                    extra_artists.append(ax.legend_)
+            extra_artists.extend(figure.legends)
+            figure.savefig(
+                path,
+                dpi=dpi,
+                bbox_inches="tight",
+                bbox_extra_artists=(
+                    extra_artists if extra_artists else None
+                ),
+            )
             written.append(path)
     figure.clear()
     return written

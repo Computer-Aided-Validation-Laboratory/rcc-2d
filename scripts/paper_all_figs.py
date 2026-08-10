@@ -7,7 +7,14 @@ from paper_exp1_figs import (
     figure_function_shaders, generate_texture_figures,
     remove_superseded_figures,
 )
-from paper_exp2_figs import figure_stems as exp2_figure_stems, generate_figures as generate_exp2
+from paper_exp2_figs import (
+    figure_stems as exp2_figure_stems,
+    generate_figures as generate_exp2,
+)
+from paper_exp3_figs import (
+    figure_stems as exp3_figure_stems,
+    generate_figures as generate_exp3,
+)
 from modules.paperfigs import write_latex_preview
 from paperparams import FIGURE_CAPTIONS, FIGURE_LABELS
 
@@ -23,7 +30,13 @@ def main() -> None:
     written.extend(generate_texture_figures())
     written.extend(figure_affine_function_difference_maps())
     written.extend(generate_exp2())
-    written.extend(write_article((*exp1_figure_stems(), *exp2_figure_stems())))
+    written.extend(generate_exp3())
+    all_stems = (
+        *exp1_figure_stems(),
+        *exp2_figure_stems(),
+        *exp3_figure_stems(),
+    )
+    written.extend(write_article(all_stems))
     print("Wrote paper figures and LaTeX preview:")
     for path in written:
         print(f"  {path}")

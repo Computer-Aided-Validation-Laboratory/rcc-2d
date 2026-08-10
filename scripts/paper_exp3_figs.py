@@ -39,13 +39,59 @@ from modules.paperfigs import (
     texture_os_style,
     write_latex_preview,
 )
+from paperfiglabels import (
+    LABEL_HORIZ_COORD_PX,
+    LABEL_VERT_COORD_PX,
+    LABEL_COLUMN_RMSE_PX,
+    LABEL_DISP_RMSE_PX,
+    LABEL_DISP_BIAS_PX,
+    LABEL_SELF_CONV_RMSE,
+    TITLE_ANALYTIC_REF,
+    TITLE_FIG1_A,
+    TITLE_FIG1_B,
+    TITLE_FIG1_C,
+    TITLE_FIG1_D,
+    LABEL_FIG1_RILEY_TEMPLATE,
+    LABEL_IMPOSED_TRANSLATION_PX,
+    LABEL_MEAN_BIAS_PX,
+    LABEL_PX_INTEGRATION,
+    LABEL_TEX_OVERSAMPLING,
+    LABEL_REF_LEVEL_OS_SS,
+    LABEL_RMSE_AT_03PX,
+    TITLE_FIG2_A,
+    TITLE_FIG2_B,
+    TITLE_FIG2_C,
+    LABEL_FIG2_A_TEMPLATE,
+    LABEL_FIG2_B_TEMPLATE,
+    LABEL_FIG2_C_TEMPLATE,
+    TITLE_FIG3_A,
+    TITLE_FIG3_B,
+    TITLE_FIG3_C,
+    TITLE_FIG3_D,
+    LABEL_FIG3_DIC_TEMPLATE,
+    LABEL_FIG3_GRID_TEMPLATE,
+    TITLE_FIG4_A,
+    TITLE_FIG4_B_TEMPLATE,
+    TITLE_FIG4_C_TEMPLATE,
+    TITLE_FIG4_D,
+    TITLE_FIG4_E,
+    TITLE_FIG4_F_TEMPLATE,
+    TITLE_FIG4_G_TEMPLATE,
+    TITLE_FIG4_H,
+    LABEL_FIG4_5_PROFILE_TEMPLATE,
+)
 from paperparams import (
     AXIS_LABEL_FONT_SIZE_PT,
+    COLORBAR_FONT_SIZE_PT,
     DIFFERENCE_CMAP,
     EXP3_AFFINE_CASE,
     EXP3_ANALYTIC_LINE_WIDTH_PT,
     EXP3_BIT_DEPTH,
     EXP3_CHIRP_CASE,
+    EXP3_FIGURE1_CM,
+    EXP3_FIGURE2_CM,
+    EXP3_FIGURE3_CM,
+    EXP3_FIGURE4_CM,
     EXP3_LINE_WIDTH_PT,
     EXP3_MARKER_SIZE_PT,
     EXP3_RIGID_CASE,
@@ -65,6 +111,34 @@ COLOR_CUBICCM = "tab:blue"
 MARKER_BSPLINE = "^"
 MARKER_CUBICCM = "s"
 
+INTERPOLATOR_NAMES = {
+    "cubic_bspline": "B-spline",
+    "cubiccm": "Catmull-Rom",
+    "line": "Linear",
+    "lanczos3": "Lanczos",
+}
+
+# Cases for Figure 1: (interpolator, OS, SS, color, linestyle, marker)
+EXP3_FIG1_CASES = (
+    ("cubic_bspline", 1, 1, COLOR_BSPLINE, "-", "o"),
+    ("cubic_bspline", 8, 8, "tab:purple", "-", "v"),
+    ("cubic_bspline", 32, 1, "tab:cyan", "-", "^"),
+    ("cubic_bspline", 32, 32, "tab:green", "-", "s"),
+    ("cubiccm", 1, 1, COLOR_CUBICCM, "--", "x"),
+    ("cubiccm", 8, 8, "tab:brown", "--", "*"),
+    ("cubiccm", 32, 32, "tab:red", "--", "+"),
+)
+
+# Profile configurations for Figs 4 & 5: (interpolator, OS, SS, color, linestyle)
+EXP3_FIG4_5_PROFILES = (
+    ("cubic_bspline", 1, 1, COLOR_BSPLINE, "-"),
+    ("cubic_bspline", 4, 4, "tab:green", "-"),
+    ("cubic_bspline", 32, 32, "tab:purple", "-"),
+    ("cubiccm", 1, 1, COLOR_CUBICCM, "--"),
+    ("cubiccm", 4, 4, "tab:red", "--"),
+    ("cubiccm", 32, 32, "tab:brown", "--"),
+)
+
 COLOR_BY_LEVEL = {
     1: "tab:blue",
     2: "tab:orange",
@@ -76,11 +150,7 @@ COLOR_BY_LEVEL = {
     128: "tab:olive",
 }
 
-# Layout sizing in centimetres (adjusted to prevent constrained layout collapse)
-FIGURE1_CM = (11.3, 10.4)
-FIGURE2_CM = (17.0, 5.2)
-FIGURE3_CM = (11.3, 10.4)
-FIGURE4_CM = (17.0, 16.0)
+
 
 
 def find_rec(
@@ -158,7 +228,7 @@ def get_rmse_vs_ref(rec, ref, is_dic=True) -> list[float]:
 def generate_figure1(dic_records) -> None:
     """Figure 1: Subpixel bias hides renderer error."""
     fig, axes = make_figure(
-        FIGURE1_CM, rows=2, columns=2, tick_font_size=TICK_FONT_SIZE_PT
+        EXP3_FIGURE1_CM, rows=2, columns=2, tick_font_size=TICK_FONT_SIZE_PT
     )
     axes_flat = axes.flatten()
 
@@ -178,65 +248,6 @@ def generate_figure1(dic_records) -> None:
     else:
         translations = [frame * 0.1 for frame in range(11)]
 
-        bspline_cases = [
-            (
-                find_rec(subset, "riley_render_texf", "cubic_bspline", 1, 1),
-                "Riley B-spline (Tex-OS=1, Px-SS=1)",
-                COLOR_BSPLINE,
-                "-",
-                "o",
-            ),
-            (
-                find_rec(subset, "riley_render_texf", "cubic_bspline", 4, 4),
-                "Riley B-spline (Tex-OS=4, Px-SS=4)",
-                "tab:purple",
-                "-",
-                "v",
-            ),
-            (
-                find_rec(subset, "riley_render_texf", "cubic_bspline", 32, 1),
-                "Riley B-spline (Tex-OS=1, Px-SS=32)",
-                "tab:cyan",
-                "-",
-                "^",
-            ),
-            (
-                find_rec(
-                    subset, "riley_render_texf", "cubic_bspline", 32, 32
-                ),
-                "Riley B-spline (Tex-OS=32, Px-SS=32)",
-                "tab:green",
-                "-",
-                "s",
-            ),
-        ]
-
-        cubiccm_cases = [
-            (
-                find_rec(subset, "riley_render_texf", "cubiccm", 1, 1),
-                "Riley Catmull-Rom (Tex-OS=1, Px-SS=1)",
-                COLOR_CUBICCM,
-                "--",
-                "x",
-            ),
-            (
-                find_rec(subset, "riley_render_texf", "cubiccm", 4, 4),
-                "Riley Catmull-Rom (Tex-OS=4, Px-SS=4)",
-                "tab:brown",
-                "--",
-                "*",
-            ),
-            (
-                find_rec(
-                    subset, "riley_render_texf", "cubiccm", 32, 32
-                ),
-                "Riley Catmull-Rom (Tex-OS=32, Px-SS=32)",
-                "tab:red",
-                "--",
-                "+",
-            ),
-        ]
-
         cases_to_plot = [
             (
                 find_rec(subset, "analytic", analytic=True),
@@ -245,7 +256,16 @@ def generate_figure1(dic_records) -> None:
                 "--",
                 None,
             ),
-        ] + bspline_cases + cubiccm_cases
+        ]
+        for interp, osamp, ssaa, col, lstyle, marker in EXP3_FIG1_CASES:
+            rec = find_rec(
+                subset, "riley_render_texf", interp, osamp, ssaa
+            )
+            name = INTERPOLATOR_NAMES.get(interp, interp)
+            label = LABEL_FIG1_RILEY_TEMPLATE.format(
+                name=name, osamp=osamp, ssaa=ssaa
+            )
+            cases_to_plot.append((rec, label, col, lstyle, marker))
 
         # Top Row (All Cases): Row 0
         # Panel a: Bias (all cases)
@@ -453,26 +473,20 @@ def generate_figure1(dic_records) -> None:
 
         # Subplot labeling
         for ax in axes_flat:
-            ax.set_xlabel("Imposed translation [px]", fontsize=FONT_SIZE_PT)
+            ax.set_xlabel(
+                LABEL_IMPOSED_TRANSLATION_PX, fontsize=FONT_SIZE_PT
+            )
             ax.grid(True, linestyle=":", alpha=0.6)
 
-        axes_flat[0].set_ylabel("Mean bias [px]", fontsize=FONT_SIZE_PT)
-        axes_flat[1].set_ylabel("Disp. RMSE [px]", fontsize=FONT_SIZE_PT)
-        axes_flat[2].set_ylabel("Mean bias [px]", fontsize=FONT_SIZE_PT)
-        axes_flat[3].set_ylabel("Disp. RMSE [px]", fontsize=FONT_SIZE_PT)
+        axes_flat[0].set_ylabel(LABEL_MEAN_BIAS_PX, fontsize=FONT_SIZE_PT)
+        axes_flat[1].set_ylabel(LABEL_DISP_RMSE_PX, fontsize=FONT_SIZE_PT)
+        axes_flat[2].set_ylabel(LABEL_MEAN_BIAS_PX, fontsize=FONT_SIZE_PT)
+        axes_flat[3].set_ylabel(LABEL_DISP_RMSE_PX, fontsize=FONT_SIZE_PT)
 
-        axes_flat[0].set_title(
-            "(a) Rigid subpixel bias (all cases)", fontsize=FONT_SIZE_PT
-        )
-        axes_flat[1].set_title(
-            "(b) RMSE vs. Analytic Ref (all cases)", fontsize=FONT_SIZE_PT
-        )
-        axes_flat[2].set_title(
-            "(c) Zoomed rigid subpixel bias", fontsize=FONT_SIZE_PT
-        )
-        axes_flat[3].set_title(
-            "(d) Zoomed RMSE vs. Analytic Ref", fontsize=FONT_SIZE_PT
-        )
+        axes_flat[0].set_title(TITLE_FIG1_A, fontsize=FONT_SIZE_PT)
+        axes_flat[1].set_title(TITLE_FIG1_B, fontsize=FONT_SIZE_PT)
+        axes_flat[2].set_title(TITLE_FIG1_C, fontsize=FONT_SIZE_PT)
+        axes_flat[3].set_title(TITLE_FIG1_D, fontsize=FONT_SIZE_PT)
 
         handles = [
             Line2D(
@@ -496,16 +510,17 @@ def generate_figure1(dic_records) -> None:
 
     save_path = (
         Path(PAPER_OUTPUT_DIR)
-        / "exp3_riley_gauss_fig1_rigid_translation_bias_rmse_refinement"
+        / "exp3_riley_gauss_fig1_rigid_translation_bias_rmse_refinement_b12"
     )
-    save_figure(fig, save_path, PAPER_FORMATS, PAPER_DPI)
+    written = save_figure(fig, save_path, PAPER_FORMATS, PAPER_DPI)
     fig.clear()
+    return written
 
 
 def generate_figure2(dic_records) -> None:
     """Figure 2: Texture representation and pixel integration independence."""
     fig, axes = make_figure(
-        FIGURE2_CM, rows=1, columns=3, tick_font_size=TICK_FONT_SIZE_PT
+        EXP3_FIGURE2_CM, rows=1, columns=3, tick_font_size=TICK_FONT_SIZE_PT
     )
     axes_flat = axes.flatten()
 
@@ -548,7 +563,7 @@ def generate_figure2(dic_records) -> None:
                 linestyle=lstyle,
                 linewidth=EXP3_LINE_WIDTH_PT,
                 markersize=EXP3_MARKER_SIZE_PT,
-                label=f"{name} (Tex-OS=1)",
+                label=LABEL_FIG2_A_TEMPLATE.format(name=name),
             )
 
         # Panel b: Fixed Px-SS=1, Refine Tex-OS
@@ -573,7 +588,7 @@ def generate_figure2(dic_records) -> None:
                 linestyle=lstyle,
                 linewidth=EXP3_LINE_WIDTH_PT,
                 markersize=EXP3_MARKER_SIZE_PT,
-                label=f"{name} (Px-SS=1)",
+                label=LABEL_FIG2_B_TEMPLATE.format(name=name),
             )
 
         # Panel c: Simultaneous Refinement (Tex-OS=Px-SS)
@@ -602,7 +617,7 @@ def generate_figure2(dic_records) -> None:
                 linestyle=lstyle,
                 linewidth=EXP3_LINE_WIDTH_PT,
                 markersize=EXP3_MARKER_SIZE_PT,
-                label=f"{name} (Tex-OS=Px-SS)",
+                label=LABEL_FIG2_C_TEMPLATE.format(name=name),
             )
             # Inset on panel c
             x_in = [x for x in x_vals if x >= 4]
@@ -625,19 +640,19 @@ def generate_figure2(dic_records) -> None:
         set_sample_axis(
             axes_flat[0],
             ssaa_levels,
-            "Pixel integration (Px-SS)",
+            LABEL_PX_INTEGRATION,
             FONT_SIZE_PT,
         )
         set_sample_axis(
             axes_flat[1],
             os_levels,
-            "Texture oversampling (Tex-OS)",
+            LABEL_TEX_OVERSAMPLING,
             FONT_SIZE_PT,
         )
         set_sample_axis(
             axes_flat[2],
             diag_levels,
-            "Refinement level (Tex-OS=Px-SS)",
+            LABEL_REF_LEVEL_OS_SS,
             FONT_SIZE_PT,
         )
 
@@ -663,17 +678,11 @@ def generate_figure2(dic_records) -> None:
             axes_flat[2].inset_ax.set_ylim(bottom=0.0)
 
         axes_flat[0].set_ylabel(
-            "RMSE [px] at 0.3 px translation", fontsize=FONT_SIZE_PT
+            LABEL_RMSE_AT_03PX, fontsize=FONT_SIZE_PT
         )
-        axes_flat[0].set_title(
-            "(a) Fixed Tex-OS=1, Refine Px-SS", fontsize=FONT_SIZE_PT
-        )
-        axes_flat[1].set_title(
-            "(b) Fixed Px-SS=1, Refine Tex-OS", fontsize=FONT_SIZE_PT
-        )
-        axes_flat[2].set_title(
-            "(c) Simultaneous Refinement", fontsize=FONT_SIZE_PT
-        )
+        axes_flat[0].set_title(TITLE_FIG2_A, fontsize=FONT_SIZE_PT)
+        axes_flat[1].set_title(TITLE_FIG2_B, fontsize=FONT_SIZE_PT)
+        axes_flat[2].set_title(TITLE_FIG2_C, fontsize=FONT_SIZE_PT)
 
         handles = [
             Line2D(
@@ -692,27 +701,29 @@ def generate_figure2(dic_records) -> None:
             handles,
             font_size=LEGEND_FONT_SIZE_PT,
             columns=2,
-            y_offset=-0.18,
+            y_offset=-0.10,
         )
 
     save_path = (
         Path(PAPER_OUTPUT_DIR)
-        / "exp3_riley_gauss_fig2_rigid_refinement_independence_os_vs_ss"
+        / "exp3_riley_gauss_fig2_rigid_refinement_independence_os_vs_ss_b12"
     )
-    save_figure(fig, save_path, PAPER_FORMATS, PAPER_DPI)
+    written = save_figure(fig, save_path, PAPER_FORMATS, PAPER_DPI)
     fig.clear()
+    return written
 
 
 def generate_figure3(dic_records, grid_records) -> None:
     """Figure 3: Numerical-reference self-convergence (Rigid & Affine)."""
     fig, axes = make_figure(
-        FIGURE3_CM, rows=2, columns=2, tick_font_size=TICK_FONT_SIZE_PT
+        EXP3_FIGURE3_CM, rows=2, columns=2, tick_font_size=TICK_FONT_SIZE_PT
     )
     axes_flat = axes.flatten()
     diag_levels = [1, 2, 4, 8, 16, 32, 64, 128]
     samplers = [
         ("cubic_bspline", "B-spline", COLOR_BSPLINE, "-", "o"),
         ("cubiccm", "Catmull-Rom", COLOR_CUBICCM, "--", "x"),
+        ("line", "Linear", "tab:green", ":", "d"),
     ]
 
     # --- TOP ROW: RIGID TRANSLATION ---
@@ -731,6 +742,7 @@ def generate_figure3(dic_records, grid_records) -> None:
             axes_flat[0], "No DIC Rigid Reference", font_size=FONT_SIZE_PT
         )
     else:
+        dic_inset = axes_flat[0].inset_axes([0.49, 0.46, 0.47, 0.47])
         for interp, name, col, lstyle, marker in samplers:
             x_vals = []
             y_vals = []
@@ -755,8 +767,18 @@ def generate_figure3(dic_records, grid_records) -> None:
                 linestyle=lstyle,
                 linewidth=EXP3_LINE_WIDTH_PT,
                 markersize=EXP3_MARKER_SIZE_PT,
-                label=f"Riley {name}",
+                label=LABEL_FIG3_DIC_TEMPLATE.format(name=name),
             )
+            selected = [
+                (x, y) for x, y in zip(x_vals, y_vals, strict=True) if x >= 4
+            ]
+            if selected:
+                dic_inset.plot(
+                    [x for x, _ in selected], [y for _, y in selected],
+                    color=col, marker=marker, linestyle=lstyle,
+                    linewidth=EXP3_LINE_WIDTH_PT * 0.8,
+                    markersize=EXP3_MARKER_SIZE_PT * 0.75,
+                )
 
     # 2. Top-Right: Grid Rigid
     grid_subset_rig = [
@@ -797,7 +819,7 @@ def generate_figure3(dic_records, grid_records) -> None:
                 linestyle=lstyle,
                 linewidth=EXP3_LINE_WIDTH_PT,
                 markersize=EXP3_MARKER_SIZE_PT,
-                label=f"Grid Method ({name})",
+                label=LABEL_FIG3_GRID_TEMPLATE.format(name=name),
             )
 
     # --- BOTTOM ROW: AFFINE DEFORMATION ---
@@ -816,6 +838,7 @@ def generate_figure3(dic_records, grid_records) -> None:
             axes_flat[2], "No DIC Affine Reference", font_size=FONT_SIZE_PT
         )
     else:
+        dic_aff_inset = axes_flat[2].inset_axes([0.49, 0.46, 0.47, 0.47])
         for interp, name, col, lstyle, marker in samplers:
             x_vals = []
             y_vals = []
@@ -840,8 +863,18 @@ def generate_figure3(dic_records, grid_records) -> None:
                 linestyle=lstyle,
                 linewidth=EXP3_LINE_WIDTH_PT,
                 markersize=EXP3_MARKER_SIZE_PT,
-                label=f"Riley {name}",
+                label=LABEL_FIG3_DIC_TEMPLATE.format(name=name),
             )
+            selected = [
+                (x, y) for x, y in zip(x_vals, y_vals, strict=True) if x >= 4
+            ]
+            if selected:
+                dic_aff_inset.plot(
+                    [x for x, _ in selected], [y for _, y in selected],
+                    color=col, marker=marker, linestyle=lstyle,
+                    linewidth=EXP3_LINE_WIDTH_PT * 0.8,
+                    markersize=EXP3_MARKER_SIZE_PT * 0.75,
+                )
 
     # 4. Bottom-Right: Grid Affine
     grid_subset_aff = [
@@ -882,7 +915,7 @@ def generate_figure3(dic_records, grid_records) -> None:
                 linestyle=lstyle,
                 linewidth=EXP3_LINE_WIDTH_PT,
                 markersize=EXP3_MARKER_SIZE_PT,
-                label=f"Grid Method ({name})",
+                label=LABEL_FIG3_GRID_TEMPLATE.format(name=name),
             )
 
     # Format all axes
@@ -890,225 +923,190 @@ def generate_figure3(dic_records, grid_records) -> None:
         set_sample_axis(
             ax,
             diag_levels,
-            "Refinement level (Tex-OS=Px-SS)",
+            LABEL_REF_LEVEL_OS_SS,
             FONT_SIZE_PT,
         )
         ax.grid(True, which="both", linestyle=":", alpha=0.6)
         ax.set_ylim(bottom=0.0)
         ax.set_ylabel(
-            "Self-conv. RMSE [px] at 0.3 px def.", fontsize=FONT_SIZE_PT
+            LABEL_SELF_CONV_RMSE, fontsize=FONT_SIZE_PT
         )
 
-    axes_flat[0].set_title("(a) DIC self-conv. (Rigid)", fontsize=FONT_SIZE_PT)
-    axes_flat[1].set_title(
-        "(b) Grid Method self-conv. (Rigid)", fontsize=FONT_SIZE_PT
-    )
-    axes_flat[2].set_title("(c) DIC self-conv. (Affine)", fontsize=FONT_SIZE_PT)
-    axes_flat[3].set_title(
-        "(d) Grid Method self-conv. (Affine)", fontsize=FONT_SIZE_PT
-    )
+    # The rigid DIC convergence panel has a useful high-refinement regime that
+    # would otherwise be compressed against the lower levels.
+    if dic_ref_rig is not None:
+        inset_levels = [4, 8, 16, 32, 64, 128]
+        set_sample_axis(dic_inset, inset_levels, "", FONT_SIZE_PT - 1)
+        dic_inset.grid(True, which="both", linestyle=":", alpha=0.45)
+        dic_inset.set_ylim(bottom=0.0)
+        dic_inset.tick_params(labelsize=TICK_FONT_SIZE_PT - 1)
+    if dic_ref_aff is not None:
+        inset_levels = [4, 8, 16, 32, 64, 128]
+        set_sample_axis(dic_aff_inset, inset_levels, "", FONT_SIZE_PT - 1)
+        dic_aff_inset.grid(True, which="both", linestyle=":", alpha=0.45)
+        dic_aff_inset.set_ylim(bottom=0.0)
+        dic_aff_inset.tick_params(labelsize=TICK_FONT_SIZE_PT - 1)
+
+    axes_flat[0].set_title(TITLE_FIG3_A, fontsize=FONT_SIZE_PT)
+    axes_flat[1].set_title(TITLE_FIG3_B, fontsize=FONT_SIZE_PT)
+    axes_flat[2].set_title(TITLE_FIG3_C, fontsize=FONT_SIZE_PT)
+    axes_flat[3].set_title(TITLE_FIG3_D, fontsize=FONT_SIZE_PT)
 
     handles = [
         Line2D(
             [0],
             [0],
-            color=COLOR_BSPLINE,
-            marker="o",
-            linestyle="-",
+            color=col,
+            marker=marker,
+            linestyle=lstyle,
             markersize=EXP3_MARKER_SIZE_PT,
-            label="B-spline",
-        ),
-        Line2D(
-            [0],
-            [0],
-            color=COLOR_CUBICCM,
-            marker="x",
-            linestyle="--",
-            markersize=EXP3_MARKER_SIZE_PT,
-            label="Catmull-Rom",
-        ),
+            label=f"Riley {name}",
+        )
+        for _, name, col, lstyle, marker in samplers
     ]
     add_figure_legend(
         fig,
         handles,
         font_size=LEGEND_FONT_SIZE_PT,
-        columns=2,
-        y_offset=-0.13,
+        columns=3,
+        y_offset=-0.05,
     )
 
     save_path = (
         Path(PAPER_OUTPUT_DIR)
-        / "exp3_riley_gauss_fig3_affine_self_convergence_dic_vs_grid"
+        / "exp3_riley_gauss_fig3_affine_self_convergence_dic_vs_grid_b12"
     )
-    save_figure(fig, save_path, PAPER_FORMATS, PAPER_DPI)
+    written = save_figure(fig, save_path, PAPER_FORMATS, PAPER_DPI)
     fig.clear()
+    return written
 
 
-def generate_figure4(dic_records) -> None:
-    """Figure 4: Finite-star frequency-based diagnostic (Chirp Case)."""
+def generate_figure4(dic_records, grid_records) -> list[Path]:
+    """Figure 4: Combined Finite-star diagnostic (DIC & Grid)."""
     fig, axes = make_figure(
-        FIGURE4_CM, rows=4, columns=1, tick_font_size=TICK_FONT_SIZE_PT
+        EXP3_FIGURE4_CM, rows=4, columns=2, tick_font_size=TICK_FONT_SIZE_PT
     )
-    axes_flat = axes.flatten()
+    gridspec = axes[0, 0].get_subplotspec().get_gridspec()
+    gridspec.set_height_ratios((1.0, 1.0, 1.0, 1.2))
+    fig.get_layout_engine().set(w_pad=0.06, h_pad=0.12, wspace=0.12, hspace=0.20)
+    profile_handles: list[Line2D] = []
 
-    subset = [
+    def add_map_colourbar(image, axis) -> None:
+        """Keep each colourbar attached closely to its own shallow map."""
+        colourbar = fig.colorbar(
+            image, ax=axis, pad=0.02, fraction=0.055, aspect=18,
+        )
+        colourbar.set_label("px", fontsize=COLORBAR_FONT_SIZE_PT)
+        colourbar.ax.tick_params(labelsize=COLORBAR_FONT_SIZE_PT)
+
+    # ------------------ COLUMN 0: DIC Method ------------------
+    subset_dic = [
         r for r in dic_records
         if r.case == EXP3_CHIRP_CASE
         and r.pattern == "gausscont"
         and r.bit_depth == EXP3_BIT_DEPTH
     ]
-
-    ref = find_rec(subset, "riley_render_texf", "cubic_bspline", 128, 16)
-    rec_under = find_rec(
-        subset, "riley_render_texf", "cubic_bspline", 1, 1
+    ref_dic = find_rec(
+        subset_dic, "riley_render_texf", "cubic_bspline", 128, 16
+    )
+    under_dic = find_rec(
+        subset_dic, "riley_render_texf", "cubic_bspline", 1, 1
     )
 
-    if ref is None or rec_under is None:
-        for ax in axes_flat:
-            annotate_no_data(
-                ax, "Missing Chirp Records", font_size=FONT_SIZE_PT
-            )
+    if ref_dic is None or under_dic is None:
+        for row in range(4):
+            annotate_no_data(axes[row, 0], "Missing DIC Records", FONT_SIZE_PT)
     else:
-        ref_data = load_dic(ref, 1)
-        rec_data = load_dic(rec_under, 1)
-
-        if ref_data is None or rec_data is None:
-            for ax in axes_flat:
+        ref_data_dic = load_dic(ref_dic, 1)
+        under_data_dic = load_dic(under_dic, 1)
+        if ref_data_dic is None or under_data_dic is None:
+            for row in range(4):
                 annotate_no_data(
-                    ax, "Error Loading Frame 01", font_size=FONT_SIZE_PT
+                    axes[row, 0], "Error Loading DIC Data", FONT_SIZE_PT
                 )
         else:
-            x, y, ru, rv = ref_data
-            _, _, cu, cv = rec_data
-            du, dv = cu - ru, cv - rv
+            x, y, ru_dic, rv_dic = ref_data_dic
+            _, _, cu_dic, cv_dic = under_data_dic
+            du_dic, dv_dic = cu_dic - ru_dic, cv_dic - rv_dic
 
-            # Panel a: Converged Reference field u_y
-            im0 = axes_flat[0].imshow(
-                rv,
+            # (a) DIC Reference Field
+            im_a = axes[0, 0].imshow(
+                rv_dic,
                 extent=(x.min(), x.max(), y.max(), y.min()),
                 cmap="coolwarm",
                 aspect="auto",
             )
-            fig.colorbar(im0, ax=axes_flat[0], label="px")
-            axes_flat[0].set_title(
-                "(a) Reference displacement $u_y$", fontsize=FONT_SIZE_PT
-            )
+            add_map_colourbar(im_a, axes[0, 0])
+            axes[0, 0].set_title(TITLE_FIG4_A, fontsize=FONT_SIZE_PT)
 
-            # Panel b: Under-resolved field u_y (Tex-OS=1, Px-SS=1)
-            im1 = axes_flat[1].imshow(
-                cv,
+            # (b) DIC Under-resolved Field
+            im_b = axes[1, 0].imshow(
+                cv_dic,
                 extent=(x.min(), x.max(), y.max(), y.min()),
                 cmap="coolwarm",
                 aspect="auto",
             )
-            fig.colorbar(im1, ax=axes_flat[1], label="px")
-            axes_flat[1].set_title(
-                "(b) Riley B-spline (Tex-OS=1, Px-SS=1) displacement $u_y$",
-                fontsize=FONT_SIZE_PT,
+            add_map_colourbar(im_b, axes[1, 0])
+            interp_name_dic = INTERPOLATOR_NAMES.get(
+                under_dic.interpolator, under_dic.interpolator
             )
+            title_b = TITLE_FIG4_B_TEMPLATE.format(
+                name=interp_name_dic,
+                osamp=under_dic.osamp or 1,
+                ssaa=under_dic.ssaa or 1,
+            )
+            axes[1, 0].set_title(title_b, fontsize=FONT_SIZE_PT)
 
-            # Panel c: Spatial renderer-error map u_y difference
-            # Zero-centered symmetric limit using 95th percentile of masked dev
+            # (c) DIC difference Map
             x_min, x_max = x.min(), x.max()
             y_min, y_max = y.min(), y.max()
-            mask_edges = (
+            mask_dic = (
                 (x < x_min + EDGE_EXCLUSION_DIC)
                 | (x > x_max - EDGE_EXCLUSION_DIC)
                 | (y < y_min + EDGE_EXCLUSION_DIC)
                 | (y > y_max - EDGE_EXCLUSION_DIC)
             )
-            dv_masked = np.where(mask_edges, np.nan, dv)
-            limit = float(np.nanpercentile(np.abs(dv_masked), 95))
-            limit = max(limit, 1e-5)
-            im2 = axes_flat[2].imshow(
-                dv,
+            dv_dic_masked = np.where(mask_dic, np.nan, dv_dic)
+            limit_dic = float(np.nanpercentile(np.abs(dv_dic_masked), 95))
+            limit_dic = max(limit_dic, 1e-5)
+            im_c = axes[2, 0].imshow(
+                dv_dic,
                 extent=(x.min(), x.max(), y.max(), y.min()),
                 cmap="coolwarm",
                 aspect="auto",
-                vmin=-limit,
-                vmax=limit,
+                vmin=-limit_dic,
+                vmax=limit_dic,
             )
-            fig.colorbar(im2, ax=axes_flat[2], label="px")
-            axes_flat[2].set_title(
-                "(c) Riley B-spline (Tex-OS=1, Px-SS=1) $u_y$ difference map",
-                fontsize=FONT_SIZE_PT,
+            add_map_colourbar(im_c, axes[2, 0])
+            title_c = TITLE_FIG4_C_TEMPLATE.format(
+                name=interp_name_dic,
+                osamp=under_dic.osamp or 1,
+                ssaa=under_dic.ssaa or 1,
             )
+            axes[2, 0].set_title(title_c, fontsize=FONT_SIZE_PT)
 
-            # Panel d: 1D Column-wise RMSE of u_y vs Horizontal coordinate x
-            bspline_profile = [
-                (
-                    find_rec(
-                        subset, "riley_render_texf", "cubic_bspline", 1, 1
-                    ),
-                    "B-spline (1, 1)",
-                    COLOR_BSPLINE,
-                    "-",
-                ),
-                (
-                    find_rec(
-                        subset, "riley_render_texf", "cubic_bspline", 4, 4
-                    ),
-                    "B-spline (4, 4)",
-                    "tab:green",
-                    "-",
-                ),
-                (
-                    find_rec(
-                        subset, "riley_render_texf", "cubic_bspline", 32, 32
-                    ),
-                    "B-spline (32, 32)",
-                    "tab:purple",
-                    "-",
-                ),
-            ]
+            # (d) DIC Column RMSE Profiles
+            cases_dic = []
+            for interp, osamp, ssaa, col, lstyle in EXP3_FIG4_5_PROFILES:
+                rec = find_rec(
+                    subset_dic, "riley_render_texf", interp, osamp, ssaa
+                )
+                name = INTERPOLATOR_NAMES.get(interp, interp)
+                label = LABEL_FIG4_5_PROFILE_TEMPLATE.format(
+                    name=name, osamp=osamp, ssaa=ssaa
+                )
+                cases_dic.append((rec, label, col, lstyle))
 
-            cubiccm_profile = [
-                (
-                    find_rec(
-                        subset, "riley_render_texf", "cubiccm", 1, 1
-                    ),
-                    "Catmull-Rom (1, 1)",
-                    COLOR_CUBICCM,
-                    "--",
-                ),
-                (
-                    find_rec(
-                        subset, "riley_render_texf", "cubiccm", 4, 4
-                    ),
-                    "Catmull-Rom (4, 4)",
-                    "tab:red",
-                    "--",
-                ),
-                (
-                    find_rec(
-                        subset, "riley_render_texf", "cubiccm", 32, 32
-                    ),
-                    "Catmull-Rom (32, 32)",
-                    "tab:brown",
-                    "--",
-                ),
-            ]
-
-            cases_profile = bspline_profile + cubiccm_profile
-
-            for case_rec, label, col, lstyle in cases_profile:
-                if case_rec is None:
+            max_rmse_dic = 0.0
+            for rec, label, col, lstyle in cases_dic:
+                if rec is None:
                     continue
-                c_data = load_dic(case_rec, 1)
+                c_data = load_dic(rec, 1)
                 if c_data is None:
                     continue
                 _, _, c_u, c_v = c_data
-                d_u, d_v = c_u - ru, c_v - rv
-
-                x_min, x_max = x.min(), x.max()
-                y_min, y_max = y.min(), y.max()
-                mask = (
-                    (x < x_min + EDGE_EXCLUSION_DIC)
-                    | (x > x_max - EDGE_EXCLUSION_DIC)
-                    | (y < y_min + EDGE_EXCLUSION_DIC)
-                    | (y > y_max - EDGE_EXCLUSION_DIC)
-                )
-                d_v_masked = np.where(mask, np.nan, d_v)
+                d_u, d_v = c_u - ru_dic, c_v - rv_dic
+                d_v_masked = np.where(mask_dic, np.nan, d_v)
 
                 unique_x = np.unique(x[np.isfinite(x)])
                 col_rmses = []
@@ -1120,7 +1118,11 @@ def generate_figure4(dic_records) -> None:
                     else:
                         col_rmses.append(np.nan)
 
-                axes_flat[3].plot(
+                valid_rmses = [r for r in col_rmses if np.isfinite(r)]
+                if valid_rmses:
+                    max_rmse_dic = max(max_rmse_dic, max(valid_rmses))
+
+                axes[3, 0].plot(
                     unique_x,
                     col_rmses,
                     color=col,
@@ -1128,197 +1130,124 @@ def generate_figure4(dic_records) -> None:
                     linewidth=EXP3_LINE_WIDTH_PT,
                     label=label,
                 )
+                profile_handles.append(Line2D([], [], color=col, linestyle=lstyle,
+                                              linewidth=EXP3_LINE_WIDTH_PT, label=label))
 
-            axes_flat[3].set_xlabel(
-                "Horizontal coordinate [px]", fontsize=FONT_SIZE_PT
-            )
-            axes_flat[3].set_ylabel(
-                "Column RMSE [px]", fontsize=FONT_SIZE_PT
-            )
-            axes_flat[3].set_title(
-                "(d) $u_y$ RMSE along frequency gradient", fontsize=FONT_SIZE_PT
-            )
-            axes_flat[3].set_ylim(bottom=0.0)
-            axes_flat[3].grid(True, linestyle=":", alpha=0.6)
-            leg = axes_flat[3].legend(
-                fontsize=LEGEND_FONT_SIZE_PT,
-                loc="center left",
-                bbox_to_anchor=(1.02, 0.5),
-            )
-            # Retain in layout to adjust Panel (d) width matching (a)-(c)
-            leg.set_in_layout(True)
+            axes[3, 0].set_title(TITLE_FIG4_D, fontsize=FONT_SIZE_PT)
+            if max_rmse_dic > 0:
+                axes[3, 0].set_ylim(bottom=-0.04 * max_rmse_dic)
+            else:
+                axes[3, 0].set_ylim(bottom=-1e-5)
+            axes[3, 0].grid(True, linestyle=":", alpha=0.6)
 
-            for ax in axes_flat:
-                ax.tick_params(labelsize=TICK_FONT_SIZE_PT)
-                if ax != axes_flat[3]:
-                    ax.set_xlabel(
-                        "Horizontal coordinate [px]", fontsize=FONT_SIZE_PT
-                    )
-                    ax.set_ylabel(
-                        "Vertical coordinate [px]", fontsize=FONT_SIZE_PT
-                    )
-
-    save_path = (
-        Path(PAPER_OUTPUT_DIR)
-        / "exp3_riley_gauss_fig4_chirp_spatial_frequency_error_star"
-    )
-    save_figure(fig, save_path, PAPER_FORMATS, PAPER_DPI)
-    fig.clear()
-
-
-def generate_figure5(grid_records) -> None:
-    """Figure 5: Finite-star frequency-based diagnostic (Grid Method)."""
-    fig, axes = make_figure(
-        FIGURE4_CM, rows=4, columns=1, tick_font_size=TICK_FONT_SIZE_PT
-    )
-    axes_flat = axes.flatten()
-
-    subset = [
+    # ------------------ COLUMN 1: Grid Method ------------------
+    subset_grid = [
         r for r in grid_records
         if r.case == EXP3_CHIRP_CASE
         and r.pattern == "eggbox"
         and r.bit_depth == EXP3_BIT_DEPTH
     ]
-
-    ref = find_rec(subset, "riley_render_texf", "cubic_bspline", 128, 16)
-    rec_under = find_rec(
-        subset, "riley_render_texf", "cubic_bspline", 1, 1
+    ref_grid = find_rec(
+        subset_grid, "riley_render_texf", "cubic_bspline", 128, 16
+    )
+    under_grid = find_rec(
+        subset_grid, "riley_render_texf", "cubic_bspline", 1, 1
     )
 
-    if ref is None or rec_under is None:
-        for ax in axes_flat:
+    if ref_grid is None or under_grid is None:
+        for row in range(4):
             annotate_no_data(
-                ax, "Missing Chirp Records", font_size=FONT_SIZE_PT
+                axes[row, 1], "Missing Grid Records", FONT_SIZE_PT
             )
     else:
-        ref_data = load_grid(ref, 1)
-        rec_data = load_grid(rec_under, 1)
-
-        if ref_data is None or rec_data is None:
-            for ax in axes_flat:
+        ref_data_grid = load_grid(ref_grid, 1)
+        under_data_grid = load_grid(under_grid, 1)
+        if ref_data_grid is None or under_data_grid is None:
+            for row in range(4):
                 annotate_no_data(
-                    ax, "Error Loading Frame 01", font_size=FONT_SIZE_PT
+                    axes[row, 1], "Error Loading Grid Data", FONT_SIZE_PT
                 )
         else:
-            ru, rv = ref_data
-            cu, cv = rec_data
-            du, dv = cu - ru, cv - rv
-            H, W = ru.shape
+            ru_grid, rv_grid = ref_data_grid
+            cu_grid, cv_grid = under_data_grid
+            du_grid, dv_grid = cu_grid - ru_grid, cv_grid - rv_grid
+            H, W = ru_grid.shape
 
-            # Panel a: Converged Reference field u_y
-            im0 = axes_flat[0].imshow(
-                rv,
+            # (e) Grid Reference Field
+            im_e = axes[0, 1].imshow(
+                rv_grid,
                 extent=(0, W, H, 0),
                 cmap="coolwarm",
                 aspect="auto",
             )
-            fig.colorbar(im0, ax=axes_flat[0], label="px")
-            axes_flat[0].set_title(
-                "(a) Reference displacement $u_y$", fontsize=FONT_SIZE_PT
-            )
+            add_map_colourbar(im_e, axes[0, 1])
+            axes[0, 1].set_title(TITLE_FIG4_E, fontsize=FONT_SIZE_PT)
 
-            # Panel b: Under-resolved field u_y (Tex-OS=1, Px-SS=1)
-            im1 = axes_flat[1].imshow(
-                cv,
+            # (f) Grid Under-resolved Field
+            im_f = axes[1, 1].imshow(
+                cv_grid,
                 extent=(0, W, H, 0),
                 cmap="coolwarm",
                 aspect="auto",
             )
-            fig.colorbar(im1, ax=axes_flat[1], label="px")
-            axes_flat[1].set_title(
-                "(b) Riley B-spline (Tex-OS=1, Px-SS=1) displacement $u_y$",
-                fontsize=FONT_SIZE_PT,
+            add_map_colourbar(im_f, axes[1, 1])
+            interp_name_grid = INTERPOLATOR_NAMES.get(
+                under_grid.interpolator, under_grid.interpolator
             )
+            title_f = TITLE_FIG4_F_TEMPLATE.format(
+                name=interp_name_grid,
+                osamp=under_grid.osamp or 1,
+                ssaa=under_grid.ssaa or 1,
+            )
+            axes[1, 1].set_title(title_f, fontsize=FONT_SIZE_PT)
 
-            # Panel c: Spatial renderer-error map u_y difference
-            mask_edges = np.ones(ru.shape, dtype=bool)
-            mask_edges[
+            # (g) Grid difference Map
+            mask_grid = np.ones(ru_grid.shape, dtype=bool)
+            mask_grid[
                 EDGE_EXCLUSION_GRID:-EDGE_EXCLUSION_GRID,
                 EDGE_EXCLUSION_GRID:-EDGE_EXCLUSION_GRID
             ] = False
-            dv_masked = np.where(mask_edges, np.nan, dv)
-            limit = float(np.nanpercentile(np.abs(dv_masked), 95))
-            limit = max(limit, 1e-5)
-            im2 = axes_flat[2].imshow(
-                dv,
+            dv_grid_masked = np.where(mask_grid, np.nan, dv_grid)
+            limit_grid = float(np.nanpercentile(np.abs(dv_grid_masked), 95))
+            limit_grid = max(limit_grid, 1e-5)
+            im_g = axes[2, 1].imshow(
+                dv_grid,
                 extent=(0, W, H, 0),
                 cmap="coolwarm",
                 aspect="auto",
-                vmin=-limit,
-                vmax=limit,
+                vmin=-limit_grid,
+                vmax=limit_grid,
             )
-            fig.colorbar(im2, ax=axes_flat[2], label="px")
-            axes_flat[2].set_title(
-                "(c) Riley B-spline (Tex-OS=1, Px-SS=1) $u_y$ difference map",
-                fontsize=FONT_SIZE_PT,
+            add_map_colourbar(im_g, axes[2, 1])
+            title_g = TITLE_FIG4_G_TEMPLATE.format(
+                name=interp_name_grid,
+                osamp=under_grid.osamp or 1,
+                ssaa=under_grid.ssaa or 1,
             )
+            axes[2, 1].set_title(title_g, fontsize=FONT_SIZE_PT)
 
-            # Panel d: 1D Column-wise RMSE of u_y vs Horizontal coordinate x
-            bspline_profile = [
-                (
-                    find_rec(
-                        subset, "riley_render_texf", "cubic_bspline", 1, 1
-                    ),
-                    "B-spline (1, 1)",
-                    COLOR_BSPLINE,
-                    "-",
-                ),
-                (
-                    find_rec(
-                        subset, "riley_render_texf", "cubic_bspline", 4, 4
-                    ),
-                    "B-spline (4, 4)",
-                    "tab:green",
-                    "-",
-                ),
-                (
-                    find_rec(
-                        subset, "riley_render_texf", "cubic_bspline", 32, 32
-                    ),
-                    "B-spline (32, 32)",
-                    "tab:purple",
-                    "-",
-                ),
-            ]
+            # (h) Grid Column RMSE Profiles
+            cases_grid = []
+            for interp, osamp, ssaa, col, lstyle in EXP3_FIG4_5_PROFILES:
+                rec = find_rec(
+                    subset_grid, "riley_render_texf", interp, osamp, ssaa
+                )
+                name = INTERPOLATOR_NAMES.get(interp, interp)
+                label = LABEL_FIG4_5_PROFILE_TEMPLATE.format(
+                    name=name, osamp=osamp, ssaa=ssaa
+                )
+                cases_grid.append((rec, label, col, lstyle))
 
-            cubiccm_profile = [
-                (
-                    find_rec(
-                        subset, "riley_render_texf", "cubiccm", 1, 1
-                    ),
-                    "Catmull-Rom (1, 1)",
-                    COLOR_CUBICCM,
-                    "--",
-                ),
-                (
-                    find_rec(
-                        subset, "riley_render_texf", "cubiccm", 4, 4
-                    ),
-                    "Catmull-Rom (4, 4)",
-                    "tab:red",
-                    "--",
-                ),
-                (
-                    find_rec(
-                        subset, "riley_render_texf", "cubiccm", 32, 32
-                    ),
-                    "Catmull-Rom (32, 32)",
-                    "tab:brown",
-                    "--",
-                ),
-            ]
-
-            cases_profile = bspline_profile + cubiccm_profile
-
-            for case_rec, label, col, lstyle in cases_profile:
-                if case_rec is None:
+            max_rmse_grid = 0.0
+            for rec, label, col, lstyle in cases_grid:
+                if rec is None:
                     continue
-                c_data = load_grid(case_rec, 1)
+                c_data = load_grid(rec, 1)
                 if c_data is None:
                     continue
                 _, c_v = c_data
-                d_v = c_v - rv
-                d_v_masked = np.where(mask_edges, np.nan, d_v)
+                d_v = c_v - rv_grid
+                d_v_masked = np.where(mask_grid, np.nan, d_v)
 
                 col_rmses = []
                 for col_idx in range(W):
@@ -1328,7 +1257,11 @@ def generate_figure5(grid_records) -> None:
                     else:
                         col_rmses.append(np.nan)
 
-                axes_flat[3].plot(
+                valid_rmses = [r for r in col_rmses if np.isfinite(r)]
+                if valid_rmses:
+                    max_rmse_grid = max(max_rmse_grid, max(valid_rmses))
+
+                axes[3, 1].plot(
                     np.arange(W),
                     col_rmses,
                     color=col,
@@ -1336,74 +1269,73 @@ def generate_figure5(grid_records) -> None:
                     linewidth=EXP3_LINE_WIDTH_PT,
                     label=label,
                 )
+                profile_handles.append(Line2D([], [], color=col, linestyle=lstyle,
+                                              linewidth=EXP3_LINE_WIDTH_PT, label=label))
 
-            axes_flat[3].set_xlabel(
-                "Horizontal coordinate [px]", fontsize=FONT_SIZE_PT
-            )
-            axes_flat[3].set_ylabel(
-                "Column RMSE [px]", fontsize=FONT_SIZE_PT
-            )
-            axes_flat[3].set_title(
-                "(d) $u_y$ RMSE along frequency gradient", fontsize=FONT_SIZE_PT
-            )
-            axes_flat[3].set_ylim(bottom=0.0)
-            axes_flat[3].grid(True, linestyle=":", alpha=0.6)
-            leg = axes_flat[3].legend(
-                fontsize=LEGEND_FONT_SIZE_PT,
-                loc="center left",
-                bbox_to_anchor=(1.02, 0.5),
-            )
-            # Retain in layout to adjust Panel (d) width matching (a)-(c)
-            leg.set_in_layout(True)
+            axes[3, 1].set_title(TITLE_FIG4_H, fontsize=FONT_SIZE_PT)
+            if max_rmse_grid > 0:
+                axes[3, 1].set_ylim(bottom=-0.04 * max_rmse_grid)
+            else:
+                axes[3, 1].set_ylim(bottom=-1e-5)
+            axes[3, 1].grid(True, linestyle=":", alpha=0.6)
 
-            for ax in axes_flat:
-                ax.tick_params(labelsize=TICK_FONT_SIZE_PT)
-                if ax != axes_flat[3]:
-                    ax.set_xlabel(
-                        "Horizontal coordinate [px]", fontsize=FONT_SIZE_PT
-                    )
-                    ax.set_ylabel(
-                        "Vertical coordinate [px]", fontsize=FONT_SIZE_PT
-                    )
+    # Format ticks and labels for all subplots
+    for r in range(4):
+        for c in range(2):
+            ax = axes[r, c]
+            ax.tick_params(labelsize=TICK_FONT_SIZE_PT)
+            if r == 3:
+                ax.set_xlabel(LABEL_HORIZ_COORD_PX, fontsize=FONT_SIZE_PT)
+                ax.set_ylabel(LABEL_COLUMN_RMSE_PX, fontsize=FONT_SIZE_PT)
+            else:
+                ax.set_xlabel(LABEL_HORIZ_COORD_PX, fontsize=FONT_SIZE_PT)
+                ax.set_ylabel(LABEL_VERT_COORD_PX, fontsize=FONT_SIZE_PT)
+
+    unique_profiles = {handle.get_label(): handle for handle in profile_handles}
+    add_figure_legend(
+        fig, list(unique_profiles.values()), font_size=LEGEND_FONT_SIZE_PT,
+        columns=3, y_offset=-0.035,
+    )
 
     save_path = (
-        Path(PAPER_OUTPUT_DIR)
-        / "exp3_riley_gauss_fig5_chirp_spatial_frequency_error_star_gridmethod"
+        Path(PAPER_OUTPUT_DIR) / "exp3_riley_gauss_fig4_chirp_combined_b12"
     )
-    save_figure(fig, save_path, PAPER_FORMATS, PAPER_DPI)
+    written = save_figure(fig, save_path, PAPER_FORMATS, PAPER_DPI)
     fig.clear()
+    return written
 
 
-def main() -> None:
+def figure_stems() -> tuple[str, ...]:
+    return (
+        "exp3_riley_gauss_fig1_rigid_translation_bias_rmse_refinement_b12",
+        "exp3_riley_gauss_fig2_rigid_refinement_independence_os_vs_ss_b12",
+        "exp3_riley_gauss_fig3_affine_self_convergence_dic_vs_grid_b12",
+        "exp3_riley_gauss_fig4_chirp_combined_b12",
+    )
+
+
+def generate_figures() -> list[Path]:
     print("Discovering records...")
     dic_records = discover_dic()
     grid_records = discover_grid()
-
     print("Generating Figure 1 (Rigid Subpixel Bias/RMSE)...")
-    generate_figure1(dic_records)
-
+    written = generate_figure1(dic_records)
     print("Generating Figure 2 (Px-SS vs. Tex-OS Refinement)...")
-    generate_figure2(dic_records)
-
+    written.extend(generate_figure2(dic_records))
     print("Generating Figure 3 (Self-Convergence Affine)...")
-    generate_figure3(dic_records, grid_records)
+    written.extend(generate_figure3(dic_records, grid_records))
+    print("Generating Figure 4 (Combined Chirp Case)...")
+    written.extend(generate_figure4(dic_records, grid_records))
+    return written
 
-    print("Generating Figure 4 (Finite Star/Chirp Case)...")
-    generate_figure4(dic_records)
 
-    print("Generating Figure 5 (Finite Star/Chirp Case - Grid Method)...")
-    generate_figure5(grid_records)
-
-    stems = [
-        "exp3_riley_gauss_fig1_rigid_translation_bias_rmse_refinement",
-        "exp3_riley_gauss_fig2_rigid_refinement_independence_os_vs_ss",
-        "exp3_riley_gauss_fig3_affine_self_convergence_dic_vs_grid",
-        "exp3_riley_gauss_fig4_chirp_spatial_frequency_error_star",
-        "exp3_riley_gauss_fig5_chirp_spatial_frequency_error_star_gridmethod",
-    ]
+def main() -> None:
+    written = generate_figures()
     print("Writing LaTeX previews...")
-    write_latex_preview(stems, FIGURE_CAPTIONS, FIGURE_LABELS)
-    print("All Experiment 3 figures and latex previews generated successfully.")
+    write_latex_preview(figure_stems(), FIGURE_CAPTIONS, FIGURE_LABELS)
+    print(
+        "All Experiment 3 figures and latex previews generated successfully."
+    )
 
 
 if __name__ == "__main__":

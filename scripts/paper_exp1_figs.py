@@ -22,6 +22,11 @@ from modules.paperfigs import (
     make_figure, paper_output_directories, save_figure, texture_os_style,
     write_latex_preview,
 )
+from paperfiglabels import (
+    LABEL_DIGITISED_RMSE, LABEL_MAX_DIGITISED_ERR, LABEL_DIGITISED_DIFF,
+    TITLE_UNDEFORMED, TITLE_RIGID_03PX, TITLE_AFFINE_03PX,
+    LABEL_PIXEL_X, LABEL_PIXEL_Y,
+)
 from modules.render_outputs import quantise_camera
 from paperparams import (
     AXIS_LABEL_FONT_SIZE_PT, DIFFERENCE_CMAP, FIGURE_1X3_CM,
@@ -32,7 +37,7 @@ from paperparams import (
     PAPER_TEXTURE_INTERPOLATOR, TICK_FONT_SIZE_PT, FIGURE_CAPTIONS,
     FIGURE_LABELS, EXP1_DIFF_SSAA_LEVELS, EXP2_DIFF_SSAA_LEVELS,
     EXP2_DIFF_OVERSAMPLES, EXP1_DIFF_FUNC_CASE, EXP1_DIFF_FUNC_FRAME,
-    EXP1_DIFF_TEX_CASE, EXP1_DIFF_TEX_FRAME,
+    EXP1_DIFF_TEX_CASE, EXP1_DIFF_TEX_FRAME, EXP1_FIG5_DIFF_LIMIT_BITS,
 )
 
 OUT = Path("out")
@@ -42,11 +47,14 @@ FUNC_RENDER = OUT / "exp1_riley_render_func_uvs"
 TEXFLOAT_RENDER = OUT / "exp1_riley_render_texf"
 TEXUINT_RENDER = OUT / "exp1_riley_render_texu"
 TEXTURE_STUDIES = (
-    ("pt42_cam32_q9_rig", 0, "Undeformed"),
-    ("pt42_cam32_q9_rig", 3, "Rigid 0.3px"),
-    ("pt42_cam32_q9_aff", 3, "Affine 0.3px"),
+    ("pt42_cam32_q9_rig", 0, TITLE_UNDEFORMED),
+    ("pt42_cam32_q9_rig", 3, TITLE_RIGID_03PX),
+    ("pt42_cam32_q9_aff", 3, TITLE_AFFINE_03PX),
 )
-METRICS = (("e_b", "Digitised RMSE [bits]"), ("max_eb", "Max. digitised err. [bits]"))
+METRICS = (
+    ("e_b", LABEL_DIGITISED_RMSE),
+    ("max_eb", LABEL_MAX_DIGITISED_ERR),
+)
 
 
 @dataclass(frozen=True)
@@ -177,9 +185,9 @@ def draw_series(axis, series: list[Series], metric_label: str, reference: str) -
 def figure_function_shaders() -> list[Path]:
     """Figure 1: undeformed and 0.3 px rigid/affine comparisons."""
     studies = (
-        ("pt42_cam32_q9_rig", 0, "Undeformed"),
-        ("pt42_cam32_q9_rig", 3, "Rigid 0.3px"),
-        ("pt42_cam32_q9_aff", 3, "Affine 0.3px"),
+        ("pt42_cam32_q9_rig", 0, TITLE_UNDEFORMED),
+        ("pt42_cam32_q9_rig", 3, TITLE_RIGID_03PX),
+        ("pt42_cam32_q9_aff", 3, TITLE_AFFINE_03PX),
     )
     written = []
 
@@ -195,7 +203,7 @@ def figure_function_shaders() -> list[Path]:
         data = grid + function_series(case, reference, "e_b", bits, frame)
         label = display_reference(summary_ref or ref_label)
         handles_rmse.extend(draw_series(
-            axes_rmse[0, col], data, "Digitised RMSE [bits]", label,
+            axes_rmse[0, col], data, LABEL_DIGITISED_RMSE, label,
         ))
         axes_rmse[0, col].set_title(
             f"{panel_prefix(col)} {subtitle}, Ref: {label}",
@@ -209,35 +217,6 @@ def figure_function_shaders() -> list[Path]:
     written.extend(save_figure(
         fig_rmse,
         PAPER_OUTPUT_DIR / "exp1_fig1_eggbox_function_shaders_rmse",
-        PAPER_FORMATS, PAPER_DPI,
-    ))
-
-    # 2. Max Error Figure
-    fig_max, axes_max = make_figure(
-        FIGURE_1X3_CM, rows=1, columns=3, tick_font_size=TICK_FONT_SIZE_PT,
-    )
-    handles_max = []
-    for col, (case, frame, subtitle) in enumerate(studies):
-        reference, ref_label = analytic_reference(case, frame)
-        grid, summary_ref = grid_metric_series(case, "max_eb", frame)
-        bits = {item.bit_depth for item in grid}
-        data = grid + function_series(case, reference, "max_eb", bits, frame)
-        label = display_reference(summary_ref or ref_label)
-        handles_max.extend(draw_series(
-            axes_max[0, col], data, "Max. digitised err. [bits]", label,
-        ))
-        axes_max[0, col].set_title(
-            f"{panel_prefix(col)} {subtitle}, Ref: {label}",
-            fontsize=FONT_SIZE_PT,
-        )
-    unique_max = {h.get_label(): h for h in handles_max}
-    add_figure_legend(
-        fig_max, list(unique_max.values()), font_size=LEGEND_FONT_SIZE_PT,
-        columns=3, y_offset=-0.18,
-    )
-    written.extend(save_figure(
-        fig_max,
-        PAPER_OUTPUT_DIR / "exp1_fig1_eggbox_function_shaders_max_eb",
         PAPER_FORMATS, PAPER_DPI,
     ))
 
@@ -274,7 +253,7 @@ def figure_texture_convergence() -> list[Path]:
                     metric="e_b", frame=frame,
                 )
                 handles_rmse.extend(draw_series(
-                    axes_rmse[row, col], data, "Digitised RMSE [bits]",
+                    axes_rmse[row, col], data, LABEL_DIGITISED_RMSE,
                     ref_label,
                 ))
                 axes_rmse[row, col].set_title(
@@ -292,36 +271,7 @@ def figure_texture_convergence() -> list[Path]:
             PAPER_FORMATS, PAPER_DPI,
         ))
 
-        # 2. Max Error Figure
-        fig_max, axes_max = make_figure(
-            FIGURE_2X3_CM, rows=2, columns=3, tick_font_size=TICK_FONT_SIZE_PT,
-        )
-        handles_max = []
-        for row, (row_label, root, src_bits, cam_bits) in enumerate(rows_config):
-            for col, (case, frame, deformation) in enumerate(TEXTURE_STUDIES):
-                _, ref_label = analytic_reference(case, frame)
-                data = texture_series(
-                    case, root, source_bits=src_bits, camera_bits=cam_bits,
-                    metric="max_eb", frame=frame,
-                )
-                handles_max.extend(draw_series(
-                    axes_max[row, col], data, "Max. digitised err. [bits]",
-                    ref_label,
-                ))
-                axes_max[row, col].set_title(
-                    f"{panel_prefix(row * 3 + col)} {row_label}\n"
-                    f"{deformation}, Ref: {ref_label}",
-                    fontsize=FONT_SIZE_PT,
-                )
-        unique_max = {h.get_label(): h for h in handles_max}
-        add_figure_legend(
-            fig_max, list(unique_max.values()), font_size=LEGEND_FONT_SIZE_PT,
-            columns=4, y_offset=-0.13,
-        )
-        written.extend(save_figure(
-            fig_max, PAPER_OUTPUT_DIR / f"{stem}_max_eb",
-            PAPER_FORMATS, PAPER_DPI,
-        ))
+        # 2. Max Error Figure removed (plot only RMSE)
 
     return written
 
@@ -329,11 +279,8 @@ def figure_texture_convergence() -> list[Path]:
 def exp1_figure_stems() -> tuple[str, ...]:
     return (
         "exp1_fig1_eggbox_function_shaders_rmse",
-        "exp1_fig1_eggbox_function_shaders_max_eb",
         "exp1_fig2_riley_textures_b8_rmse",
-        "exp1_fig2_riley_textures_b8_max_eb",
         "exp1_fig3_riley_textures_b12_rmse",
-        "exp1_fig3_riley_textures_b12_max_eb",
         "exp1_fig4_affine_eggbox_difference_maps",
         "exp1_fig5_riley_texf_difference_maps",
     )
@@ -370,30 +317,42 @@ def figure_affine_function_difference_maps() -> list[Path]:
         axis = axes.flat[index]
         axis.set_title(f"{panel_prefix(index)} Px-SS={samples}", fontsize=FONT_SIZE_PT)
         if difference is None:
-            annotate_no_data(axis, "No completed render data", font_size=FONT_SIZE_PT)
+            annotate_no_data(axis, LABEL_NO_DATA, font_size=FONT_SIZE_PT)
             continue
         images.append(axis.imshow(
             difference, cmap=DIFFERENCE_CMAP, vmin=-scale, vmax=scale,
             interpolation="nearest", origin="upper"
         ))
-        axis.set_xlabel("Pixel x", fontsize=AXIS_LABEL_FONT_SIZE_PT)
-        axis.set_ylabel("Pixel y", fontsize=AXIS_LABEL_FONT_SIZE_PT)
+        axis.set_xlabel(LABEL_PIXEL_X, fontsize=AXIS_LABEL_FONT_SIZE_PT)
+        axis.set_ylabel(LABEL_PIXEL_Y, fontsize=AXIS_LABEL_FONT_SIZE_PT)
     if images:
-        colourbar = figure.colorbar(images[0], ax=list(axes.flat), shrink=0.86, pad=0.02)
-        colourbar.set_label("Digitised difference [bits]", fontsize=AXIS_LABEL_FONT_SIZE_PT)
+        colourbar = figure.colorbar(
+            images[0], ax=list(axes.flat), shrink=0.86, pad=0.02
+        )
+        colourbar.set_label(
+            LABEL_DIGITISED_DIFF, fontsize=AXIS_LABEL_FONT_SIZE_PT
+        )
         colourbar.ax.tick_params(labelsize=TICK_FONT_SIZE_PT)
-    return save_figure(figure, PAPER_OUTPUT_DIR / "exp1_fig4_affine_eggbox_difference_maps", PAPER_FORMATS, PAPER_DPI)
+    return save_figure(
+        figure,
+        PAPER_OUTPUT_DIR / "exp1_fig4_affine_eggbox_difference_maps",
+        PAPER_FORMATS, PAPER_DPI,
+    )
 
 
 def figure_texture_difference_maps() -> list[Path]:
-    """Fig. 5: 4×4 signed 8-bit difference maps for the rigid 0.3 px case."""
+    """Fig. 5: selected signed 8-bit texture-shader difference maps."""
     case, frame = EXP1_DIFF_TEX_CASE, EXP1_DIFF_TEX_FRAME
     reference_image, _ = analytic_reference(case, frame)
     ssaa_levels = EXP2_DIFF_SSAA_LEVELS
     oversamples = EXP2_DIFF_OVERSAMPLES
     root = TEXFLOAT_RENDER / f"{case}_{PAPER_TEXTURE_INTERPOLATOR}"
+    # Never hard-code the grid: this figure follows the selected SSAA/OS
+    # matrix exactly, so changing either list cannot leave blank panels.
+    rows, columns = len(ssaa_levels), len(oversamples)
     figure, axes = make_figure(
-        FIGURE_4X4_CM, rows=4, columns=4, tick_font_size=TICK_FONT_SIZE_PT,
+        FIGURE_4X4_CM, rows=rows, columns=columns,
+        tick_font_size=TICK_FONT_SIZE_PT,
     )
     differences: dict[tuple[int, int], np.ndarray | None] = {}
     for ssaa in ssaa_levels:
@@ -417,11 +376,7 @@ def figure_texture_difference_maps() -> list[Path]:
                     )
                     continue
             differences[(ssaa, oversamp)] = None
-    scale = max(
-        (float(np.max(np.abs(value))) for value in differences.values()
-         if value is not None),
-        default=1.0,
-    )
+    scale = EXP1_FIG5_DIFF_LIMIT_BITS
     images = []
     for row, ssaa in enumerate(ssaa_levels):
         for column, oversamp in enumerate(oversamples):
@@ -434,7 +389,7 @@ def figure_texture_difference_maps() -> list[Path]:
             )
             if difference is None:
                 annotate_no_data(
-                    axis, "No completed render data",
+                    axis, LABEL_NO_DATA,
                     font_size=FONT_SIZE_PT,
                 )
                 continue
@@ -443,15 +398,15 @@ def figure_texture_difference_maps() -> list[Path]:
                 interpolation="nearest", origin="upper",
             ))
             if row == len(ssaa_levels) - 1:
-                axis.set_xlabel("Pixel x", fontsize=AXIS_LABEL_FONT_SIZE_PT)
+                axis.set_xlabel(LABEL_PIXEL_X, fontsize=AXIS_LABEL_FONT_SIZE_PT)
             if column == 0:
-                axis.set_ylabel("Pixel y", fontsize=AXIS_LABEL_FONT_SIZE_PT)
+                axis.set_ylabel(LABEL_PIXEL_Y, fontsize=AXIS_LABEL_FONT_SIZE_PT)
     if images:
         colourbar = figure.colorbar(
             images[0], ax=list(axes.flat), shrink=0.9, pad=0.015,
         )
         colourbar.set_label(
-            "Digitised difference [bits]", fontsize=AXIS_LABEL_FONT_SIZE_PT,
+            LABEL_DIGITISED_DIFF, fontsize=AXIS_LABEL_FONT_SIZE_PT,
         )
         colourbar.ax.tick_params(labelsize=TICK_FONT_SIZE_PT)
     return save_figure(

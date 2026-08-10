@@ -266,7 +266,20 @@ def analyse_dic_job(
         )
 
         rec_render_dir = OUT / rec.root / rec.case / rec.config
-        ref_render_dir = OUT / ref.root / ref.case / ref.config
+        analytic_cands = [c for c in candidates if c.analytic]
+        if analytic_cands:
+            img_ref = analytic_cands[0]
+        else:
+            fam_cands = [
+                c for c in candidates
+                if c.root == rec.root and c.interpolator == rec.interpolator
+            ]
+            img_ref = (
+                max(fam_cands, key=lambda r: (r.ssaa, r.osamp))
+                if fam_cands
+                else ref
+            )
+        ref_render_dir = OUT / img_ref.root / img_ref.case / img_ref.config
         rec_img = load_render_image(rec_render_dir, frame)
         ref_img = load_render_image(ref_render_dir, frame)
         if rec_img is not None and ref_img is not None:
@@ -338,7 +351,20 @@ def analyse_grid_job(
         )
 
         rec_render_dir = OUT / rec.root / rec.case / rec.config
-        ref_render_dir = OUT / ref.root / ref.case / ref.config
+        analytic_cands = [c for c in candidates if c.analytic]
+        if analytic_cands:
+            img_ref = analytic_cands[0]
+        else:
+            fam_cands = [
+                c for c in candidates
+                if c.root == rec.root and c.interpolator == rec.interpolator
+            ]
+            img_ref = (
+                max(fam_cands, key=lambda r: (r.ssaa, r.osamp))
+                if fam_cands
+                else ref
+            )
+        ref_render_dir = OUT / img_ref.root / img_ref.case / img_ref.config
         rec_img = load_render_image(rec_render_dir, frame)
         ref_img = load_render_image(ref_render_dir, frame)
         if rec_img is not None and ref_img is not None:

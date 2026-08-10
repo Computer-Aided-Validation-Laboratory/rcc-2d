@@ -13,29 +13,61 @@ from matplotlib.lines import Line2D
 from modules.exp_common_analysis import image_error_metrics
 from modules.paperfigs import (
     add_figure_legend, annotate_no_data, finish_axis, finish_signed_axis,
-    make_figure, save_figure, texture_os_style,
+    make_figure, paper_output_directories, save_figure, texture_os_style,
 )
 from modules.render_outputs import quantise_camera
+from paperfiglabels import (
+    LABEL_DIGITISED_RMSE, LABEL_MAX_DIGITISED_ERR, LABEL_DIGITISED_DIFF,
+    TITLE_UNDEFORMED, TITLE_RIGID_03PX, TITLE_AFFINE_03PX,
+    LABEL_PIXEL_X, LABEL_PIXEL_Y, LABEL_NO_DATA,
+)
 from paperparams import (
-    AXIS_LABEL_FONT_SIZE_PT, DIFFERENCE_CMAP, FIGURE_1X3_CM,
-    FIGURE_2X3_CM, FIGURE_3X3_CM, FIGURE_4X4_CM, FONT_SIZE_PT,
-    LEGEND_FONT_SIZE_PT, PAPER_DPI, PAPER_EXP2_BIT_DEPTHS,
-    PAPER_EXP2_TEX_METRIC, PAPER_EXP2_TEX_METRIC_LABEL, PAPER_FORMATS,
-    PAPER_OUTPUT_DIR, PAPER_TEXFLOAT_BIT_DEPTH, PAPER_TEXTURE_INTERPOLATOR,
-    RILEY_LINE_WIDTH_PT, RILEY_MARKER_SIZE_PT, TICK_FONT_SIZE_PT,
-    EXP2_DIFF_SSAA_LEVELS, EXP2_DIFF_OVERSAMPLES, EXP2_DIFF_TEX_CASE,
+    AXIS_LABEL_FONT_SIZE_PT,
+    DIFFERENCE_CMAP,
+    FIGURE_1X3_CM,
+    FIGURE_2X3_CM,
+    FIGURE_3X3_CM,
+    FIGURE_4X4_CM,
+    FONT_SIZE_PT,
+    LEGEND_FONT_SIZE_PT,
+    PAPER_DPI,
+    PAPER_EXP2_BIT_DEPTHS,
+    PAPER_EXP2_TEX_METRIC,
+    PAPER_EXP2_TEX_METRIC_LABEL,
+    PAPER_FORMATS,
+    PAPER_OUTPUT_DIR,
+    PAPER_TEXFLOAT_BIT_DEPTH,
+    PAPER_TEXTURE_INTERPOLATOR,
+    RILEY_LINE_WIDTH_PT,
+    RILEY_MARKER_SIZE_PT,
+    TICK_FONT_SIZE_PT,
+    EXP2_DIFF_SSAA_LEVELS,
+    EXP2_DIFF_OVERSAMPLES,
+    EXP2_DIFF_TEX_CASE,
     EXP2_DIFF_TEX_FRAME,
+    EXP2_FIGURE7_8_CM,
+    EXP2_FIG3_STEM,
+    EXP2_FIG4_STEM,
+    EXP2_FIG5_STEM,
+    EXP2_FIG6_STEM,
+    EXP2_FIG7_STEM,
+    EXP2_FIG8_STEM,
+    EXP2_FIG7_DIFF_LIMIT_BITS,
+    EXP2_FIG8_DIFF_LIMIT_BITS,
 )
 
 OUT = Path("out")
 SPECK_RENDER = OUT / "exp2_speck2d_render_uvs"
 RILEY_TEXF_RENDER = OUT / "exp2_riley_render_texf"
 CASES = (
-    ("pt42_cam32_q9_rig", 0, "Undeformed"),
-    ("pt42_cam32_q9_rig", 3, "Rigid 0.3px"),
-    ("pt42_cam32_q9_aff", 3, "Affine 0.3px"),
+    ("pt42_cam32_q9_rig", 0, TITLE_UNDEFORMED),
+    ("pt42_cam32_q9_rig", 3, TITLE_RIGID_03PX),
+    ("pt42_cam32_q9_aff", 3, TITLE_AFFINE_03PX),
 )
-METRICS = (("e_b", "Digitised RMSE [bits]"), ("max_eb", "Max. digitised err. [bits]"))
+METRICS = (
+    ("e_b", LABEL_DIGITISED_RMSE),
+    ("max_eb", LABEL_MAX_DIGITISED_ERR),
+)
 METHOD_STYLE = {"gauss": ("#1b9e77", "s"), "rect": ("#377eb8", "o")}
 
 
@@ -196,7 +228,7 @@ def draw(axis, data: list[Series], ylabel: str, title: str) -> list[Line2D]:
         handles.append(Line2D([], [], color=row.colour, marker=row.marker, linestyle=row.linestyle, linewidth=RILEY_LINE_WIDTH_PT, markersize=RILEY_MARKER_SIZE_PT, label=row.label))
         samples.extend(row.samples); values.extend(row.values)
     if not data:
-        annotate_no_data(axis, "No completed render data", font_size=FONT_SIZE_PT)
+        annotate_no_data(axis, LABEL_NO_DATA, font_size=FONT_SIZE_PT)
         return handles
     finish_axis(axis, title=title, samples=samples, bit_depth=max(row.bit_depth for row in data), values=values, ylabel=ylabel, title_font_size=FONT_SIZE_PT, axis_label_font_size=AXIS_LABEL_FONT_SIZE_PT)
     return handles
@@ -217,7 +249,7 @@ def figure_speck2d(pattern: str, number: int) -> list[Path]:
     for col, (case, frame, deformation) in enumerate(CASES):
         data, ref_label = speck_series(case, pattern, frame, "e_b")
         handles_rmse.extend(draw(
-            axes_rmse[0, col], data, "Digitised RMSE [bits]",
+            axes_rmse[0, col], data, LABEL_DIGITISED_RMSE,
             f"{panel_prefix(col)} {deformation}, Ref: {ref_label}",
         ))
     unique_rmse = {h.get_label(): h for h in handles_rmse}
@@ -228,28 +260,6 @@ def figure_speck2d(pattern: str, number: int) -> list[Path]:
     written.extend(save_figure(
         fig_rmse,
         PAPER_OUTPUT_DIR / f"exp2_fig{number}_speck2d_{name.lower()}_rmse",
-        PAPER_FORMATS, PAPER_DPI,
-    ))
-
-    # 2. Max Error Figure
-    fig_max, axes_max = make_figure(
-        FIGURE_1X3_CM, rows=1, columns=3, tick_font_size=TICK_FONT_SIZE_PT,
-    )
-    handles_max = []
-    for col, (case, frame, deformation) in enumerate(CASES):
-        data, ref_label = speck_series(case, pattern, frame, "max_eb")
-        handles_max.extend(draw(
-            axes_max[0, col], data, "Max. digitised err. [bits]",
-            f"{panel_prefix(col)} {deformation}, Ref: {ref_label}",
-        ))
-    unique_max = {h.get_label(): h for h in handles_max}
-    add_figure_legend(
-        fig_max, list(unique_max.values()), font_size=LEGEND_FONT_SIZE_PT,
-        columns=3, y_offset=-0.18,
-    )
-    written.extend(save_figure(
-        fig_max,
-        PAPER_OUTPUT_DIR / f"exp2_fig{number}_speck2d_{name.lower()}_max_eb",
         PAPER_FORMATS, PAPER_DPI,
     ))
 
@@ -277,14 +287,14 @@ def figure_riley_texf() -> list[Path]:
         )),
     )
 
-    for pattern, name in (("diskadd", "Disk"), ("gaussadd", "Gauss")):
+    for pattern in ("diskadd", "gaussadd"):
         for suffix, rows_config in figs_config:
-            if pattern == "diskadd":
-                fig_num = 3 if suffix == "b8" else 4
-            else:
-                fig_num = 5 if suffix == "b8" else 6
-
-            stem_base = f"exp2_fig{fig_num}_riley_textures_{name.lower()}_{suffix}"
+            stem_base = {
+                ("diskadd", "b8"): EXP2_FIG3_STEM.removesuffix("_rmse"),
+                ("diskadd", "b12"): EXP2_FIG4_STEM.removesuffix("_rmse"),
+                ("gaussadd", "b8"): EXP2_FIG5_STEM.removesuffix("_rmse"),
+                ("gaussadd", "b12"): EXP2_FIG6_STEM.removesuffix("_rmse"),
+            }[(pattern, suffix)]
 
             # 1. RMSE Figure
             fig_rmse, axes_rmse = make_figure(
@@ -295,7 +305,7 @@ def figure_riley_texf() -> list[Path]:
                 for col, (case, frame, deformation) in enumerate(CASES):
                     data, ref_label = loader(case, pattern, frame, "e_b")
                     handles_rmse.extend(draw(
-                        axes_rmse[row, col], data, "Digitised RMSE [bits]",
+                        axes_rmse[row, col], data, LABEL_DIGITISED_RMSE,
                         f"{panel_prefix(row * 3 + col)} {row_label}\n"
                         f"{deformation}, Ref: {ref_label}",
                     ))
@@ -309,28 +319,7 @@ def figure_riley_texf() -> list[Path]:
                 PAPER_FORMATS, PAPER_DPI,
             ))
 
-            # 2. Max Error Figure
-            fig_max, axes_max = make_figure(
-                FIGURE_2X3_CM, rows=2, columns=3, tick_font_size=TICK_FONT_SIZE_PT,
-            )
-            handles_max = []
-            for row, (row_label, loader) in enumerate(rows_config):
-                for col, (case, frame, deformation) in enumerate(CASES):
-                    data, ref_label = loader(case, pattern, frame, "max_eb")
-                    handles_max.extend(draw(
-                        axes_max[row, col], data, "Max. digitised err. [bits]",
-                        f"{panel_prefix(row * 3 + col)} {row_label}\n"
-                        f"{deformation}, Ref: {ref_label}",
-                    ))
-            unique_max = {h.get_label(): h for h in handles_max}
-            add_figure_legend(
-                fig_max, list(unique_max.values()), font_size=LEGEND_FONT_SIZE_PT,
-                columns=4, y_offset=-0.13,
-            )
-            written.extend(save_figure(
-                fig_max, PAPER_OUTPUT_DIR / f"{stem_base}_max_eb",
-                PAPER_FORMATS, PAPER_DPI,
-            ))
+            # 2. Max Error Figure removed (plot only RMSE)
 
     return written
 
@@ -338,43 +327,65 @@ def figure_riley_texf() -> list[Path]:
 def figure_stems() -> tuple[str, ...]:
     return (
         "exp2_fig1_speck2d_disk_rmse",
-        "exp2_fig1_speck2d_disk_max_eb",
         "exp2_fig2_speck2d_gauss_rmse",
-        "exp2_fig2_speck2d_gauss_max_eb",
-        "exp2_fig3_riley_textures_disk_b8_rmse",
-        "exp2_fig3_riley_textures_disk_b8_max_eb",
-        "exp2_fig4_riley_textures_disk_b12_rmse",
-        "exp2_fig4_riley_textures_disk_b12_max_eb",
-        "exp2_fig5_riley_textures_gauss_b8_rmse",
-        "exp2_fig5_riley_textures_gauss_b8_max_eb",
-        "exp2_fig6_riley_textures_gauss_b12_rmse",
-        "exp2_fig6_riley_textures_gauss_b12_max_eb",
-        "exp2_fig7_riley_texf_disk_difference_maps",
-        "exp2_fig8_riley_texf_gauss_difference_maps",
+        EXP2_FIG3_STEM,
+        EXP2_FIG4_STEM,
+        EXP2_FIG5_STEM,
+        EXP2_FIG6_STEM,
+        EXP2_FIG7_STEM,
+        EXP2_FIG8_STEM,
     )
 
 
 def generate_figures() -> list[Path]:
+    remove_superseded_figures()
     written = figure_speck2d("diskadd", 1)
     written.extend(figure_speck2d("gaussadd", 2))
     written.extend(figure_riley_texf())
     written.extend(figure_texf_difference_maps(
-        "diskadd", "exp2_fig7_riley_texf_disk_difference_maps",
+        "diskadd", EXP2_FIG7_STEM, EXP2_FIG7_DIFF_LIMIT_BITS,
     ))
     written.extend(figure_texf_difference_maps(
-        "gaussadd", "exp2_fig8_riley_texf_gauss_difference_maps",
+        "gaussadd", EXP2_FIG8_STEM, EXP2_FIG8_DIFF_LIMIT_BITS,
     ))
     return written
 
 
-def figure_texf_difference_maps(pattern: str, stem: str) -> list[Path]:
+def remove_superseded_figures() -> None:
+    """Remove only pre-interpolant Exp2 texture-paper products."""
+    stems = (
+        "exp2_fig3_riley_textures_disk_b8_rmse",
+        "exp2_fig4_riley_textures_disk_b12_rmse",
+        "exp2_fig5_riley_textures_gauss_b8_rmse",
+        "exp2_fig6_riley_textures_gauss_b12_rmse",
+        "exp2_fig7_riley_texf_disk_difference_maps",
+        "exp2_fig8_riley_texf_gauss_difference_maps",
+    )
+    for output_dir in paper_output_directories():
+        for stem in stems:
+            for extension in (*PAPER_FORMATS, "tex"):
+                (output_dir / stem).with_suffix(f".{extension}").unlink(
+                    missing_ok=True
+                )
+
+
+def figure_texf_difference_maps(
+    pattern: str, stem: str, colour_limit_bits: float,
+) -> list[Path]:
     """4×4 signed 8-bit difference maps for the rigid 0.3 px texture case."""
     case, frame = EXP2_DIFF_TEX_CASE, EXP2_DIFF_TEX_FRAME
     reference_image, _ = reference(case, pattern, frame)
     ssaa_levels = EXP2_DIFF_SSAA_LEVELS
     oversamples = EXP2_DIFF_OVERSAMPLES
     root = RILEY_TEXF_RENDER / f"{case}_{pattern}_seed3_{PAPER_TEXTURE_INTERPOLATOR}"
-    figure, axes = make_figure(FIGURE_4X4_CM, rows=4, columns=4, tick_font_size=TICK_FONT_SIZE_PT)
+    rows = len(ssaa_levels)
+    cols = len(oversamples)
+    figure, axes = make_figure(
+        EXP2_FIGURE7_8_CM,
+        rows=rows,
+        columns=cols,
+        tick_font_size=TICK_FONT_SIZE_PT,
+    )
     differences: dict[tuple[int, int], np.ndarray | None] = {}
     for ssaa in ssaa_levels:
         for oversamp in oversamples:
@@ -388,10 +399,7 @@ def figure_texf_difference_maps(pattern: str, stem: str) -> list[Path]:
                     )
                     continue
             differences[(ssaa, oversamp)] = None
-    scale = max(
-        (float(np.max(np.abs(value))) for value in differences.values() if value is not None),
-        default=1.0,
-    )
+    scale = colour_limit_bits
     images = []
     for row, ssaa in enumerate(ssaa_levels):
         for column, oversamp in enumerate(oversamples):
@@ -402,21 +410,31 @@ def figure_texf_difference_maps(pattern: str, stem: str) -> list[Path]:
                 fontsize=FONT_SIZE_PT,
             )
             if difference is None:
-                annotate_no_data(axis, "No completed render data", font_size=FONT_SIZE_PT)
+                annotate_no_data(axis, LABEL_NO_DATA, font_size=FONT_SIZE_PT)
                 continue
             images.append(axis.imshow(
                 difference, cmap=DIFFERENCE_CMAP, vmin=-scale, vmax=scale,
                 interpolation="nearest", origin="upper",
             ))
             if row == len(ssaa_levels) - 1:
-                axis.set_xlabel("Pixel x", fontsize=AXIS_LABEL_FONT_SIZE_PT)
+                axis.set_xlabel(
+                    LABEL_PIXEL_X, fontsize=AXIS_LABEL_FONT_SIZE_PT
+                )
             if column == 0:
-                axis.set_ylabel("Pixel y", fontsize=AXIS_LABEL_FONT_SIZE_PT)
+                axis.set_ylabel(
+                    LABEL_PIXEL_Y, fontsize=AXIS_LABEL_FONT_SIZE_PT
+                )
     if images:
-        colourbar = figure.colorbar(images[0], ax=list(axes.flat), shrink=0.9, pad=0.015)
-        colourbar.set_label("Digitised difference [bits]", fontsize=AXIS_LABEL_FONT_SIZE_PT)
+        colourbar = figure.colorbar(
+            images[0], ax=list(axes.flat), shrink=0.9, pad=0.015
+        )
+        colourbar.set_label(
+            LABEL_DIGITISED_DIFF, fontsize=AXIS_LABEL_FONT_SIZE_PT
+        )
         colourbar.ax.tick_params(labelsize=TICK_FONT_SIZE_PT)
-    return save_figure(figure, PAPER_OUTPUT_DIR / stem, PAPER_FORMATS, PAPER_DPI)
+    return save_figure(
+        figure, PAPER_OUTPUT_DIR / stem, PAPER_FORMATS, PAPER_DPI
+    )
 
 
 
