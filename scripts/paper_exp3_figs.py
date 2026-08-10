@@ -8,14 +8,9 @@ finite-star frequency-based diagnostics.
 
 from __future__ import annotations
 
-import gc
-import re
-from collections import defaultdict
 from pathlib import Path
 
 import numpy as np
-from matplotlib.backends.backend_agg import FigureCanvasAgg
-from matplotlib.figure import Figure
 from matplotlib.lines import Line2D
 
 from exp3_analysis_conv_rmse import (
@@ -23,12 +18,9 @@ from exp3_analysis_conv_rmse import (
     EDGE_EXCLUSION_GRID,
     discover_dic,
     discover_grid,
-    filter_candidates,
-    filter_grid_candidates,
     load_dic,
     load_grid,
     select_dic_reference,
-    select_grid_reference,
 )
 from modules.paperfigs import (
     add_figure_legend,
@@ -36,7 +28,6 @@ from modules.paperfigs import (
     make_figure,
     save_figure,
     set_sample_axis,
-    texture_os_style,
     write_latex_preview,
 )
 from paperfiglabels import (
@@ -44,9 +35,20 @@ from paperfiglabels import (
     LABEL_VERT_COORD_PX,
     LABEL_COLUMN_RMSE_PX,
     LABEL_DISP_RMSE_PX,
-    LABEL_DISP_BIAS_PX,
     LABEL_SELF_CONV_RMSE,
-    TITLE_ANALYTIC_REF,
+    LABEL_NO_REFERENCE,
+    LABEL_COLOURBAR_PX,
+    LABEL_RILEY_TEMPLATE,
+    LABEL_ANALYTIC_REFERENCE,
+    LABEL_RILEY_BSPLINE,
+    LABEL_RILEY_CATMULL_ROM,
+    LABEL_FIG1_CATMULL_ROM_BASELINE,
+    METHOD_DIC,
+    METHOD_GRID,
+    INTERPOLATOR_LABELS,
+    LABEL_MISSING_METHOD_RECORDS_TEMPLATE,
+    LABEL_ERROR_LOADING_METHOD_DATA_TEMPLATE,
+    LABEL_NO_METHOD_DEFORMATION_REFERENCE_TEMPLATE,
     TITLE_FIG1_A,
     TITLE_FIG1_B,
     TITLE_FIG1_C,
@@ -64,10 +66,7 @@ from paperfiglabels import (
     LABEL_FIG2_A_TEMPLATE,
     LABEL_FIG2_B_TEMPLATE,
     LABEL_FIG2_C_TEMPLATE,
-    TITLE_FIG3_A,
-    TITLE_FIG3_B,
-    TITLE_FIG3_C,
-    TITLE_FIG3_D,
+    TITLE_FIG3_PANEL_TEMPLATE,
     LABEL_FIG3_DIC_TEMPLATE,
     LABEL_FIG3_GRID_TEMPLATE,
     TITLE_FIG4_A,
@@ -81,22 +80,18 @@ from paperfiglabels import (
     LABEL_FIG4_5_PROFILE_TEMPLATE,
 )
 from paperparams import (
-    AXIS_LABEL_FONT_SIZE_PT,
     COLORBAR_FONT_SIZE_PT,
-    DIFFERENCE_CMAP,
     EXP3_AFFINE_CASE,
     EXP3_ANALYTIC_LINE_WIDTH_PT,
     EXP3_BIT_DEPTH,
     EXP3_CHIRP_CASE,
-    EXP3_FIGURE1_CM,
-    EXP3_FIGURE2_CM,
-    EXP3_FIGURE3_CM,
-    EXP3_FIGURE4_CM,
+    LAYOUT_FIELD_4X2,
+    LAYOUT_LINE_1X3,
+    LAYOUT_LINE_2X2_WIDE,
+    LAYOUT_LINE_2X2_WIDE_DETACHED,
     EXP3_LINE_WIDTH_PT,
     EXP3_MARKER_SIZE_PT,
     EXP3_RIGID_CASE,
-    FIGURE_CAPTIONS,
-    FIGURE_LABELS,
     FONT_SIZE_PT,
     LEGEND_FONT_SIZE_PT,
     PAPER_DPI,
@@ -108,15 +103,8 @@ from paperparams import (
 # Colors matching the Experiment 1/2 paper convention
 COLOR_BSPLINE = "tab:orange"
 COLOR_CUBICCM = "tab:blue"
-MARKER_BSPLINE = "^"
-MARKER_CUBICCM = "s"
 
-INTERPOLATOR_NAMES = {
-    "cubic_bspline": "B-spline",
-    "cubiccm": "Catmull-Rom",
-    "line": "Linear",
-    "lanczos3": "Lanczos",
-}
+INTERPOLATOR_NAMES = INTERPOLATOR_LABELS
 
 # Cases for Figure 1: (interpolator, OS, SS, color, linestyle, marker)
 EXP3_FIG1_CASES = (
@@ -138,20 +126,6 @@ EXP3_FIG4_5_PROFILES = (
     ("cubiccm", 4, 4, "tab:red", "--"),
     ("cubiccm", 32, 32, "tab:brown", "--"),
 )
-
-COLOR_BY_LEVEL = {
-    1: "tab:blue",
-    2: "tab:orange",
-    4: "tab:green",
-    8: "tab:red",
-    16: "tab:purple",
-    32: "tab:brown",
-    64: "tab:pink",
-    128: "tab:olive",
-}
-
-
-
 
 def find_rec(
     records,
@@ -225,10 +199,36 @@ def get_rmse_vs_ref(rec, ref, is_dic=True) -> list[float]:
     return rmses
 
 
+def highest_diagonal_references(records, samplers) -> dict[str, object]:
+    """Return each sampler's highest completed Px-SS=Tex-OS record."""
+    references: dict[str, object] = {}
+    for interpolator, *_ in samplers:
+        candidates = [
+            record for record in records
+            if "riley_render_texf" in record.root
+            and record.interpolator == interpolator
+            and record.ssaa > 0
+            and record.ssaa == record.osamp
+        ]
+        if candidates:
+            references[interpolator] = max(
+                candidates, key=lambda record: record.ssaa
+            )
+    return references
+
+
+def diagonal_reference_label(references: dict[str, object]) -> str:
+    """Display the highest available diagonal reference level for a panel."""
+    levels = sorted({int(record.ssaa) for record in references.values()})
+    if not levels:
+        return "none"
+    return str(levels[-1])
+
+
 def generate_figure1(dic_records) -> None:
     """Figure 1: Subpixel bias hides renderer error."""
     fig, axes = make_figure(
-        EXP3_FIGURE1_CM, rows=2, columns=2, tick_font_size=TICK_FONT_SIZE_PT
+        LAYOUT_LINE_2X2_WIDE_DETACHED, rows=2, columns=2, tick_font_size=TICK_FONT_SIZE_PT
     )
     axes_flat = axes.flatten()
 
@@ -241,17 +241,17 @@ def generate_figure1(dic_records) -> None:
     ref, ref_name = select_dic_reference(subset)
 
     if ref is None:
-        annotate_no_data(axes_flat[0], "No Reference", font_size=FONT_SIZE_PT)
-        annotate_no_data(axes_flat[1], "No Reference", font_size=FONT_SIZE_PT)
-        annotate_no_data(axes_flat[2], "No Reference", font_size=FONT_SIZE_PT)
-        annotate_no_data(axes_flat[3], "No Reference", font_size=FONT_SIZE_PT)
+        annotate_no_data(axes_flat[0], LABEL_NO_REFERENCE, font_size=FONT_SIZE_PT)
+        annotate_no_data(axes_flat[1], LABEL_NO_REFERENCE, font_size=FONT_SIZE_PT)
+        annotate_no_data(axes_flat[2], LABEL_NO_REFERENCE, font_size=FONT_SIZE_PT)
+        annotate_no_data(axes_flat[3], LABEL_NO_REFERENCE, font_size=FONT_SIZE_PT)
     else:
         translations = [frame * 0.1 for frame in range(11)]
 
         cases_to_plot = [
             (
                 find_rec(subset, "analytic", analytic=True),
-                "Analytic Reference",
+                LABEL_ANALYTIC_REFERENCE,
                 "black",
                 "--",
                 None,
@@ -271,7 +271,7 @@ def generate_figure1(dic_records) -> None:
         # Panel a: Bias (all cases)
         max_bias_all = 0.0
         for rec, label, col, lstyle, marker in cases_to_plot:
-            if rec is None or "Analytic Reference" in label:
+            if rec is None or label == LABEL_ANALYTIC_REFERENCE:
                 continue
             biases = []
             for frame in range(11):
@@ -330,13 +330,13 @@ def generate_figure1(dic_records) -> None:
                     if valid_rmses:
                         val_max = max(valid_rmses)
                         max_rmse_all = max(max_rmse_all, val_max)
-                        if "Riley Catmull-Rom (Tex-OS=1, Px-SS=1)" not in label:
+                        if label != LABEL_FIG1_CATMULL_ROM_BASELINE:
                             max_rmse_filtered = max(
                                 max_rmse_filtered, val_max
                             )
 
             for rec, label, col, lstyle, marker in cases_to_plot:
-                if rec is None or "Analytic Reference" in label:
+                if rec is None or label == LABEL_ANALYTIC_REFERENCE:
                     continue
                 rmses = get_rmse_vs_ref(rec, anal_ref, is_dic=True)
                 if len(rmses) == 11:
@@ -368,9 +368,9 @@ def generate_figure1(dic_records) -> None:
         # Panel c: Bias (zoomed)
         max_bias_filtered = 0.0
         for rec, label, col, lstyle, marker in cases_to_plot:
-            if rec is None or "Analytic Reference" in label:
+            if rec is None or label == LABEL_ANALYTIC_REFERENCE:
                 continue
-            if "Riley Catmull-Rom (Tex-OS=1, Px-SS=1)" in label:
+            if label == LABEL_FIG1_CATMULL_ROM_BASELINE:
                 continue
             biases = []
             for frame in range(11):
@@ -417,9 +417,9 @@ def generate_figure1(dic_records) -> None:
         # Panel d: RMSE (zoomed)
         if anal_ref:
             for rec, label, col, lstyle, marker in cases_to_plot:
-                if rec is None or "Analytic Reference" in label:
+                if rec is None or label == LABEL_ANALYTIC_REFERENCE:
                     continue
-                if "Riley Catmull-Rom (Tex-OS=1, Px-SS=1)" in label:
+                if label == LABEL_FIG1_CATMULL_ROM_BASELINE:
                     continue
                 rmses = get_rmse_vs_ref(rec, anal_ref, is_dic=True)
                 if len(rmses) == 11:
@@ -505,7 +505,6 @@ def generate_figure1(dic_records) -> None:
             handles,
             font_size=LEGEND_FONT_SIZE_PT,
             columns=2,
-            y_offset=-0.13,
         )
 
     save_path = (
@@ -520,7 +519,7 @@ def generate_figure1(dic_records) -> None:
 def generate_figure2(dic_records) -> None:
     """Figure 2: Texture representation and pixel integration independence."""
     fig, axes = make_figure(
-        EXP3_FIGURE2_CM, rows=1, columns=3, tick_font_size=TICK_FONT_SIZE_PT
+        LAYOUT_LINE_1X3, rows=1, columns=3, tick_font_size=TICK_FONT_SIZE_PT
     )
     axes_flat = axes.flatten()
 
@@ -534,11 +533,18 @@ def generate_figure2(dic_records) -> None:
 
     if anal_ref is None:
         for ax in axes_flat:
-            annotate_no_data(ax, "No Reference", font_size=FONT_SIZE_PT)
+            annotate_no_data(ax, LABEL_NO_REFERENCE, font_size=FONT_SIZE_PT)
     else:
         samplers = [
-            ("cubic_bspline", "Riley B-spline", COLOR_BSPLINE, "-", "o"),
-            ("cubiccm", "Riley Catmull-Rom", COLOR_CUBICCM, "--", "x"),
+            ("cubic_bspline", LABEL_RILEY_BSPLINE, COLOR_BSPLINE, "-", "o"),
+            ("cubiccm", LABEL_RILEY_CATMULL_ROM, COLOR_CUBICCM, "--", "x"),
+            (
+                "line",
+                LABEL_RILEY_TEMPLATE.format(
+                    name=INTERPOLATOR_LABELS["line"],
+                ),
+                "tab:green", ":", "d",
+            ),
         ]
 
         # Panel a: Fixed Tex-OS=1, Refine Px-SS
@@ -701,7 +707,6 @@ def generate_figure2(dic_records) -> None:
             handles,
             font_size=LEGEND_FONT_SIZE_PT,
             columns=2,
-            y_offset=-0.10,
         )
 
     save_path = (
@@ -713,17 +718,17 @@ def generate_figure2(dic_records) -> None:
     return written
 
 
-def generate_figure3(dic_records, grid_records) -> None:
+def _generate_figure3_with_affine(dic_records, grid_records) -> None:
     """Figure 3: Numerical-reference self-convergence (Rigid & Affine)."""
     fig, axes = make_figure(
-        EXP3_FIGURE3_CM, rows=2, columns=2, tick_font_size=TICK_FONT_SIZE_PT
+        LAYOUT_LINE_2X2_WIDE, rows=2, columns=2, tick_font_size=TICK_FONT_SIZE_PT
     )
     axes_flat = axes.flatten()
     diag_levels = [1, 2, 4, 8, 16, 32, 64, 128]
     samplers = [
-        ("cubic_bspline", "B-spline", COLOR_BSPLINE, "-", "o"),
-        ("cubiccm", "Catmull-Rom", COLOR_CUBICCM, "--", "x"),
-        ("line", "Linear", "tab:green", ":", "d"),
+        ("cubic_bspline", INTERPOLATOR_LABELS["cubic_bspline"], COLOR_BSPLINE, "-", "o"),
+        ("cubiccm", INTERPOLATOR_LABELS["cubiccm"], COLOR_CUBICCM, "--", "x"),
+        ("line", INTERPOLATOR_LABELS["line"], "tab:green", ":", "d"),
     ]
 
     # --- TOP ROW: RIGID TRANSLATION ---
@@ -734,12 +739,12 @@ def generate_figure3(dic_records, grid_records) -> None:
         and r.pattern == "gausscont"
         and r.bit_depth == EXP3_BIT_DEPTH
     ]
-    dic_ref_rig = find_rec(
-        dic_subset_rig, "riley_render_texf", "cubic_bspline", 128, 16
-    )
-    if dic_ref_rig is None:
+    dic_refs_rig = highest_diagonal_references(dic_subset_rig, samplers)
+    if not dic_refs_rig:
         annotate_no_data(
-            axes_flat[0], "No DIC Rigid Reference", font_size=FONT_SIZE_PT
+            axes_flat[0], LABEL_NO_METHOD_DEFORMATION_REFERENCE_TEMPLATE.format(
+                method=METHOD_DIC, deformation="Rigid",
+            ), font_size=FONT_SIZE_PT
         )
     else:
         dic_inset = axes_flat[0].inset_axes([0.49, 0.46, 0.47, 0.47])
@@ -754,8 +759,9 @@ def generate_figure3(dic_records, grid_records) -> None:
                     ssaa=lvl,
                     osamp=lvl,
                 )
-                if rec:
-                    rmses = get_rmse_vs_ref(rec, dic_ref_rig, is_dic=True)
+                reference = dic_refs_rig.get(interp)
+                if rec and reference is not None:
+                    rmses = get_rmse_vs_ref(rec, reference, is_dic=True)
                     if rmses and len(rmses) > 3:
                         x_vals.append(lvl)
                         y_vals.append(rmses[3])
@@ -787,14 +793,15 @@ def generate_figure3(dic_records, grid_records) -> None:
         and r.pattern == "eggbox"
         and r.bit_depth == EXP3_BIT_DEPTH
     ]
-    grid_ref_rig = find_rec(
-        grid_subset_rig, "riley_render_texf", "cubic_bspline", 128, 16
-    )
-    if grid_ref_rig is None:
+    grid_refs_rig = highest_diagonal_references(grid_subset_rig, samplers)
+    if not grid_refs_rig:
         annotate_no_data(
-            axes_flat[1], "No Grid Rigid Reference", font_size=FONT_SIZE_PT
+            axes_flat[1], LABEL_NO_METHOD_DEFORMATION_REFERENCE_TEMPLATE.format(
+                method=METHOD_GRID, deformation="Rigid",
+            ), font_size=FONT_SIZE_PT
         )
     else:
+        grid_rig_inset = axes_flat[1].inset_axes([0.49, 0.46, 0.47, 0.47])
         for interp, name, col, lstyle, marker in samplers:
             x_vals = []
             y_vals = []
@@ -806,8 +813,9 @@ def generate_figure3(dic_records, grid_records) -> None:
                     ssaa=lvl,
                     osamp=lvl,
                 )
-                if rec:
-                    rmses = get_rmse_vs_ref(rec, grid_ref_rig, is_dic=False)
+                reference = grid_refs_rig.get(interp)
+                if rec and reference is not None:
+                    rmses = get_rmse_vs_ref(rec, reference, is_dic=False)
                     if rmses and len(rmses) > 3:
                         x_vals.append(lvl)
                         y_vals.append(rmses[3])
@@ -821,6 +829,14 @@ def generate_figure3(dic_records, grid_records) -> None:
                 markersize=EXP3_MARKER_SIZE_PT,
                 label=LABEL_FIG3_GRID_TEMPLATE.format(name=name),
             )
+            selected = [(x, y) for x, y in zip(x_vals, y_vals, strict=True) if x >= 4]
+            if selected:
+                grid_rig_inset.plot(
+                    [x for x, _ in selected], [y for _, y in selected],
+                    color=col, marker=marker, linestyle=lstyle,
+                    linewidth=EXP3_LINE_WIDTH_PT * 0.8,
+                    markersize=EXP3_MARKER_SIZE_PT * 0.75,
+                )
 
     # --- BOTTOM ROW: AFFINE DEFORMATION ---
     # 3. Bottom-Left: DIC Affine
@@ -830,12 +846,12 @@ def generate_figure3(dic_records, grid_records) -> None:
         and r.pattern == "gausscont"
         and r.bit_depth == EXP3_BIT_DEPTH
     ]
-    dic_ref_aff = find_rec(
-        dic_subset_aff, "riley_render_texf", "cubic_bspline", 128, 16
-    )
-    if dic_ref_aff is None:
+    dic_refs_aff = highest_diagonal_references(dic_subset_aff, samplers)
+    if not dic_refs_aff:
         annotate_no_data(
-            axes_flat[2], "No DIC Affine Reference", font_size=FONT_SIZE_PT
+            axes_flat[2], LABEL_NO_METHOD_DEFORMATION_REFERENCE_TEMPLATE.format(
+                method=METHOD_DIC, deformation="Affine",
+            ), font_size=FONT_SIZE_PT
         )
     else:
         dic_aff_inset = axes_flat[2].inset_axes([0.49, 0.46, 0.47, 0.47])
@@ -850,8 +866,9 @@ def generate_figure3(dic_records, grid_records) -> None:
                     ssaa=lvl,
                     osamp=lvl,
                 )
-                if rec:
-                    rmses = get_rmse_vs_ref(rec, dic_ref_aff, is_dic=True)
+                reference = dic_refs_aff.get(interp)
+                if rec and reference is not None:
+                    rmses = get_rmse_vs_ref(rec, reference, is_dic=True)
                     if rmses and len(rmses) > 3:
                         x_vals.append(lvl)
                         y_vals.append(rmses[3])
@@ -883,14 +900,15 @@ def generate_figure3(dic_records, grid_records) -> None:
         and r.pattern == "eggbox"
         and r.bit_depth == EXP3_BIT_DEPTH
     ]
-    grid_ref_aff = find_rec(
-        grid_subset_aff, "riley_render_texf", "cubic_bspline", 128, 16
-    )
-    if grid_ref_aff is None:
+    grid_refs_aff = highest_diagonal_references(grid_subset_aff, samplers)
+    if not grid_refs_aff:
         annotate_no_data(
-            axes_flat[3], "No Grid Affine Reference", font_size=FONT_SIZE_PT
+            axes_flat[3], LABEL_NO_METHOD_DEFORMATION_REFERENCE_TEMPLATE.format(
+                method=METHOD_GRID, deformation="Affine",
+            ), font_size=FONT_SIZE_PT
         )
     else:
+        grid_aff_inset = axes_flat[3].inset_axes([0.49, 0.46, 0.47, 0.47])
         for interp, name, col, lstyle, marker in samplers:
             x_vals = []
             y_vals = []
@@ -902,8 +920,9 @@ def generate_figure3(dic_records, grid_records) -> None:
                     ssaa=lvl,
                     osamp=lvl,
                 )
-                if rec:
-                    rmses = get_rmse_vs_ref(rec, grid_ref_aff, is_dic=False)
+                reference = grid_refs_aff.get(interp)
+                if rec and reference is not None:
+                    rmses = get_rmse_vs_ref(rec, reference, is_dic=False)
                     if rmses and len(rmses) > 3:
                         x_vals.append(lvl)
                         y_vals.append(rmses[3])
@@ -917,6 +936,14 @@ def generate_figure3(dic_records, grid_records) -> None:
                 markersize=EXP3_MARKER_SIZE_PT,
                 label=LABEL_FIG3_GRID_TEMPLATE.format(name=name),
             )
+            selected = [(x, y) for x, y in zip(x_vals, y_vals, strict=True) if x >= 4]
+            if selected:
+                grid_aff_inset.plot(
+                    [x for x, _ in selected], [y for _, y in selected],
+                    color=col, marker=marker, linestyle=lstyle,
+                    linewidth=EXP3_LINE_WIDTH_PT * 0.8,
+                    markersize=EXP3_MARKER_SIZE_PT * 0.75,
+                )
 
     # Format all axes
     for ax in axes_flat:
@@ -934,23 +961,45 @@ def generate_figure3(dic_records, grid_records) -> None:
 
     # The rigid DIC convergence panel has a useful high-refinement regime that
     # would otherwise be compressed against the lower levels.
-    if dic_ref_rig is not None:
+    if dic_refs_rig:
         inset_levels = [4, 8, 16, 32, 64, 128]
         set_sample_axis(dic_inset, inset_levels, "", FONT_SIZE_PT - 1)
         dic_inset.grid(True, which="both", linestyle=":", alpha=0.45)
         dic_inset.set_ylim(bottom=0.0)
         dic_inset.tick_params(labelsize=TICK_FONT_SIZE_PT - 1)
-    if dic_ref_aff is not None:
+    if dic_refs_aff:
         inset_levels = [4, 8, 16, 32, 64, 128]
         set_sample_axis(dic_aff_inset, inset_levels, "", FONT_SIZE_PT - 1)
         dic_aff_inset.grid(True, which="both", linestyle=":", alpha=0.45)
         dic_aff_inset.set_ylim(bottom=0.0)
         dic_aff_inset.tick_params(labelsize=TICK_FONT_SIZE_PT - 1)
+    if grid_refs_rig:
+        inset_levels = [4, 8, 16, 32, 64, 128]
+        set_sample_axis(grid_rig_inset, inset_levels, "", FONT_SIZE_PT - 1)
+        grid_rig_inset.grid(True, which="both", linestyle=":", alpha=0.45)
+        grid_rig_inset.set_ylim(bottom=0.0)
+        grid_rig_inset.tick_params(labelsize=TICK_FONT_SIZE_PT - 1)
+    if grid_refs_aff:
+        inset_levels = [4, 8, 16, 32, 64, 128]
+        set_sample_axis(grid_aff_inset, inset_levels, "", FONT_SIZE_PT - 1)
+        grid_aff_inset.grid(True, which="both", linestyle=":", alpha=0.45)
+        grid_aff_inset.set_ylim(bottom=0.0)
+        grid_aff_inset.tick_params(labelsize=TICK_FONT_SIZE_PT - 1)
 
-    axes_flat[0].set_title(TITLE_FIG3_A, fontsize=FONT_SIZE_PT)
-    axes_flat[1].set_title(TITLE_FIG3_B, fontsize=FONT_SIZE_PT)
-    axes_flat[2].set_title(TITLE_FIG3_C, fontsize=FONT_SIZE_PT)
-    axes_flat[3].set_title(TITLE_FIG3_D, fontsize=FONT_SIZE_PT)
+    panel_titles = (
+        (axes_flat[0], "a", METHOD_DIC, diagonal_reference_label(dic_refs_rig), "Rigid"),
+        (axes_flat[1], "b", METHOD_GRID, diagonal_reference_label(grid_refs_rig), "Rigid"),
+        (axes_flat[2], "c", METHOD_DIC, diagonal_reference_label(dic_refs_aff), "Affine"),
+        (axes_flat[3], "d", METHOD_GRID, diagonal_reference_label(grid_refs_aff), "Affine"),
+    )
+    for axis, panel, method, reference, deformation in panel_titles:
+        axis.set_title(
+            TITLE_FIG3_PANEL_TEMPLATE.format(
+                panel=panel, method=method, reference=reference,
+                deformation=deformation,
+            ),
+            fontsize=FONT_SIZE_PT,
+        )
 
     handles = [
         Line2D(
@@ -960,7 +1009,7 @@ def generate_figure3(dic_records, grid_records) -> None:
             marker=marker,
             linestyle=lstyle,
             markersize=EXP3_MARKER_SIZE_PT,
-            label=f"Riley {name}",
+            label=LABEL_RILEY_TEMPLATE.format(name=name),
         )
         for _, name, col, lstyle, marker in samplers
     ]
@@ -969,7 +1018,6 @@ def generate_figure3(dic_records, grid_records) -> None:
         handles,
         font_size=LEGEND_FONT_SIZE_PT,
         columns=3,
-        y_offset=-0.05,
     )
 
     save_path = (
@@ -981,14 +1029,114 @@ def generate_figure3(dic_records, grid_records) -> None:
     return written
 
 
+def generate_figure3(dic_records, grid_records) -> list[Path]:
+    """Figure 3: rigid-only DIC and Grid Method self-convergence."""
+    figure, axes = make_figure(
+        LAYOUT_LINE_1X3, rows=1, columns=2, tick_font_size=TICK_FONT_SIZE_PT,
+    )
+    diag_levels = [1, 2, 4, 8, 16, 32, 64, 128]
+    samplers = [
+        ("cubic_bspline", INTERPOLATOR_LABELS["cubic_bspline"], COLOR_BSPLINE, "-", "o"),
+        ("cubiccm", INTERPOLATOR_LABELS["cubiccm"], COLOR_CUBICCM, "--", "x"),
+        ("line", INTERPOLATOR_LABELS["line"], "tab:green", ":", "d"),
+    ]
+    panels = (
+        (axes[0, 0], dic_records, "gausscont", METHOD_DIC, True, "a"),
+        (axes[0, 1], grid_records, "eggbox", METHOD_GRID, False, "b"),
+    )
+    for axis, records, pattern, method, is_dic, panel in panels:
+        subset = [
+            record for record in records
+            if record.case == EXP3_RIGID_CASE
+            and record.pattern == pattern
+            and record.bit_depth == EXP3_BIT_DEPTH
+        ]
+        references = highest_diagonal_references(subset, samplers)
+        if not references:
+            annotate_no_data(
+                axis,
+                LABEL_NO_METHOD_DEFORMATION_REFERENCE_TEMPLATE.format(
+                    method=method, deformation="Rigid",
+                ),
+                font_size=FONT_SIZE_PT,
+            )
+        else:
+            inset = axis.inset_axes([0.49, 0.46, 0.47, 0.47])
+            for interpolator, name, colour, linestyle, marker in samplers:
+                x_values: list[int] = []
+                y_values: list[float] = []
+                for level in diag_levels:
+                    record = find_rec(
+                        subset, "riley_render_texf", interpolator,
+                        ssaa=level, osamp=level,
+                    )
+                    reference = references.get(interpolator)
+                    if record is None or reference is None:
+                        continue
+                    errors = get_rmse_vs_ref(record, reference, is_dic=is_dic)
+                    if errors and len(errors) > 3:
+                        x_values.append(level)
+                        y_values.append(errors[3])
+                axis.plot(
+                    x_values, y_values, color=colour, marker=marker,
+                    linestyle=linestyle, linewidth=EXP3_LINE_WIDTH_PT,
+                    markersize=EXP3_MARKER_SIZE_PT,
+                    label=(LABEL_FIG3_DIC_TEMPLATE if is_dic else LABEL_FIG3_GRID_TEMPLATE).format(name=name),
+                )
+                selected = [(x, y) for x, y in zip(x_values, y_values, strict=True) if x >= 4]
+                if selected:
+                    inset.plot(
+                        [x for x, _ in selected], [y for _, y in selected],
+                        color=colour, marker=marker, linestyle=linestyle,
+                        linewidth=EXP3_LINE_WIDTH_PT * 0.8,
+                        markersize=EXP3_MARKER_SIZE_PT * 0.75,
+                    )
+            inset_levels = [4, 8, 16, 32, 64, 128]
+            set_sample_axis(inset, inset_levels, "", FONT_SIZE_PT - 1)
+            inset.grid(True, which="both", linestyle=":", alpha=0.45)
+            inset.set_ylim(bottom=0.0)
+            inset.tick_params(labelsize=TICK_FONT_SIZE_PT - 1)
+
+        set_sample_axis(axis, diag_levels, LABEL_REF_LEVEL_OS_SS, FONT_SIZE_PT)
+        axis.grid(True, which="both", linestyle=":", alpha=0.6)
+        axis.set_ylim(bottom=0.0)
+        axis.set_ylabel(LABEL_SELF_CONV_RMSE, fontsize=FONT_SIZE_PT)
+        axis.set_title(
+            TITLE_FIG3_PANEL_TEMPLATE.format(
+                panel=panel, method=method,
+                reference=diagonal_reference_label(references),
+                deformation="Rigid",
+            ),
+            fontsize=FONT_SIZE_PT,
+        )
+
+    handles = [
+        Line2D(
+            [0], [0], color=colour, marker=marker, linestyle=linestyle,
+            markersize=EXP3_MARKER_SIZE_PT,
+            label=LABEL_RILEY_TEMPLATE.format(name=name),
+        )
+        for _, name, colour, linestyle, marker in samplers
+    ]
+    add_figure_legend(
+        figure, handles, font_size=LEGEND_FONT_SIZE_PT, columns=3,
+    )
+    written = save_figure(
+        figure,
+        Path(PAPER_OUTPUT_DIR) / "exp3_riley_gauss_fig3_affine_self_convergence_dic_vs_grid_b12",
+        PAPER_FORMATS, PAPER_DPI,
+    )
+    figure.clear()
+    return written
+
+
 def generate_figure4(dic_records, grid_records) -> list[Path]:
     """Figure 4: Combined Finite-star diagnostic (DIC & Grid)."""
     fig, axes = make_figure(
-        EXP3_FIGURE4_CM, rows=4, columns=2, tick_font_size=TICK_FONT_SIZE_PT
+        LAYOUT_FIELD_4X2, rows=4, columns=2, tick_font_size=TICK_FONT_SIZE_PT
     )
     gridspec = axes[0, 0].get_subplotspec().get_gridspec()
     gridspec.set_height_ratios((1.0, 1.0, 1.0, 1.2))
-    fig.get_layout_engine().set(w_pad=0.06, h_pad=0.12, wspace=0.12, hspace=0.20)
     profile_handles: list[Line2D] = []
 
     def add_map_colourbar(image, axis) -> None:
@@ -996,7 +1144,7 @@ def generate_figure4(dic_records, grid_records) -> list[Path]:
         colourbar = fig.colorbar(
             image, ax=axis, pad=0.02, fraction=0.055, aspect=18,
         )
-        colourbar.set_label("px", fontsize=COLORBAR_FONT_SIZE_PT)
+        colourbar.set_label(LABEL_COLOURBAR_PX, fontsize=COLORBAR_FONT_SIZE_PT)
         colourbar.ax.tick_params(labelsize=COLORBAR_FONT_SIZE_PT)
 
     # ------------------ COLUMN 0: DIC Method ------------------
@@ -1015,14 +1163,20 @@ def generate_figure4(dic_records, grid_records) -> list[Path]:
 
     if ref_dic is None or under_dic is None:
         for row in range(4):
-            annotate_no_data(axes[row, 0], "Missing DIC Records", FONT_SIZE_PT)
+            annotate_no_data(
+                axes[row, 0],
+                LABEL_MISSING_METHOD_RECORDS_TEMPLATE.format(method=METHOD_DIC),
+                font_size=FONT_SIZE_PT,
+            )
     else:
         ref_data_dic = load_dic(ref_dic, 1)
         under_data_dic = load_dic(under_dic, 1)
         if ref_data_dic is None or under_data_dic is None:
             for row in range(4):
                 annotate_no_data(
-                    axes[row, 0], "Error Loading DIC Data", FONT_SIZE_PT
+                    axes[row, 0],
+                    LABEL_ERROR_LOADING_METHOD_DATA_TEMPLATE.format(method=METHOD_DIC),
+                    font_size=FONT_SIZE_PT,
                 )
         else:
             x, y, ru_dic, rv_dic = ref_data_dic
@@ -1157,7 +1311,9 @@ def generate_figure4(dic_records, grid_records) -> list[Path]:
     if ref_grid is None or under_grid is None:
         for row in range(4):
             annotate_no_data(
-                axes[row, 1], "Missing Grid Records", FONT_SIZE_PT
+                axes[row, 1],
+                LABEL_MISSING_METHOD_RECORDS_TEMPLATE.format(method=METHOD_GRID),
+                font_size=FONT_SIZE_PT,
             )
     else:
         ref_data_grid = load_grid(ref_grid, 1)
@@ -1165,7 +1321,9 @@ def generate_figure4(dic_records, grid_records) -> list[Path]:
         if ref_data_grid is None or under_data_grid is None:
             for row in range(4):
                 annotate_no_data(
-                    axes[row, 1], "Error Loading Grid Data", FONT_SIZE_PT
+                    axes[row, 1],
+                    LABEL_ERROR_LOADING_METHOD_DATA_TEMPLATE.format(method=METHOD_GRID),
+                    font_size=FONT_SIZE_PT,
                 )
         else:
             ru_grid, rv_grid = ref_data_grid
@@ -1294,7 +1452,7 @@ def generate_figure4(dic_records, grid_records) -> list[Path]:
     unique_profiles = {handle.get_label(): handle for handle in profile_handles}
     add_figure_legend(
         fig, list(unique_profiles.values()), font_size=LEGEND_FONT_SIZE_PT,
-        columns=3, y_offset=-0.035,
+        columns=3,
     )
 
     save_path = (
@@ -1322,7 +1480,7 @@ def generate_figures() -> list[Path]:
     written = generate_figure1(dic_records)
     print("Generating Figure 2 (Px-SS vs. Tex-OS Refinement)...")
     written.extend(generate_figure2(dic_records))
-    print("Generating Figure 3 (Self-Convergence Affine)...")
+    print("Generating Figure 3 (Rigid Self-Convergence)...")
     written.extend(generate_figure3(dic_records, grid_records))
     print("Generating Figure 4 (Combined Chirp Case)...")
     written.extend(generate_figure4(dic_records, grid_records))
@@ -1332,7 +1490,7 @@ def generate_figures() -> list[Path]:
 def main() -> None:
     written = generate_figures()
     print("Writing LaTeX previews...")
-    write_latex_preview(figure_stems(), FIGURE_CAPTIONS, FIGURE_LABELS)
+    write_latex_preview(figure_stems())
     print(
         "All Experiment 3 figures and latex previews generated successfully."
     )

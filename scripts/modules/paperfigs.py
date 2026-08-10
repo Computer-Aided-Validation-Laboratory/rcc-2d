@@ -9,10 +9,27 @@ from collections.abc import Iterable, Sequence
 from pathlib import Path
 
 import numpy as np
+import matplotlib as mpl
 from matplotlib.figure import Figure
 from matplotlib.ticker import FixedFormatter, FixedLocator
 from matplotlib.backends.backend_agg import FigureCanvasAgg
 from paperfiglabels import LABEL_025_LSB, LABEL_AXIS_INTEGRATION
+from paperparams import PaperLayout
+
+
+def configure_paper_matplotlib() -> None:
+    """Apply the article-matching LaTeX typography before figure creation."""
+    from paperparams import (
+        PAPER_FONT_FAMILY, PAPER_SERIF_FONT, PAPER_TEX_PREAMBLE,
+        PAPER_USE_TEX,
+    )
+
+    mpl.rcParams.update({
+        "font.family": PAPER_FONT_FAMILY,
+        "font.serif": [PAPER_SERIF_FONT],
+        "text.usetex": PAPER_USE_TEX,
+        "text.latex.preamble": PAPER_TEX_PREAMBLE if PAPER_USE_TEX else "",
+    })
 
 
 # Stable texture-OS styles shared by every paper figure.  The render matrix
@@ -46,10 +63,14 @@ def cm_to_inch(value_cm: float) -> float:
     return value_cm / 2.54
 
 
-def make_figure(size_cm: tuple[float, float], *, rows: int, columns: int, tick_font_size: float) -> tuple[Figure, np.ndarray]:
+def make_figure(layout: PaperLayout, *, rows: int, columns: int, tick_font_size: float) -> tuple[Figure, np.ndarray]:
     """Create an Agg-backed figure sized in physical centimetres."""
+    configure_paper_matplotlib()
     figure = Figure(
-        figsize=(cm_to_inch(size_cm[0]), cm_to_inch(size_cm[1])),
+        figsize=(
+            cm_to_inch(layout.canvas_cm[0]),
+            cm_to_inch(layout.canvas_cm[1]),
+        ),
         layout="constrained",
     )
     FigureCanvasAgg(figure)
@@ -59,7 +80,12 @@ def make_figure(size_cm: tuple[float, float], *, rows: int, columns: int, tick_f
     # Let Matplotlib allocate the panel canvas from the actual titles, ticks
     # and labels.  Fixed fractional spacing caused label collisions whenever
     # an additional labelled column was requested.
-    figure.get_layout_engine().set(w_pad=0.08, h_pad=0.08, wspace=0.08, hspace=0.12)
+    figure.get_layout_engine().set(
+        w_pad=layout.w_pad, h_pad=layout.h_pad,
+        wspace=layout.wspace, hspace=layout.hspace,
+        rect=(0.0, 0.0, 1.0 - layout.right_margin, 1.0),
+    )
+    figure._paper_layout = layout
     for axis in axes.flat:
         axis.tick_params(labelsize=tick_font_size)
     return figure, axes.reshape(rows, columns)
@@ -167,16 +193,23 @@ def finish_signed_axis(
 
 def add_figure_legend(
     figure: Figure, handles: Sequence, *, font_size: float, columns: int = 3,
-    y_offset: float = -0.09,
 ) -> None:
     if handles:
+        # Reserve a real band inside the fixed physical canvas.  This avoids
+        # ``bbox_inches='tight'`` changing the PDF dimensions according to
+        # legend content, which would otherwise make TeX rescale its fonts.
+        reserve = figure._paper_layout.legend_band
+        # ``rect`` is (left, bottom, width, height), not (left, bottom,
+        # right, top).  Reduce its height with the reserved legend band so
+        # constrained layout never sends top-row titles beyond the canvas.
+        figure.get_layout_engine().set(
+            rect=(0.0, reserve, 1.0, 1.0 - reserve)
+        )
         figure.legend(
             handles=handles,
-            # Keep scientific panel titles clear; ``bbox_inches='tight'`` in
-            # save_figure expands the canvas to retain this external legend
-            # band without overlapping the bottom-row axis labels.
+            # The legend lives in the canvas band reserved above.
             loc="lower center",
-            bbox_to_anchor=(0.5, y_offset),
+            bbox_to_anchor=(0.5, 0.01),
             ncol=columns,
             fontsize=font_size,
             frameon=False,
@@ -210,23 +243,35 @@ def _mirrored_stems(stem: Path) -> tuple[Path, ...]:
 def save_figure(
     figure: Figure, stem: Path, formats: Sequence[str], dpi: int
 ) -> list[Path]:
+    from paperparams import (
+        PANEL_TITLE_LINE_GAP_EX, PANEL_TITLE_LINE_SPACING, PAPER_USE_TEX,
+    )
+
+    # Apply one configurable leading value to every panel title immediately
+    # before layout/export.  This includes titles assigned directly by each
+    # experiment script as well as those assigned through ``finish_axis``.
+    for axis in figure.axes:
+        title = axis.title
+        text = title.get_text()
+        if PAPER_USE_TEX and "\n" in text and "\\shortstack{" not in text:
+            # Matplotlib's ``linespacing`` is ignored by several usetex
+            # backends.  TeX's ``\\[...ex]`` is deterministic and prevents
+            # panel prefixes such as ``(a)`` colliding with the next line.
+            separator = rf"\\[{PANEL_TITLE_LINE_GAP_EX:g}ex]"
+            title.set_text(r"\shortstack{" + separator.join(text.splitlines()) + "}")
+        title.set_linespacing(PANEL_TITLE_LINE_SPACING)
+
     written: list[Path] = []
     for output_stem in _mirrored_stems(stem):
         output_stem.parent.mkdir(parents=True, exist_ok=True)
         for extension in formats:
             path = output_stem.with_suffix(f".{extension.lstrip('.')}")
-            extra_artists = []
-            for ax in figure.axes:
-                if ax.legend_ is not None:
-                    extra_artists.append(ax.legend_)
-            extra_artists.extend(figure.legends)
             figure.savefig(
                 path,
                 dpi=dpi,
-                bbox_inches="tight",
-                bbox_extra_artists=(
-                    extra_artists if extra_artists else None
-                ),
+                # Do not crop the canvas: its configured dimensions are the
+                # physical dimensions used by the corresponding TeX block.
+                bbox_inches=None,
             )
             written.append(path)
     figure.clear()
@@ -234,7 +279,7 @@ def save_figure(
 
 
 def write_latex_preview(
-    stems: Sequence[str], captions: dict[str, str], labels: dict[str, str],
+    stems: Sequence[str],
 ) -> list[Path]:
     """Write mirrored ``\\input`` blocks and compile the repository preview.
 
@@ -244,21 +289,23 @@ def write_latex_preview(
     retains the generated preview article and PDF.
     """
     import subprocess
-    from paperparams import PAPER_OUTPUT_DIR
+    from paperparams import (
+        PAGE_MARGIN_CM, PAPER_FIGURES, PAPER_OUTPUT_DIR,
+    )
 
     written: list[Path] = []
     for output_dir in paper_output_directories():
         output_dir.mkdir(parents=True, exist_ok=True)
         blocks: list[Path] = []
         for stem in stems:
+            figure_spec = PAPER_FIGURES[stem]
             block = output_dir / f"{stem}.tex"
             block.write_text(
                 "\\begin{figure}[p]\n"
                 "  \\centering\n"
-                "  \\includegraphics[height=0.9\\textheight,width=\\textwidth,"
-                f"keepaspectratio]{{{stem}.pdf}}\n"
-                f"  \\caption{{{captions[stem]}}}\n"
-                f"  \\label{{{labels[stem]}}}\n"
+                f"  \\includegraphics[width={figure_spec.layout.canvas_cm[0]:g}cm]{{{stem}.pdf}}\n"
+                f"  \\caption{{{figure_spec.caption}}}\n"
+                f"  \\label{{{figure_spec.label}}}\n"
                 "\\end{figure}\n",
                 encoding="utf-8",
             )
@@ -270,7 +317,7 @@ def write_latex_preview(
         inputs = "\n".join(f"\\input{{{block.stem}}}\n\\clearpage" for block in blocks)
         article.write_text(
             "\\documentclass[10pt,a4paper]{article}\n"
-            "\\usepackage[a4paper,margin=2.5cm]{geometry}\n"
+            f"\\usepackage[a4paper,margin={PAGE_MARGIN_CM:g}cm]{{geometry}}\n"
             "\\usepackage[T1]{fontenc}\n"
             "\\usepackage{lmodern}\n"
             "\\usepackage{graphicx}\n"

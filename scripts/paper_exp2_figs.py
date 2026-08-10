@@ -12,31 +12,32 @@ from matplotlib.lines import Line2D
 
 from modules.exp_common_analysis import image_error_metrics
 from modules.paperfigs import (
-    add_figure_legend, annotate_no_data, finish_axis, finish_signed_axis,
+    add_figure_legend, annotate_no_data, finish_axis,
     make_figure, paper_output_directories, save_figure, texture_os_style,
 )
 from modules.render_outputs import quantise_camera
 from paperfiglabels import (
-    LABEL_DIGITISED_RMSE, LABEL_MAX_DIGITISED_ERR, LABEL_DIGITISED_DIFF,
-    TITLE_UNDEFORMED, TITLE_RIGID_03PX, TITLE_AFFINE_03PX,
-    LABEL_PIXEL_X, LABEL_PIXEL_Y, LABEL_NO_DATA,
+    LABEL_DIGITISED_RMSE, LABEL_DIGITISED_DIFF,
+    TITLE_UNDEFORMED, TITLE_RIGID_03PX,
+    LABEL_PIXEL_X, LABEL_PIXEL_Y, LABEL_NO_DATA, PANEL_PREFIX_TEMPLATE,
+    LABEL_TEX_OS_TEMPLATE, LABEL_REFERENCE_PX_SS_TEMPLATE,
+    TITLE_EXP2_SPECK2D_PANEL_TEMPLATE,
+    TITLE_TEXTURE_CONVERGENCE_PANEL_TEMPLATE,
+    TITLE_PANEL_PX_SS_TEX_OS_TEMPLATE,
+    LABEL_SPECK2D_METHOD_TEMPLATE,
+    TITLE_EXP2_TEXF_GAUSS, TITLE_EXP2_TEXF_DISK,
 )
 from paperparams import (
     AXIS_LABEL_FONT_SIZE_PT,
     DIFFERENCE_CMAP,
-    FIGURE_1X3_CM,
-    FIGURE_2X3_CM,
-    FIGURE_3X3_CM,
-    FIGURE_4X4_CM,
+    LAYOUT_LINE_2X2_WIDE,
+    LAYOUT_IMAGE_3X3,
     FONT_SIZE_PT,
     LEGEND_FONT_SIZE_PT,
     PAPER_DPI,
     PAPER_EXP2_BIT_DEPTHS,
-    PAPER_EXP2_TEX_METRIC,
-    PAPER_EXP2_TEX_METRIC_LABEL,
     PAPER_FORMATS,
     PAPER_OUTPUT_DIR,
-    PAPER_TEXFLOAT_BIT_DEPTH,
     PAPER_TEXTURE_INTERPOLATOR,
     RILEY_LINE_WIDTH_PT,
     RILEY_MARKER_SIZE_PT,
@@ -45,15 +46,15 @@ from paperparams import (
     EXP2_DIFF_OVERSAMPLES,
     EXP2_DIFF_TEX_CASE,
     EXP2_DIFF_TEX_FRAME,
-    EXP2_FIGURE7_8_CM,
+    EXP2_FIG2_STEM,
     EXP2_FIG3_STEM,
     EXP2_FIG4_STEM,
-    EXP2_FIG5_STEM,
-    EXP2_FIG6_STEM,
-    EXP2_FIG7_STEM,
-    EXP2_FIG8_STEM,
     EXP2_FIG7_DIFF_LIMIT_BITS,
     EXP2_FIG8_DIFF_LIMIT_BITS,
+    DIFFERENCE_MATRIX_COLORBAR_FRACTION,
+    DIFFERENCE_MATRIX_COLORBAR_ASPECT,
+    DIFFERENCE_MATRIX_COLORBAR_SHRINK,
+    DIFFERENCE_MATRIX_COLORBAR_PAD,
 )
 
 OUT = Path("out")
@@ -62,11 +63,6 @@ RILEY_TEXF_RENDER = OUT / "exp2_riley_render_texf"
 CASES = (
     ("pt42_cam32_q9_rig", 0, TITLE_UNDEFORMED),
     ("pt42_cam32_q9_rig", 3, TITLE_RIGID_03PX),
-    ("pt42_cam32_q9_aff", 3, TITLE_AFFINE_03PX),
-)
-METRICS = (
-    ("e_b", LABEL_DIGITISED_RMSE),
-    ("max_eb", LABEL_MAX_DIGITISED_ERR),
 )
 METHOD_STYLE = {"gauss": ("#1b9e77", "s"), "rect": ("#377eb8", "o")}
 
@@ -83,7 +79,7 @@ class Series:
 
 
 def panel_prefix(index: int) -> str:
-    return f"({chr(ord('a') + index)})"
+    return PANEL_PREFIX_TEMPLATE.format(letter=chr(ord("a") + index))
 
 
 def _image_path(directory: Path, method: str, parameter: int, frame: int) -> Path:
@@ -142,7 +138,7 @@ def speck_series(case: str, pattern: str, frame: int, metric: str) -> tuple[list
     for (method, bits), points in sorted(groups.items()):
         colour, marker = METHOD_STYLE[method]
         ordered = sorted(points)
-        rows.append(Series(f"Speck2D {method.title()}, {bits}-bit", tuple(x for x, _ in ordered), tuple(y for _, y in ordered), bits, colour, marker, "-" if bits <= 8 else "--"))
+        rows.append(Series(LABEL_SPECK2D_METHOD_TEMPLATE.format(method=method.title(), bit_depth=bits), tuple(x for x, _ in ordered), tuple(y for _, y in ordered), bits, colour, marker, "-" if bits <= 8 else "--"))
     return rows, ref_label
 
 
@@ -174,45 +170,7 @@ def texf_series(
     for oversamp, points in sorted(grouped.items()):
         ordered = sorted(points)
         rows.append(Series(
-            f"Tex-OS={oversamp}", tuple(x for x, _ in ordered),
-            tuple(y for _, y in ordered), camera_bits,
-            *texture_os_style(oversamp),
-        ))
-    return rows, ref_label
-
-
-def texq_series(
-    case: str, pattern: str, frame: int, metric: str, quant_bits: int,
-    camera_bits: int,
-) -> tuple[list[Series], str]:
-    ref, ref_label = reference(case, pattern, frame)
-    root = (
-        Path("out/exp2_riley_render_texfq")
-        / f"{case}_{pattern}_seed3_{PAPER_TEXTURE_INTERPOLATOR}"
-    )
-    grouped: dict[int, list[tuple[int, float]]] = defaultdict(list)
-    if root.is_dir():
-        expression = re.compile(
-            r"^ss(\d+)_q" + str(quant_bits) + r"_os(\d+)$"
-        )
-        for directory in root.iterdir():
-            match = expression.fullmatch(directory.name)
-            path = directory / f"image_c00_f{frame:02d}_clamped.npy"
-            if not match or not path.is_file():
-                continue
-            image = _load(path)
-            if image.shape == ref.shape:
-                grouped[int(match.group(2))].append((
-                    int(match.group(1)),
-                    image_error_metrics(
-                        image, ref, camera_bits, quantise_camera,
-                    )[metric],
-                ))
-    rows = []
-    for oversamp, points in sorted(grouped.items()):
-        ordered = sorted(points)
-        rows.append(Series(
-            f"Tex-OS={oversamp}", tuple(x for x, _ in ordered),
+            LABEL_TEX_OS_TEMPLATE.format(osamp=oversamp), tuple(x for x, _ in ordered),
             tuple(y for _, y in ordered), camera_bits,
             *texture_os_style(oversamp),
         ))
@@ -237,129 +195,109 @@ def draw(axis, data: list[Series], ylabel: str, title: str) -> list[Line2D]:
 
 
 
-def figure_speck2d(pattern: str, number: int) -> list[Path]:
-    name = "Disk" if pattern == "diskadd" else "Gauss"
-    written = []
+def display_speck_reference(reference: str) -> str:
+    """Use the paper's pixel-integration shorthand in Speck2D subtitles."""
+    return reference if reference == "Analytic" else LABEL_REFERENCE_PX_SS_TEMPLATE.format(reference=reference)
 
-    # 1. RMSE Figure
-    fig_rmse, axes_rmse = make_figure(
-        FIGURE_1X3_CM, rows=1, columns=3, tick_font_size=TICK_FONT_SIZE_PT,
+
+def figure_speck2d_combined() -> list[Path]:
+    """Fig. 1: Gaussian and disk Speck2D convergence in a common 2x3 grid."""
+    figure, axes = make_figure(
+        LAYOUT_LINE_2X2_WIDE, rows=2, columns=2, tick_font_size=TICK_FONT_SIZE_PT,
     )
-    handles_rmse = []
-    for col, (case, frame, deformation) in enumerate(CASES):
-        data, ref_label = speck_series(case, pattern, frame, "e_b")
-        handles_rmse.extend(draw(
-            axes_rmse[0, col], data, LABEL_DIGITISED_RMSE,
-            f"{panel_prefix(col)} {deformation}, Ref: {ref_label}",
-        ))
-    unique_rmse = {h.get_label(): h for h in handles_rmse}
+    handles: list[Line2D] = []
+    # Gaussian first, then the sharper disk texture as requested.
+    for row, (pattern, name) in enumerate((("gaussadd", "Gauss"), ("diskadd", "Disk"))):
+        for column, (case, frame, deformation) in enumerate(CASES):
+            data, reference = speck_series(case, pattern, frame, "e_b")
+            index = row * len(CASES) + column
+            handles.extend(draw(
+                axes[row, column], data, LABEL_DIGITISED_RMSE,
+                TITLE_EXP2_SPECK2D_PANEL_TEMPLATE.format(
+                    panel=panel_prefix(index), pattern=name,
+                    deformation=deformation,
+                    reference=display_speck_reference(reference),
+                ),
+            ))
+    unique = {handle.get_label(): handle for handle in handles}
     add_figure_legend(
-        fig_rmse, list(unique_rmse.values()), font_size=LEGEND_FONT_SIZE_PT,
-        columns=3, y_offset=-0.18,
+        figure, list(unique.values()), font_size=LEGEND_FONT_SIZE_PT,
+        columns=3,
     )
-    written.extend(save_figure(
-        fig_rmse,
-        PAPER_OUTPUT_DIR / f"exp2_fig{number}_speck2d_{name.lower()}_rmse",
+    return save_figure(
+        figure, PAPER_OUTPUT_DIR / "exp2_fig1_speck2d_gauss_disk_rmse",
         PAPER_FORMATS, PAPER_DPI,
-    ))
-
-    return written
+    )
 
 
 def figure_riley_texf() -> list[Path]:
-    written = []
-    figs_config = (
-        ("b8", (
-            ("Riley, In: Tex f64, Out: u8", lambda case, pattern, frame, metric: texf_series(
-                case, pattern, frame, metric, 8
-            )),
-            ("Riley, In: Tex u8, Out: u8", lambda case, pattern, frame, metric: texq_series(
-                case, pattern, frame, metric, 8, 8
-            )),
-        )),
-        ("b12", (
-            ("Riley, In: Tex f64, Out: u12", lambda case, pattern, frame, metric: texf_series(
-                case, pattern, frame, metric, 12
-            )),
-            ("Riley, In: Tex u12, Out: u12", lambda case, pattern, frame, metric: texq_series(
-                case, pattern, frame, metric, 12, 12
-            )),
-        )),
+    """Fig. 2: f64 textures at u12 camera output, Gaussian above disk."""
+    figure, axes = make_figure(
+        LAYOUT_LINE_2X2_WIDE, rows=2, columns=2,
+        tick_font_size=TICK_FONT_SIZE_PT,
     )
-
-    for pattern in ("diskadd", "gaussadd"):
-        for suffix, rows_config in figs_config:
-            stem_base = {
-                ("diskadd", "b8"): EXP2_FIG3_STEM.removesuffix("_rmse"),
-                ("diskadd", "b12"): EXP2_FIG4_STEM.removesuffix("_rmse"),
-                ("gaussadd", "b8"): EXP2_FIG5_STEM.removesuffix("_rmse"),
-                ("gaussadd", "b12"): EXP2_FIG6_STEM.removesuffix("_rmse"),
-            }[(pattern, suffix)]
-
-            # 1. RMSE Figure
-            fig_rmse, axes_rmse = make_figure(
-                FIGURE_2X3_CM, rows=2, columns=3, tick_font_size=TICK_FONT_SIZE_PT,
-            )
-            handles_rmse = []
-            for row, (row_label, loader) in enumerate(rows_config):
-                for col, (case, frame, deformation) in enumerate(CASES):
-                    data, ref_label = loader(case, pattern, frame, "e_b")
-                    handles_rmse.extend(draw(
-                        axes_rmse[row, col], data, LABEL_DIGITISED_RMSE,
-                        f"{panel_prefix(row * 3 + col)} {row_label}\n"
-                        f"{deformation}, Ref: {ref_label}",
-                    ))
-            unique_rmse = {h.get_label(): h for h in handles_rmse}
-            add_figure_legend(
-                fig_rmse, list(unique_rmse.values()), font_size=LEGEND_FONT_SIZE_PT,
-                columns=4, y_offset=-0.13,
-            )
-            written.extend(save_figure(
-                fig_rmse, PAPER_OUTPUT_DIR / f"{stem_base}_rmse",
-                PAPER_FORMATS, PAPER_DPI,
+    handles: list[Line2D] = []
+    for row, (pattern, texture_label) in enumerate((
+        ("gaussadd", TITLE_EXP2_TEXF_GAUSS),
+        ("diskadd", TITLE_EXP2_TEXF_DISK),
+    )):
+        for column, (case, frame, deformation) in enumerate(CASES):
+            data, reference = texf_series(case, pattern, frame, "e_b", 12)
+            handles.extend(draw(
+                axes[row, column], data, LABEL_DIGITISED_RMSE,
+                TITLE_TEXTURE_CONVERGENCE_PANEL_TEMPLATE.format(
+                    panel=panel_prefix(row * len(CASES) + column),
+                    texture=texture_label, deformation=deformation,
+                    reference=reference,
+                ),
             ))
-
-            # 2. Max Error Figure removed (plot only RMSE)
-
-    return written
+    unique = {handle.get_label(): handle for handle in handles}
+    add_figure_legend(
+        figure, list(unique.values()), font_size=LEGEND_FONT_SIZE_PT,
+        columns=4,
+    )
+    return save_figure(
+        figure, PAPER_OUTPUT_DIR / EXP2_FIG2_STEM, PAPER_FORMATS, PAPER_DPI,
+    )
 
 
 def figure_stems() -> tuple[str, ...]:
     return (
-        "exp2_fig1_speck2d_disk_rmse",
-        "exp2_fig2_speck2d_gauss_rmse",
+        "exp2_fig1_speck2d_gauss_disk_rmse",
+        EXP2_FIG2_STEM,
         EXP2_FIG3_STEM,
         EXP2_FIG4_STEM,
-        EXP2_FIG5_STEM,
-        EXP2_FIG6_STEM,
-        EXP2_FIG7_STEM,
-        EXP2_FIG8_STEM,
     )
 
 
 def generate_figures() -> list[Path]:
     remove_superseded_figures()
-    written = figure_speck2d("diskadd", 1)
-    written.extend(figure_speck2d("gaussadd", 2))
+    written = figure_speck2d_combined()
     written.extend(figure_riley_texf())
     written.extend(figure_texf_difference_maps(
-        "diskadd", EXP2_FIG7_STEM, EXP2_FIG7_DIFF_LIMIT_BITS,
+        "diskadd", EXP2_FIG3_STEM, EXP2_FIG7_DIFF_LIMIT_BITS,
     ))
     written.extend(figure_texf_difference_maps(
-        "gaussadd", EXP2_FIG8_STEM, EXP2_FIG8_DIFF_LIMIT_BITS,
+        "gaussadd", EXP2_FIG4_STEM, EXP2_FIG8_DIFF_LIMIT_BITS,
     ))
     return written
 
 
 def remove_superseded_figures() -> None:
-    """Remove only pre-interpolant Exp2 texture-paper products."""
+    """Remove superseded four-figure texture-convergence paper products."""
     stems = (
+        "exp2_fig1_speck2d_disk_rmse",
+        "exp2_fig2_speck2d_gauss_rmse",
         "exp2_fig3_riley_textures_disk_b8_rmse",
         "exp2_fig4_riley_textures_disk_b12_rmse",
         "exp2_fig5_riley_textures_gauss_b8_rmse",
         "exp2_fig6_riley_textures_gauss_b12_rmse",
         "exp2_fig7_riley_texf_disk_difference_maps",
         "exp2_fig8_riley_texf_gauss_difference_maps",
+        f"exp2_fig3_riley_texf_disk_u8_u12_{PAPER_TEXTURE_INTERPOLATOR}_rmse",
+        f"exp2_fig5_riley_texf_gauss_u8_u12_{PAPER_TEXTURE_INTERPOLATOR}_rmse",
+        f"exp2_fig7_riley_texf_disk_{PAPER_TEXTURE_INTERPOLATOR}_difference_maps",
+        f"exp2_fig8_riley_texf_gauss_{PAPER_TEXTURE_INTERPOLATOR}_difference_maps",
     )
     for output_dir in paper_output_directories():
         for stem in stems:
@@ -367,6 +305,12 @@ def remove_superseded_figures() -> None:
                 (output_dir / stem).with_suffix(f".{extension}").unlink(
                     missing_ok=True
                 )
+        # The immediately preceding figures included the interpolant token in
+        # their filenames.  These are the four one-output-depth predecessors
+        # of the two combined f64 figures generated above.
+        for path in output_dir.glob("exp2_fig[3456]_riley_textures_*_rmse.*"):
+            if path.suffix.lstrip(".") in (*PAPER_FORMATS, "tex"):
+                path.unlink()
 
 
 def figure_texf_difference_maps(
@@ -380,12 +324,21 @@ def figure_texf_difference_maps(
     root = RILEY_TEXF_RENDER / f"{case}_{pattern}_seed3_{PAPER_TEXTURE_INTERPOLATOR}"
     rows = len(ssaa_levels)
     cols = len(oversamples)
-    figure, axes = make_figure(
-        EXP2_FIGURE7_8_CM,
+    figure, all_axes = make_figure(
+        LAYOUT_IMAGE_3X3,
         rows=rows,
-        columns=cols,
+        # Reserve a narrow, dedicated GridSpec column for the colourbar.
+        # Letting ``figure.colorbar(..., ax=...)`` carve this from the image
+        # grid caused it to overlap the long third-column panel headings.
+        columns=cols + 1,
         tick_font_size=TICK_FONT_SIZE_PT,
     )
+    axes = all_axes[:, :cols]
+    gridspec = all_axes[0, 0].get_subplotspec().get_gridspec()
+    gridspec.set_width_ratios([1.0] * cols + [0.075])
+    for axis in all_axes[:, -1]:
+        axis.remove()
+    colourbar_axis = figure.add_subplot(gridspec[:, cols])
     differences: dict[tuple[int, int], np.ndarray | None] = {}
     for ssaa in ssaa_levels:
         for oversamp in oversamples:
@@ -406,7 +359,10 @@ def figure_texf_difference_maps(
             axis = axes[row, column]
             difference = differences[(ssaa, oversamp)]
             axis.set_title(
-                f"{panel_prefix(row * len(oversamples) + column)} Px-SS={ssaa}, Tex-OS={oversamp}",
+                TITLE_PANEL_PX_SS_TEX_OS_TEMPLATE.format(
+                    panel=panel_prefix(row * len(oversamples) + column),
+                    ssaa=ssaa, osamp=oversamp,
+                ),
                 fontsize=FONT_SIZE_PT,
             )
             if difference is None:
@@ -426,7 +382,8 @@ def figure_texf_difference_maps(
                 )
     if images:
         colourbar = figure.colorbar(
-            images[0], ax=list(axes.flat), shrink=0.9, pad=0.015
+            images[0], cax=colourbar_axis,
+            aspect=DIFFERENCE_MATRIX_COLORBAR_ASPECT,
         )
         colourbar.set_label(
             LABEL_DIGITISED_DIFF, fontsize=AXIS_LABEL_FONT_SIZE_PT
