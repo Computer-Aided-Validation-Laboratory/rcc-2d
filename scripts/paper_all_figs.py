@@ -16,6 +16,7 @@ from paper_exp3_figs import (
     figure_stems as exp3_figure_stems,
     generate_figures as generate_exp3,
 )
+from paper_ext_figs import generate_figures as generate_extended_figures
 from modules.paperfigs import write_latex_preview
 
 
@@ -32,6 +33,9 @@ def main() -> None:
     written.extend(figure_texture_difference_maps())
     written.extend(generate_exp2())
     written.extend(generate_exp3())
+    # Supplementary figures are intentionally kept out of the article and
+    # manuscript directory; they are regenerated alongside the paper figures.
+    written.extend(generate_extended_figures())
     all_stems = (
         *exp1_figure_stems(),
         *exp2_figure_stems(),

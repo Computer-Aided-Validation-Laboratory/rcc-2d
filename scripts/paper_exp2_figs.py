@@ -55,6 +55,7 @@ from paperparams import (
     DIFFERENCE_MATRIX_COLORBAR_ASPECT,
     DIFFERENCE_MATRIX_COLORBAR_SHRINK,
     DIFFERENCE_MATRIX_COLORBAR_PAD,
+    LINE_COLOURS,
 )
 
 OUT = Path("out")
@@ -64,7 +65,7 @@ CASES = (
     ("pt42_cam32_q9_rig", 0, TITLE_UNDEFORMED),
     ("pt42_cam32_q9_rig", 3, TITLE_RIGID_03PX),
 )
-METHOD_STYLE = {"gauss": ("#1b9e77", "s"), "rect": ("#377eb8", "o")}
+METHOD_STYLE = {"gauss": (LINE_COLOURS[0], "s"), "rect": (LINE_COLOURS[1], "o")}
 
 
 @dataclass(frozen=True)

@@ -36,8 +36,7 @@ from paperfiglabels import (
 from modules.render_outputs import quantise_camera
 from paperparams import (
     AXIS_LABEL_FONT_SIZE_PT, DIFFERENCE_CMAP, LAYOUT_LINE_1X3,
-    LAYOUT_LINE_2X3, LAYOUT_LINE_2X3_RIGHT_MARGIN, LAYOUT_IMAGE_1X3,
-    LAYOUT_IMAGE_MATRIX, FONT_SIZE_PT,
+    LAYOUT_LINE_2X3, LAYOUT_IMAGE_1X3, LAYOUT_IMAGE_MATRIX, FONT_SIZE_PT,
     LEGEND_FONT_SIZE_PT, GRID_LINE_WIDTH_PT, GRID_MARKER_SIZE_PT,
     RILEY_LINE_WIDTH_PT, RILEY_MARKER_SIZE_PT, PAPER_DPI, PAPER_FORMATS,
     PAPER_FRAME, PAPER_OUTPUT_DIR,
@@ -45,9 +44,10 @@ from paperparams import (
     EXP1_FIG2_DIFF_SSAA_LEVELS, EXP2_DIFF_SSAA_LEVELS,
     EXP2_DIFF_OVERSAMPLES, EXP1_DIFF_FUNC_CASE, EXP1_DIFF_FUNC_FRAME,
     EXP1_DIFF_TEX_CASE, EXP1_DIFF_TEX_FRAME, EXP1_FIG2_DIFF_LIMIT_BITS,
-    EXP1_FIG5_DIFF_LIMIT_BITS,
+    EXP1_FIG4_THIRD_COLUMN_TITLE_X, EXP1_FIG5_DIFF_LIMIT_BITS,
     DIFFERENCE_MATRIX_COLORBAR_FRACTION, DIFFERENCE_MATRIX_COLORBAR_ASPECT,
     DIFFERENCE_MATRIX_COLORBAR_SHRINK, DIFFERENCE_MATRIX_COLORBAR_PAD,
+    LINE_COLOURS,
 )
 
 OUT = Path("out")
@@ -116,7 +116,7 @@ def grid_metric_series(case: str, metric: str, frame: int = PAPER_FRAME) -> tupl
         for row in csv.DictReader(stream):
             if row["Case"] == case and int(row["Frame"]) == frame and row["Method"] != "analytic":
                 groups[(row["Method"], int(row["BitDepth"]))].append(row); ref = row["Reference"]
-    colours = {"gauss": "#1b9e77", "rect": "#377eb8"}; markers = {"gauss": "s", "rect": "o"}
+    colours = {"gauss": LINE_COLOURS[0], "rect": LINE_COLOURS[1]}; markers = {"gauss": "s", "rect": "o"}
     return [Series(LABEL_GRID2D_METHOD_TEMPLATE.format(method=method.title(), bit_depth=bits), tuple(int(round(float(r["Samples"]) ** .5)) for r in sorted(rows, key=lambda r: float(r["Samples"]))), tuple(float(r[metric]) for r in sorted(rows, key=lambda r: float(r["Samples"]))), bits, colours[method], markers[method], "-" if bits <= 8 else "--") for (method, bits), rows in sorted(groups.items())], ref
 
 
@@ -132,7 +132,7 @@ def function_series(case: str, reference: np.ndarray, metric: str, bit_depths: s
             continue
         for bits in bit_depths:
             groups[bits].append((int(match.group(1)), image_error_metrics(image, reference, bits, quantise_camera)[metric]))
-    return [Series(LABEL_RILEY_RECT_TEMPLATE.format(bit_depth=bits), tuple(x for x, _ in sorted(points)), tuple(y for _, y in sorted(points)), bits, "#d95f02", "^", "-" if bits <= 8 else "--") for bits, points in sorted(groups.items())]
+    return [Series(LABEL_RILEY_RECT_TEMPLATE.format(bit_depth=bits), tuple(x for x, _ in sorted(points)), tuple(y for _, y in sorted(points)), bits, LINE_COLOURS[2], "^", "-" if bits <= 8 else "--") for bits, points in sorted(groups.items())]
 
 
 def texture_series(
@@ -245,7 +245,6 @@ def figure_texture_convergence() -> list[Path]:
     figures = (
         (
             "exp1_fig3_riley_textures_b8_rmse",
-            LAYOUT_LINE_2X3,
             (
                 (TITLE_EXP1_TEXTURE_ROW_F64_U8, TEXFLOAT_RENDER, None, 8),
                 (TITLE_EXP1_TEXTURE_ROW_U8_U8, TEXUINT_RENDER, 8, 8),
@@ -253,7 +252,6 @@ def figure_texture_convergence() -> list[Path]:
         ),
         (
             "exp1_fig4_riley_textures_b12_rmse",
-            LAYOUT_LINE_2X3_RIGHT_MARGIN,
             (
                 (TITLE_EXP1_TEXTURE_ROW_F64_U12, TEXFLOAT_RENDER, None, 12),
                 (TITLE_EXP1_TEXTURE_ROW_U12_U12, TEXUINT_RENDER, 12, 12),
@@ -261,9 +259,9 @@ def figure_texture_convergence() -> list[Path]:
         ),
     )
     written: list[Path] = []
-    for stem, layout, rows_config in figures:
+    for stem, rows_config in figures:
         figure, axes = make_figure(
-            layout, rows=2, columns=3,
+            LAYOUT_LINE_2X3, rows=2, columns=3,
             tick_font_size=TICK_FONT_SIZE_PT,
         )
         handles: list[Line2D] = []
@@ -285,6 +283,10 @@ def figure_texture_convergence() -> list[Path]:
                     ),
                     fontsize=FONT_SIZE_PT,
                 )
+                if stem == "exp1_fig4_riley_textures_b12_rmse" and column == 2:
+                    axes[row, column].title.set_x(
+                        EXP1_FIG4_THIRD_COLUMN_TITLE_X
+                    )
         unique = {handle.get_label(): handle for handle in handles}
         add_figure_legend(
             figure, list(unique.values()), font_size=LEGEND_FONT_SIZE_PT,

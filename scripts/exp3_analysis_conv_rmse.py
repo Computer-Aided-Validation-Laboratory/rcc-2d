@@ -226,6 +226,68 @@ def get_series_label(record: DicRecord | GridRecord) -> str:
     return f"{record.root.replace('_render_ssaa', '')}{suffix}"
 
 
+def diagonal_h2_reference(record: DicRecord | GridRecord, candidates):
+    """Return the local diagonal h/2 reference, if it has been rendered.
+
+    This is deliberately stricter than a joint-refinement comparison: only a
+    diagonal candidate (Px-SS=Tex-OS) participates, and its reference is the
+    same render family at exactly twice both levels.  SSAA-only renderers are
+    excluded because they do not have a texture-OS axis.
+    """
+    if record.analytic or record.ssaa <= 0 or record.osamp <= 0:
+        return None
+    if record.ssaa != record.osamp:
+        return None
+    for item in candidates:
+        if (
+            not item.analytic
+            and item.root == record.root
+            and item.interpolator == record.interpolator
+            and item.ssaa == 2 * record.ssaa
+            and item.osamp == 2 * record.osamp
+        ):
+            return item
+    return None
+
+
+def _digitised_image_metrics(rec, ref, frame: int) -> tuple[float, float]:
+    """Measure image error using exactly the supplied field reference."""
+    rec_img = load_render_image(OUT / rec.root / rec.case / rec.config, frame)
+    ref_img = load_render_image(OUT / ref.root / ref.case / ref.config, frame)
+    if rec_img is None or ref_img is None or rec_img.shape != ref_img.shape:
+        return np.nan, np.nan
+    difference = (
+        quantise_camera(rec_img, rec.bit_depth).astype(np.int64)
+        - quantise_camera(ref_img, rec.bit_depth).astype(np.int64)
+    )
+    return (
+        float(np.sqrt(np.mean(difference ** 2))),
+        float(np.max(np.abs(difference))),
+    )
+
+
+def _reference_columns(ref, reference_name: str, reference_kind: str) -> dict:
+    return {
+        "Reference": reference_name,
+        "ReferenceKind": reference_kind,
+        "ReferenceConfig": ref.config,
+        "ReferenceSSAA": ref.ssaa or 1,
+        "ReferenceOS": ref.osamp or 1,
+    }
+
+
+def global_image_reference(record, candidates, field_reference):
+    """Preserve the established global image-reference convention."""
+    analytic = [item for item in candidates if item.analytic]
+    if analytic:
+        return analytic[0]
+    family = [
+        item for item in candidates
+        if item.root == record.root and item.interpolator == record.interpolator
+    ]
+    return max(family, key=lambda item: (item.ssaa, item.osamp)) if family else field_reference
+
+
 def analyse_dic_job(
     payload: tuple[DicRecord, list[DicRecord]]
 ) -> list[dict]:
@@ -233,6 +295,23 @@ def analyse_dic_job(
     ref, ref_name = select_dic_reference(candidates)
     if ref is None or rec == ref:
         return []
+    return analyse_dic_against(
+        rec, ref, ref_name, "global", global_image_reference(rec, candidates, ref),
+    )
+
+
+def analyse_dic_h2_job(payload: tuple[DicRecord, DicRecord]) -> list[dict]:
+    rec, ref = payload
+    return analyse_dic_against(
+        rec, ref, f"Diagonal h/2 (Px-SS={ref.ssaa}, Tex-OS={ref.osamp})",
+        "diagonal_h2",
+    )
+
+
+def analyse_dic_against(
+    rec: DicRecord, ref: DicRecord, ref_name: str, reference_kind: str,
+    image_reference: DicRecord | None = None,
+) -> list[dict]:
     rows = []
     for frame in range(1, 11):
         ref_data = load_dic(ref, frame)
@@ -265,36 +344,9 @@ def analyse_dic_job(
             else np.nan
         )
 
-        rec_render_dir = OUT / rec.root / rec.case / rec.config
-        analytic_cands = [c for c in candidates if c.analytic]
-        if analytic_cands:
-            img_ref = analytic_cands[0]
-        else:
-            fam_cands = [
-                c for c in candidates
-                if c.root == rec.root and c.interpolator == rec.interpolator
-            ]
-            img_ref = (
-                max(fam_cands, key=lambda r: (r.ssaa, r.osamp))
-                if fam_cands
-                else ref
-            )
-        ref_render_dir = OUT / img_ref.root / img_ref.case / img_ref.config
-        rec_img = load_render_image(rec_render_dir, frame)
-        ref_img = load_render_image(ref_render_dir, frame)
-        if rec_img is not None and ref_img is not None:
-            rec_codes = quantise_camera(
-                rec_img, rec.bit_depth
-            ).astype(np.int64)
-            ref_codes = quantise_camera(
-                ref_img, rec.bit_depth
-            ).astype(np.int64)
-            code_diff = rec_codes - ref_codes
-            digitised_rmse = float(np.sqrt(np.mean(code_diff ** 2)))
-            digitised_max_err = float(np.max(np.abs(code_diff)))
-        else:
-            digitised_rmse = np.nan
-            digitised_max_err = np.nan
+        digitised_rmse, digitised_max_err = _digitised_image_metrics(
+            rec, image_reference or ref, frame,
+        )
 
         rows.append({
             "Case": rec.case,
@@ -305,7 +357,7 @@ def analyse_dic_job(
             "Frame": frame,
             "SSAA": rec.ssaa or 1,
             "OS": rec.osamp or 1,
-            "Reference": ref_name,
+            **_reference_columns(ref, ref_name, reference_kind),
             "DispErrRMSEToRef(px)": rmse,
             "DispErrMaxToRef(px)": disp_max,
             "DigitisedRMSE(bits)": digitised_rmse,
@@ -321,6 +373,23 @@ def analyse_grid_job(
     ref, ref_name = select_grid_reference(candidates)
     if ref is None or rec == ref:
         return []
+    return analyse_grid_against(
+        rec, ref, ref_name, "global", global_image_reference(rec, candidates, ref),
+    )
+
+
+def analyse_grid_h2_job(payload: tuple[GridRecord, GridRecord]) -> list[dict]:
+    rec, ref = payload
+    return analyse_grid_against(
+        rec, ref, f"Diagonal h/2 (Px-SS={ref.ssaa}, Tex-OS={ref.osamp})",
+        "diagonal_h2",
+    )
+
+
+def analyse_grid_against(
+    rec: GridRecord, ref: GridRecord, ref_name: str, reference_kind: str,
+    image_reference: GridRecord | None = None,
+) -> list[dict]:
     rows = []
     for frame in range(1, 11):
         ref_data = load_grid(ref, frame)
@@ -350,36 +419,9 @@ def analyse_grid_job(
             else np.nan
         )
 
-        rec_render_dir = OUT / rec.root / rec.case / rec.config
-        analytic_cands = [c for c in candidates if c.analytic]
-        if analytic_cands:
-            img_ref = analytic_cands[0]
-        else:
-            fam_cands = [
-                c for c in candidates
-                if c.root == rec.root and c.interpolator == rec.interpolator
-            ]
-            img_ref = (
-                max(fam_cands, key=lambda r: (r.ssaa, r.osamp))
-                if fam_cands
-                else ref
-            )
-        ref_render_dir = OUT / img_ref.root / img_ref.case / img_ref.config
-        rec_img = load_render_image(rec_render_dir, frame)
-        ref_img = load_render_image(ref_render_dir, frame)
-        if rec_img is not None and ref_img is not None:
-            rec_codes = quantise_camera(
-                rec_img, rec.bit_depth
-            ).astype(np.int64)
-            ref_codes = quantise_camera(
-                ref_img, rec.bit_depth
-            ).astype(np.int64)
-            code_diff = rec_codes - ref_codes
-            digitised_rmse = float(np.sqrt(np.mean(code_diff ** 2)))
-            digitised_max_err = float(np.max(np.abs(code_diff)))
-        else:
-            digitised_rmse = np.nan
-            digitised_max_err = np.nan
+        digitised_rmse, digitised_max_err = _digitised_image_metrics(
+            rec, image_reference or ref, frame,
+        )
 
         rows.append({
             "Case": rec.case,
@@ -390,7 +432,7 @@ def analyse_grid_job(
             "Frame": frame,
             "SSAA": rec.ssaa or 1,
             "OS": rec.osamp or 1,
-            "Reference": ref_name,
+            **_reference_columns(ref, ref_name, reference_kind),
             "DispErrRMSEToRef(px)": rmse,
             "DispErrMaxToRef(px)": disp_max,
             "DigitisedRMSE(bits)": digitised_rmse,
@@ -609,6 +651,22 @@ def main() -> None:
                 mp_context=get_context("spawn"),
             )
 
+            h2_jobs = [
+                (record, reference)
+                for record in target_dic
+                if (reference := diagonal_h2_reference(
+                    record, filter_candidates(record, dic_records),
+                )) is not None
+            ]
+            if h2_jobs:
+                print("Processing DIC diagonal h/2 self-reference records...")
+                results.extend(run_analysis_jobs(
+                    "Analyzing DIC diagonal h/2 displacement RMSE",
+                    h2_jobs,
+                    analyse_dic_h2_job,
+                    mp_context=get_context("spawn"),
+                ))
+
             csv_rows = []
             for res in results:
                 csv_rows.extend(res)
@@ -616,16 +674,19 @@ def main() -> None:
             # Group and plot DIC convergence
             groups = defaultdict(list)
             for row in csv_rows:
-                key = (row["Case"], row["Pattern"], row["Series"], row["BitDepth"])
+                key = (
+                    row["Case"], row["Pattern"], row["Series"],
+                    row["BitDepth"], row["ReferenceKind"],
+                )
                 groups[key].append(row)
 
             print("Plotting DIC convergence figures...")
             for key, values in groups.items():
-                case, pattern, series_name, bit_depth = key
-                fig_dir = dic_out_dir / case / f"{series_name}_rmse_conv"
+                case, pattern, series_name, bit_depth, reference_kind = key
+                fig_dir = dic_out_dir / case / f"{series_name}_{reference_kind}_rmse_conv"
                 plot_convergence_grid(
                     fig_dir,
-                    "DIC Displacement Field Convergence (RMSE vs Reference)",
+                    f"DIC Displacement Field Convergence ({reference_kind})",
                     case, pattern, series_name, bit_depth, values
                 )
             # Write DIC summary CSV
@@ -665,6 +726,22 @@ def main() -> None:
                 mp_context=get_context("spawn"),
             )
 
+            h2_jobs = [
+                (record, reference)
+                for record in target_grid
+                if (reference := diagonal_h2_reference(
+                    record, filter_grid_candidates(record, grid_records),
+                )) is not None
+            ]
+            if h2_jobs:
+                print("Processing Grid Method diagonal h/2 self-reference records...")
+                results.extend(run_analysis_jobs(
+                    "Analyzing Grid Method diagonal h/2 displacement RMSE",
+                    h2_jobs,
+                    analyse_grid_h2_job,
+                    mp_context=get_context("spawn"),
+                ))
+
             csv_rows = []
             for res in results:
                 csv_rows.extend(res)
@@ -672,16 +749,19 @@ def main() -> None:
             # Group and plot Grid Method convergence
             groups = defaultdict(list)
             for row in csv_rows:
-                key = (row["Case"], row["Pattern"], row["Series"], row["BitDepth"])
+                key = (
+                    row["Case"], row["Pattern"], row["Series"],
+                    row["BitDepth"], row["ReferenceKind"],
+                )
                 groups[key].append(row)
 
             print("Plotting Grid Method convergence figures...")
             for key, values in groups.items():
-                case, pattern, series_name, bit_depth = key
-                fig_dir = grid_out_dir / case / f"{series_name}_rmse_conv"
+                case, pattern, series_name, bit_depth, reference_kind = key
+                fig_dir = grid_out_dir / case / f"{series_name}_{reference_kind}_rmse_conv"
                 plot_convergence_grid(
                     fig_dir,
-                    "Grid Method Displacement Field Convergence (RMSE vs Reference)",
+                    f"Grid Method Displacement Field Convergence ({reference_kind})",
                     case, pattern, series_name, bit_depth, values
                 )
             # Write Grid Method summary CSV

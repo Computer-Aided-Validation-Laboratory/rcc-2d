@@ -8,6 +8,12 @@ PAGE_MARGIN_CM = 2.5
 CONTENT_WIDTH_CM = A4_WIDTH_CM - 2.0 * PAGE_MARGIN_CM
 
 PAPER_OUTPUT_DIR = Path("out/paper")
+# Supplementary/extended figures are deliberately not mirrored to the article
+# repository and are never included by the journal-preview LaTeX document.
+PAPER_EXT_OUTPUT_DIR = Path("out/paper_ext")
+# Insets for the Exp. 3 supplementary h/2 displacement-convergence plots.
+PAPER_EXT_INSET_MIN_LEVEL = 4
+PAPER_EXT_INSET_BOUNDS = (0.50, 0.45, 0.45, 0.43)
 # Mirror publication-ready figures and editable LaTeX input blocks to the
 # working manuscript directory, while retaining the repository copy above.
 PAPER_DIR = Path.home() / "paper-render-conv-uq"
@@ -47,6 +53,28 @@ RILEY_MARKER_SIZE_PT = 3.2
 EXP3_LINE_WIDTH_PT = 1.0
 EXP3_MARKER_SIZE_PT = 4.0
 EXP3_ANALYTIC_LINE_WIDTH_PT = 0.8
+# Shared muted, colourblind-friendly line palette.  Cycle this list whenever
+# a paper plot has more line series than colours; line/marker styles remain a
+# second independent discriminator.  Black is deliberately reserved for an
+# analytic/reference trace rather than included in the cycle.
+LINE_COLOURS = [
+    "#332288",  # indigo
+    "#44AA99",  # teal
+    "#CC6677",  # muted rose
+    "#999933",  # olive
+    "#88CCEE",  # pale cyan
+    "#882255",  # plum
+    "#DDCC77",  # sand
+    "#117733",  # forest green
+    "#AA4499",  # purple
+    "#6699CC",  # muted blue
+    "#661100",  # brown
+    "#DDDDDD",  # light grey (last-resort high-count series)
+]
+# Exp. 3 Fig. 1 panels (c) and (d) repeat every line from the top row using
+# these fixed zoom windows.  Edit them directly when changing the paper view.
+EXP3_FIG1_ZOOM_BIAS_YLIM = (-0.0012, 0.0012)
+EXP3_FIG1_ZOOM_RMSE_YLIM = (-0.0001, 0.0030)
 
 @dataclass(frozen=True)
 class PaperLayout:
@@ -58,7 +86,6 @@ class PaperLayout:
     h_pad: float = 0.08
     wspace: float = 0.08
     hspace: float = 0.12
-    right_margin: float = 0.0
 
 
 @dataclass(frozen=True)
@@ -78,11 +105,6 @@ class PaperFigure:
 # printed font and panel dimensions across experiments.
 LAYOUT_LINE_1X3 = PaperLayout((CONTENT_WIDTH_CM, 7.0), legend_band=0.15)
 LAYOUT_LINE_2X3 = PaperLayout((CONTENT_WIDTH_CM, 14.0), legend_band=0.13)
-# Exp. 1 Fig. 4 has long third-column texture-input titles.  Reserve a small
-# blank strip at the right instead of allowing those titles to hit the canvas.
-LAYOUT_LINE_2X3_RIGHT_MARGIN = PaperLayout(
-    (CONTENT_WIDTH_CM, 14.0), legend_band=0.13, right_margin=0.10,
-)
 LAYOUT_LINE_2X2_WIDE = PaperLayout((CONTENT_WIDTH_CM, 14.0))
 LAYOUT_LINE_2X2_WIDE_DETACHED = PaperLayout(
     (CONTENT_WIDTH_CM, 14.0), legend_band=0.17,
@@ -103,6 +125,9 @@ PAPER_FRAME = 0
 PAPER_TEXTURE_INTERPOLATOR = "cubiccm"
 # Paper figures show each of these on-the-fly camera digitisations.
 PAPER_EXP2_BIT_DEPTHS = (8, 12)
+# Exp. 1 Fig. 4's long third-column titles are offset slightly left in their
+# own axes coordinates to keep a clear right-hand canvas margin.
+EXP1_FIG4_THIRD_COLUMN_TITLE_X = 0.46
 # Color map for the difference images.
 DIFFERENCE_CMAP = "RdBu"
 # Fixed, symmetric image-difference limits make paper panels directly
@@ -158,7 +183,7 @@ PAPER_FIGURES = {
     "exp1_fig1_eggbox_function_shaders_rmse": PaperFigure(LAYOUT_LINE_1X3, "Digitised RMSE convergence of the eggbox function shader.", "fig:exp1-eggbox-rmse"),
     "exp1_fig2_rigid_eggbox_difference_maps": PaperFigure(LAYOUT_IMAGE_1X3, "Signed 8-bit grey-level differences between the analytic Eggbox image and Riley function-shader images for " + EXP1_DIFF_FUNC_LABEL + ".", "fig:exp1-rigid-eggbox-difference"),
     "exp1_fig3_riley_textures_b8_rmse": PaperFigure(LAYOUT_LINE_2X3, "Eight-bit digitised RMSE convergence of Riley texture renders.", "fig:exp1-riley-textures-b8-rmse"),
-    "exp1_fig4_riley_textures_b12_rmse": PaperFigure(LAYOUT_LINE_2X3_RIGHT_MARGIN, "Twelve-bit digitised RMSE convergence of Riley texture renders.", "fig:exp1-riley-textures-b12-rmse"),
+    "exp1_fig4_riley_textures_b12_rmse": PaperFigure(LAYOUT_LINE_2X3, "Twelve-bit digitised RMSE convergence of Riley texture renders.", "fig:exp1-riley-textures-b12-rmse"),
     "exp1_fig5_riley_texf_difference_maps": PaperFigure(LAYOUT_IMAGE_MATRIX, "Signed 8-bit grey-level differences between the analytic image and Riley f64 texture-shader images for " + EXP1_DIFF_TEX_LABEL + ".", "fig:exp1-riley-texf-difference"),
     "exp2_fig1_speck2d_gauss_disk_rmse": PaperFigure(LAYOUT_LINE_2X2_WIDE, "Digitised RMSE convergence of Speck2D for Gaussian (top row) and additive disk (bottom row) speckles.", "fig:exp2-speck2d-gauss-disk-rmse"),
     EXP2_FIG2_STEM: PaperFigure(LAYOUT_LINE_2X2_WIDE, "Digitised RMSE convergence of Riley f64 texture renders at 12-bit camera output: Gaussian speckles (top row) and disk speckles (bottom row).", "fig:exp2-texf-gauss-disk-u12-rmse"),
@@ -166,6 +191,6 @@ PAPER_FIGURES = {
     EXP2_FIG4_STEM: PaperFigure(LAYOUT_IMAGE_3X3, "Signed 8-bit grey-level differences between the analytic Gauss image and Riley f64 texture-shader images for " + EXP2_DIFF_TEX_LABEL + ".", "fig:exp2-riley-texf-gauss-difference"),
     "exp3_riley_gauss_fig1_rigid_translation_bias_rmse_refinement_b12": PaperFigure(LAYOUT_LINE_2X2_WIDE_DETACHED, "Rigid-body translation convergence: (a) mean displacement bias and (b) displacement field RMSE relative to analytic reference.", "fig:exp3-rigid-translation-bias-rmse-refinement"),
     "exp3_riley_gauss_fig2_rigid_refinement_independence_os_vs_ss_b12": PaperFigure(LAYOUT_LINE_1X3, "Displacement RMSE convergence with panel (c) inset showing SSAA/OS >= 4 zoom: (a) fixed oversampling Tex-OS=1 sweeping Px-SS, (b) fixed pixel integration Px-SS=1 sweeping Tex-OS, and (c) simultaneous Tex-OS=Px-SS refinement.", "fig:exp3-rigid-refinement-independence-os-vs-ss"),
-    "exp3_riley_gauss_fig3_affine_self_convergence_dic_vs_grid_b12": PaperFigure(LAYOUT_LINE_1X3, "Self-convergence displacement RMSE for DIC and Grid Method under rigid translation.", "fig:exp3-rigid-self-convergence-dic-vs-grid"),
+    "exp3_riley_gauss_fig3_rigid_self_convergence_dic_vs_grid_b12": PaperFigure(LAYOUT_LINE_1X3, "Self-convergence displacement RMSE for DIC and Grid Method under rigid translation.", "fig:exp3-rigid-self-convergence-dic-vs-grid"),
     "exp3_riley_gauss_fig4_chirp_combined_b12": PaperFigure(LAYOUT_FIELD_4X2, "Finite-star displacement error: spatial distribution and column-wise RMSE versus horizontal coordinate for both DIC (left column) and Grid Method (right column).", "fig:exp3-chirp-combined"),
 }

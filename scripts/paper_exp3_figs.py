@@ -42,7 +42,6 @@ from paperfiglabels import (
     LABEL_ANALYTIC_REFERENCE,
     LABEL_RILEY_BSPLINE,
     LABEL_RILEY_CATMULL_ROM,
-    LABEL_FIG1_CATMULL_ROM_BASELINE,
     METHOD_DIC,
     METHOD_GRID,
     INTERPOLATOR_LABELS,
@@ -85,6 +84,8 @@ from paperparams import (
     EXP3_ANALYTIC_LINE_WIDTH_PT,
     EXP3_BIT_DEPTH,
     EXP3_CHIRP_CASE,
+    EXP3_FIG1_ZOOM_BIAS_YLIM,
+    EXP3_FIG1_ZOOM_RMSE_YLIM,
     LAYOUT_FIELD_4X2,
     LAYOUT_LINE_1X3,
     LAYOUT_LINE_2X2_WIDE,
@@ -94,6 +95,7 @@ from paperparams import (
     EXP3_RIGID_CASE,
     FONT_SIZE_PT,
     LEGEND_FONT_SIZE_PT,
+    LINE_COLOURS,
     PAPER_DPI,
     PAPER_FORMATS,
     PAPER_OUTPUT_DIR,
@@ -101,30 +103,34 @@ from paperparams import (
 )
 
 # Colors matching the Experiment 1/2 paper convention
-COLOR_BSPLINE = "tab:orange"
-COLOR_CUBICCM = "tab:blue"
+COLOR_BSPLINE = LINE_COLOURS[0]
+COLOR_CUBICCM = LINE_COLOURS[1]
 
 INTERPOLATOR_NAMES = INTERPOLATOR_LABELS
 
-# Cases for Figure 1: (interpolator, OS, SS, color, linestyle, marker)
+# Cases for Figure 1: (interpolator, Px-SS, Tex-OS, colour, linestyle, marker)
+# Every requested combination is shown for both texture interpolants.
 EXP3_FIG1_CASES = (
-    ("cubic_bspline", 1, 1, COLOR_BSPLINE, "-", "o"),
-    ("cubic_bspline", 8, 8, "tab:purple", "-", "v"),
-    ("cubic_bspline", 32, 1, "tab:cyan", "-", "^"),
-    ("cubic_bspline", 32, 32, "tab:green", "-", "s"),
-    ("cubiccm", 1, 1, COLOR_CUBICCM, "--", "x"),
-    ("cubiccm", 8, 8, "tab:brown", "--", "*"),
-    ("cubiccm", 32, 32, "tab:red", "--", "+"),
+    ("cubic_bspline", 1, 1, LINE_COLOURS[0], "-", "o"),
+    ("cubic_bspline", 8, 1, LINE_COLOURS[1], "-", "v"),
+    ("cubic_bspline", 1, 8, LINE_COLOURS[2], "-", "^"),
+    ("cubic_bspline", 8, 8, LINE_COLOURS[3], "-", "s"),
+    # Match colour by (Px-SS, Tex-OS); use dashed X/plus traces to
+    # distinguish Catmull--Rom from the solid geometric B-spline markers.
+    ("cubiccm", 1, 1, LINE_COLOURS[0], "--", "X"),
+    ("cubiccm", 8, 1, LINE_COLOURS[1], "--", "+"),
+    ("cubiccm", 1, 8, LINE_COLOURS[2], "--", "X"),
+    ("cubiccm", 8, 8, LINE_COLOURS[3], "--", "+"),
 )
 
 # Profile configurations for Figs 4 & 5: (interpolator, OS, SS, color, linestyle)
 EXP3_FIG4_5_PROFILES = (
-    ("cubic_bspline", 1, 1, COLOR_BSPLINE, "-"),
-    ("cubic_bspline", 4, 4, "tab:green", "-"),
-    ("cubic_bspline", 32, 32, "tab:purple", "-"),
-    ("cubiccm", 1, 1, COLOR_CUBICCM, "--"),
-    ("cubiccm", 4, 4, "tab:red", "--"),
-    ("cubiccm", 32, 32, "tab:brown", "--"),
+    ("cubic_bspline", 1, 1, LINE_COLOURS[0], "-"),
+    ("cubic_bspline", 4, 4, LINE_COLOURS[1], "-"),
+    ("cubic_bspline", 32, 32, LINE_COLOURS[2], "-"),
+    ("cubiccm", 1, 1, LINE_COLOURS[3], "--"),
+    ("cubiccm", 4, 4, LINE_COLOURS[4], "--"),
+    ("cubiccm", 32, 32, LINE_COLOURS[5], "--"),
 )
 
 def find_rec(
@@ -257,9 +263,9 @@ def generate_figure1(dic_records) -> None:
                 None,
             ),
         ]
-        for interp, osamp, ssaa, col, lstyle, marker in EXP3_FIG1_CASES:
+        for interp, ssaa, osamp, col, lstyle, marker in EXP3_FIG1_CASES:
             rec = find_rec(
-                subset, "riley_render_texf", interp, osamp, ssaa
+                subset, "riley_render_texf", interp, ssaa, osamp
             )
             name = INTERPOLATOR_NAMES.get(interp, interp)
             label = LABEL_FIG1_RILEY_TEMPLATE.format(
@@ -296,7 +302,7 @@ def generate_figure1(dic_records) -> None:
                     max_bias_all, np.nanmax(np.abs(biases))
                 )
 
-        rec_anal, label_anal, col_anal, _, _ = cases_to_plot[0]
+        rec_anal, label_anal, col_anal, lstyle_anal, _ = cases_to_plot[0]
         if rec_anal is not None:
             biases = []
             for frame in range(11):
@@ -311,7 +317,7 @@ def generate_figure1(dic_records) -> None:
                 biases,
                 label=label_anal,
                 color=col_anal,
-                linestyle="-",
+                linestyle=lstyle_anal,
                 marker=None,
                 linewidth=EXP3_ANALYTIC_LINE_WIDTH_PT,
             )
@@ -319,7 +325,6 @@ def generate_figure1(dic_records) -> None:
         # Panel b: RMSE (all cases)
         anal_ref = find_rec(subset, "analytic", analytic=True)
         max_rmse_all = 0.0
-        max_rmse_filtered = 0.0
         if anal_ref:
             for rec, label, _, _, _ in cases_to_plot:
                 if rec is None:
@@ -330,10 +335,6 @@ def generate_figure1(dic_records) -> None:
                     if valid_rmses:
                         val_max = max(valid_rmses)
                         max_rmse_all = max(max_rmse_all, val_max)
-                        if label != LABEL_FIG1_CATMULL_ROM_BASELINE:
-                            max_rmse_filtered = max(
-                                max_rmse_filtered, val_max
-                            )
 
             for rec, label, col, lstyle, marker in cases_to_plot:
                 if rec is None or label == LABEL_ANALYTIC_REFERENCE:
@@ -359,18 +360,15 @@ def generate_figure1(dic_records) -> None:
                         rmses,
                         label=label_anal,
                         color=col_anal,
-                        linestyle="-",
+                        linestyle=lstyle_anal,
                         marker=None,
                         linewidth=EXP3_ANALYTIC_LINE_WIDTH_PT,
                     )
 
-        # Bottom Row (Excluding Catmull-Rom OS=1, SS=1): Row 1
+        # Bottom row: same cases as the top row, using fixed zoom windows.
         # Panel c: Bias (zoomed)
-        max_bias_filtered = 0.0
         for rec, label, col, lstyle, marker in cases_to_plot:
             if rec is None or label == LABEL_ANALYTIC_REFERENCE:
-                continue
-            if label == LABEL_FIG1_CATMULL_ROM_BASELINE:
                 continue
             biases = []
             for frame in range(11):
@@ -390,10 +388,6 @@ def generate_figure1(dic_records) -> None:
                 linewidth=EXP3_LINE_WIDTH_PT,
                 markersize=EXP3_MARKER_SIZE_PT,
             )
-            if biases:
-                max_bias_filtered = max(
-                    max_bias_filtered, np.nanmax(np.abs(biases))
-                )
 
         if rec_anal is not None:
             biases = []
@@ -409,7 +403,7 @@ def generate_figure1(dic_records) -> None:
                 biases,
                 label=label_anal,
                 color=col_anal,
-                linestyle="-",
+                linestyle=lstyle_anal,
                 marker=None,
                 linewidth=EXP3_ANALYTIC_LINE_WIDTH_PT,
             )
@@ -418,8 +412,6 @@ def generate_figure1(dic_records) -> None:
         if anal_ref:
             for rec, label, col, lstyle, marker in cases_to_plot:
                 if rec is None or label == LABEL_ANALYTIC_REFERENCE:
-                    continue
-                if label == LABEL_FIG1_CATMULL_ROM_BASELINE:
                     continue
                 rmses = get_rmse_vs_ref(rec, anal_ref, is_dic=True)
                 if len(rmses) == 11:
@@ -442,7 +434,7 @@ def generate_figure1(dic_records) -> None:
                         rmses,
                         label=label_anal,
                         color=col_anal,
-                        linestyle="-",
+                        linestyle=lstyle_anal,
                         marker=None,
                         linewidth=EXP3_ANALYTIC_LINE_WIDTH_PT,
                     )
@@ -458,18 +450,12 @@ def generate_figure1(dic_records) -> None:
         # y-limits configuration
         if max_bias_all > 0:
             axes_flat[0].set_ylim(-max_bias_all * 1.15, max_bias_all * 1.15)
-        if max_bias_filtered > 0:
-            axes_flat[2].set_ylim(
-                -max_bias_filtered * 1.15, max_bias_filtered * 1.15
-            )
+        axes_flat[2].set_ylim(*EXP3_FIG1_ZOOM_BIAS_YLIM)
         if max_rmse_all > 0:
             axes_flat[1].set_ylim(bottom=-0.04 * max_rmse_all)
         else:
             axes_flat[1].set_ylim(bottom=-1e-5)
-        if max_rmse_filtered > 0:
-            axes_flat[3].set_ylim(bottom=-0.04 * max_rmse_filtered)
-        else:
-            axes_flat[3].set_ylim(bottom=-1e-5)
+        axes_flat[3].set_ylim(*EXP3_FIG1_ZOOM_RMSE_YLIM)
 
         # Subplot labeling
         for ax in axes_flat:
@@ -543,7 +529,7 @@ def generate_figure2(dic_records) -> None:
                 LABEL_RILEY_TEMPLATE.format(
                     name=INTERPOLATOR_LABELS["line"],
                 ),
-                "tab:green", ":", "d",
+                LINE_COLOURS[2], ":", "d",
             ),
         ]
 
@@ -728,7 +714,7 @@ def _generate_figure3_with_affine(dic_records, grid_records) -> None:
     samplers = [
         ("cubic_bspline", INTERPOLATOR_LABELS["cubic_bspline"], COLOR_BSPLINE, "-", "o"),
         ("cubiccm", INTERPOLATOR_LABELS["cubiccm"], COLOR_CUBICCM, "--", "x"),
-        ("line", INTERPOLATOR_LABELS["line"], "tab:green", ":", "d"),
+        ("line", INTERPOLATOR_LABELS["line"], LINE_COLOURS[2], ":", "d"),
     ]
 
     # --- TOP ROW: RIGID TRANSLATION ---
@@ -1022,7 +1008,7 @@ def _generate_figure3_with_affine(dic_records, grid_records) -> None:
 
     save_path = (
         Path(PAPER_OUTPUT_DIR)
-        / "exp3_riley_gauss_fig3_affine_self_convergence_dic_vs_grid_b12"
+        / "exp3_riley_gauss_fig3_rigid_self_convergence_dic_vs_grid_b12"
     )
     written = save_figure(fig, save_path, PAPER_FORMATS, PAPER_DPI)
     fig.clear()
@@ -1038,7 +1024,7 @@ def generate_figure3(dic_records, grid_records) -> list[Path]:
     samplers = [
         ("cubic_bspline", INTERPOLATOR_LABELS["cubic_bspline"], COLOR_BSPLINE, "-", "o"),
         ("cubiccm", INTERPOLATOR_LABELS["cubiccm"], COLOR_CUBICCM, "--", "x"),
-        ("line", INTERPOLATOR_LABELS["line"], "tab:green", ":", "d"),
+        ("line", INTERPOLATOR_LABELS["line"], LINE_COLOURS[2], ":", "d"),
     ]
     panels = (
         (axes[0, 0], dic_records, "gausscont", METHOD_DIC, True, "a"),
@@ -1123,7 +1109,7 @@ def generate_figure3(dic_records, grid_records) -> list[Path]:
     )
     written = save_figure(
         figure,
-        Path(PAPER_OUTPUT_DIR) / "exp3_riley_gauss_fig3_affine_self_convergence_dic_vs_grid_b12",
+        Path(PAPER_OUTPUT_DIR) / "exp3_riley_gauss_fig3_rigid_self_convergence_dic_vs_grid_b12",
         PAPER_FORMATS, PAPER_DPI,
     )
     figure.clear()
@@ -1467,7 +1453,7 @@ def figure_stems() -> tuple[str, ...]:
     return (
         "exp3_riley_gauss_fig1_rigid_translation_bias_rmse_refinement_b12",
         "exp3_riley_gauss_fig2_rigid_refinement_independence_os_vs_ss_b12",
-        "exp3_riley_gauss_fig3_affine_self_convergence_dic_vs_grid_b12",
+        "exp3_riley_gauss_fig3_rigid_self_convergence_dic_vs_grid_b12",
         "exp3_riley_gauss_fig4_chirp_combined_b12",
     )
 

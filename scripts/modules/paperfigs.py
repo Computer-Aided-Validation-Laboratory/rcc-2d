@@ -14,7 +14,7 @@ from matplotlib.figure import Figure
 from matplotlib.ticker import FixedFormatter, FixedLocator
 from matplotlib.backends.backend_agg import FigureCanvasAgg
 from paperfiglabels import LABEL_025_LSB, LABEL_AXIS_INTEGRATION
-from paperparams import PaperLayout
+from paperparams import LINE_COLOURS, PaperLayout
 
 
 def configure_paper_matplotlib() -> None:
@@ -35,10 +35,6 @@ def configure_paper_matplotlib() -> None:
 # Stable texture-OS styles shared by every paper figure.  The render matrix
 # commonly contains ten powers of two, exceeding Matplotlib's default colour
 # cycle; indexing by log2(OS) keeps a given OS visually identical everywhere.
-_TEXTURE_OS_COLOURS = (
-    "#1f77b4", "#ff7f0e", "#2ca02c", "#d62728", "#9467bd", "#8c564b",
-    "#e377c2", "#7f7f7f", "#bcbd22", "#17becf", "#003f5c", "#ffa600",
-)
 _TEXTURE_OS_MARKERS = ("o", "s", "^", "D", "v", "P", "X", "<", ">", "h", "*", "p")
 _TEXTURE_OS_LINESTYLES = (
     "-", "--", ":", "-.", (0, (5, 1)), (0, (3, 1, 1, 1)),
@@ -53,7 +49,7 @@ def texture_os_style(oversample: int) -> tuple[str, str, object]:
     exponent = int(round(np.log2(value)))
     index = exponent if 2**exponent == value else value - 1
     return (
-        _TEXTURE_OS_COLOURS[index % len(_TEXTURE_OS_COLOURS)],
+        LINE_COLOURS[index % len(LINE_COLOURS)],
         _TEXTURE_OS_MARKERS[index % len(_TEXTURE_OS_MARKERS)],
         _TEXTURE_OS_LINESTYLES[index % len(_TEXTURE_OS_LINESTYLES)],
     )
@@ -83,7 +79,6 @@ def make_figure(layout: PaperLayout, *, rows: int, columns: int, tick_font_size:
     figure.get_layout_engine().set(
         w_pad=layout.w_pad, h_pad=layout.h_pad,
         wspace=layout.wspace, hspace=layout.hspace,
-        rect=(0.0, 0.0, 1.0 - layout.right_margin, 1.0),
     )
     figure._paper_layout = layout
     for axis in axes.flat:
