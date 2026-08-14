@@ -145,11 +145,13 @@ def speck_series(case: str, pattern: str, frame: int, metric: str) -> tuple[list
 
 def texf_series(
     case: str, pattern: str, frame: int, metric: str, camera_bits: int = 8,
+    interpolator: str | None = None,
 ) -> tuple[list[Series], str]:
     ref, ref_label = reference(case, pattern, frame)
+    interpolator = interpolator or PAPER_TEXTURE_INTERPOLATOR
     root = (
         RILEY_TEXF_RENDER
-        / f"{case}_{pattern}_seed3_{PAPER_TEXTURE_INTERPOLATOR}"
+        / f"{case}_{pattern}_seed3_{interpolator}"
     )
     grouped: dict[int, list[tuple[int, float]]] = defaultdict(list)
     if root.is_dir():
@@ -266,8 +268,6 @@ def figure_stems() -> tuple[str, ...]:
     return (
         "exp2_fig1_speck2d_gauss_disk_rmse",
         EXP2_FIG2_STEM,
-        EXP2_FIG3_STEM,
-        EXP2_FIG4_STEM,
     )
 
 
@@ -275,18 +275,16 @@ def generate_figures() -> list[Path]:
     remove_superseded_figures()
     written = figure_speck2d_combined()
     written.extend(figure_riley_texf())
-    written.extend(figure_texf_difference_maps(
-        "diskadd", EXP2_FIG3_STEM, EXP2_FIG7_DIFF_LIMIT_BITS,
-    ))
-    written.extend(figure_texf_difference_maps(
-        "gaussadd", EXP2_FIG4_STEM, EXP2_FIG8_DIFF_LIMIT_BITS,
-    ))
     return written
 
 
 def remove_superseded_figures() -> None:
     """Remove superseded four-figure texture-convergence paper products."""
     stems = (
+        # Difference maps are supplementary-only as of the current paper
+        # layout.  Remove stale main-paper copies when figures are rebuilt.
+        EXP2_FIG3_STEM,
+        EXP2_FIG4_STEM,
         "exp2_fig1_speck2d_disk_rmse",
         "exp2_fig2_speck2d_gauss_rmse",
         "exp2_fig3_riley_textures_disk_b8_rmse",
@@ -316,6 +314,7 @@ def remove_superseded_figures() -> None:
 
 def figure_texf_difference_maps(
     pattern: str, stem: str, colour_limit_bits: float,
+    *, output_dir: Path = PAPER_OUTPUT_DIR,
 ) -> list[Path]:
     """4×4 signed 8-bit difference maps for the rigid 0.3 px texture case."""
     case, frame = EXP2_DIFF_TEX_CASE, EXP2_DIFF_TEX_FRAME
@@ -391,7 +390,7 @@ def figure_texf_difference_maps(
         )
         colourbar.ax.tick_params(labelsize=TICK_FONT_SIZE_PT)
     return save_figure(
-        figure, PAPER_OUTPUT_DIR / stem, PAPER_FORMATS, PAPER_DPI
+        figure, output_dir / stem, PAPER_FORMATS, PAPER_DPI
     )
 
 

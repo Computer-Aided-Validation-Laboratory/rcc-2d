@@ -2,6 +2,15 @@
 from dataclasses import dataclass
 from pathlib import Path
 
+from paperfigtex import (
+    CAPTION_EXP1_FIG1, CAPTION_EXP1_FIG3, CAPTION_EXP1_FIG4,
+    CAPTION_EXP2_FIG1, CAPTION_EXP2_FIG2, CAPTION_EXP3_FIG1,
+    CAPTION_EXP3_FIG2, CAPTION_EXP3_FIG3, CAPTION_EXP3_FIG4,
+    LABEL_EXP1_FIG1, LABEL_EXP1_FIG3, LABEL_EXP1_FIG4,
+    LABEL_EXP2_FIG1, LABEL_EXP2_FIG2, LABEL_EXP3_FIG1,
+    LABEL_EXP3_FIG2, LABEL_EXP3_FIG3, LABEL_EXP3_FIG4,
+)
+
 # A4 is 21.0 x 29.7 cm.  2.5 cm margins leave a 16.0 x 24.7 cm usable area.
 A4_WIDTH_CM = 21.0
 PAGE_MARGIN_CM = 2.5
@@ -177,20 +186,38 @@ EXP3_RIGID_CASE = "pt516_cam512_q9_rig"
 EXP3_AFFINE_CASE = "pt516_cam512_q9_aff"
 EXP3_CHIRP_CASE = "pt260x65_cam256_q9_chirp"
 EXP3_BIT_DEPTH = 12
+# Finite-star Fig. 4 compares the deliberately under-resolved render with this
+# completed, highest diagonal Riley texture render for both DIC and Grid.
+EXP3_FIG4_REFERENCE_SSAA = 128
+EXP3_FIG4_REFERENCE_OSAMP = 128
 
 # Generated-figure registry: layout, caption, and LaTeX label share one key.
 PAPER_FIGURES = {
-    "exp1_fig1_eggbox_function_shaders_rmse": PaperFigure(LAYOUT_LINE_1X3, "Digitised RMSE convergence of the eggbox function shader.", "fig:exp1-eggbox-rmse"),
-    "exp1_fig2_rigid_eggbox_difference_maps": PaperFigure(LAYOUT_IMAGE_1X3, "Signed 8-bit grey-level differences between the analytic Eggbox image and Riley function-shader images for " + EXP1_DIFF_FUNC_LABEL + ".", "fig:exp1-rigid-eggbox-difference"),
-    "exp1_fig3_riley_textures_b8_rmse": PaperFigure(LAYOUT_LINE_2X3, "Eight-bit digitised RMSE convergence of Riley texture renders.", "fig:exp1-riley-textures-b8-rmse"),
-    "exp1_fig4_riley_textures_b12_rmse": PaperFigure(LAYOUT_LINE_2X3, "Twelve-bit digitised RMSE convergence of Riley texture renders.", "fig:exp1-riley-textures-b12-rmse"),
-    "exp1_fig5_riley_texf_difference_maps": PaperFigure(LAYOUT_IMAGE_MATRIX, "Signed 8-bit grey-level differences between the analytic image and Riley f64 texture-shader images for " + EXP1_DIFF_TEX_LABEL + ".", "fig:exp1-riley-texf-difference"),
-    "exp2_fig1_speck2d_gauss_disk_rmse": PaperFigure(LAYOUT_LINE_2X2_WIDE, "Digitised RMSE convergence of Speck2D for Gaussian (top row) and additive disk (bottom row) speckles.", "fig:exp2-speck2d-gauss-disk-rmse"),
-    EXP2_FIG2_STEM: PaperFigure(LAYOUT_LINE_2X2_WIDE, "Digitised RMSE convergence of Riley f64 texture renders at 12-bit camera output: Gaussian speckles (top row) and disk speckles (bottom row).", "fig:exp2-texf-gauss-disk-u12-rmse"),
-    EXP2_FIG3_STEM: PaperFigure(LAYOUT_IMAGE_3X3, "Signed 8-bit grey-level differences between the analytic disk image and Riley f64 texture-shader images for " + EXP2_DIFF_TEX_LABEL + ".", "fig:exp2-riley-texf-disk-difference"),
-    EXP2_FIG4_STEM: PaperFigure(LAYOUT_IMAGE_3X3, "Signed 8-bit grey-level differences between the analytic Gauss image and Riley f64 texture-shader images for " + EXP2_DIFF_TEX_LABEL + ".", "fig:exp2-riley-texf-gauss-difference"),
-    "exp3_riley_gauss_fig1_rigid_translation_bias_rmse_refinement_b12": PaperFigure(LAYOUT_LINE_2X2_WIDE_DETACHED, "Rigid-body translation convergence: (a) mean displacement bias and (b) displacement field RMSE relative to analytic reference.", "fig:exp3-rigid-translation-bias-rmse-refinement"),
-    "exp3_riley_gauss_fig2_rigid_refinement_independence_os_vs_ss_b12": PaperFigure(LAYOUT_LINE_1X3, "Displacement RMSE convergence with panel (c) inset showing SSAA/OS >= 4 zoom: (a) fixed oversampling Tex-OS=1 sweeping Px-SS, (b) fixed pixel integration Px-SS=1 sweeping Tex-OS, and (c) simultaneous Tex-OS=Px-SS refinement.", "fig:exp3-rigid-refinement-independence-os-vs-ss"),
-    "exp3_riley_gauss_fig3_rigid_self_convergence_dic_vs_grid_b12": PaperFigure(LAYOUT_LINE_1X3, "Self-convergence displacement RMSE for DIC and Grid Method under rigid translation.", "fig:exp3-rigid-self-convergence-dic-vs-grid"),
-    "exp3_riley_gauss_fig4_chirp_combined_b12": PaperFigure(LAYOUT_FIELD_4X2, "Finite-star displacement error: spatial distribution and column-wise RMSE versus horizontal coordinate for both DIC (left column) and Grid Method (right column).", "fig:exp3-chirp-combined"),
+    "exp1_fig1_eggbox_function_shaders_rmse": PaperFigure(
+        LAYOUT_LINE_2X3, CAPTION_EXP1_FIG1, LABEL_EXP1_FIG1,
+    ),
+    "exp1_fig3_riley_textures_b8_rmse": PaperFigure(
+        LAYOUT_LINE_2X3, CAPTION_EXP1_FIG3, LABEL_EXP1_FIG3,
+    ),
+    "exp1_fig4_riley_textures_b12_rmse": PaperFigure(
+        LAYOUT_LINE_2X3, CAPTION_EXP1_FIG4, LABEL_EXP1_FIG4,
+    ),
+    "exp2_fig1_speck2d_gauss_disk_rmse": PaperFigure(
+        LAYOUT_LINE_2X2_WIDE, CAPTION_EXP2_FIG1, LABEL_EXP2_FIG1,
+    ),
+    EXP2_FIG2_STEM: PaperFigure(
+        LAYOUT_LINE_2X2_WIDE, CAPTION_EXP2_FIG2, LABEL_EXP2_FIG2,
+    ),
+    "exp3_riley_gauss_fig1_rigid_translation_bias_rmse_refinement_b12": PaperFigure(
+        LAYOUT_LINE_2X2_WIDE_DETACHED, CAPTION_EXP3_FIG1, LABEL_EXP3_FIG1,
+    ),
+    "exp3_riley_gauss_fig2_rigid_refinement_independence_os_vs_ss_b12": PaperFigure(
+        LAYOUT_LINE_1X3, CAPTION_EXP3_FIG2, LABEL_EXP3_FIG2,
+    ),
+    "exp3_riley_gauss_fig3_rigid_self_convergence_dic_vs_grid_b12": PaperFigure(
+        LAYOUT_LINE_1X3, CAPTION_EXP3_FIG3, LABEL_EXP3_FIG3,
+    ),
+    "exp3_riley_gauss_fig4_finite_star_combined_b12": PaperFigure(
+        LAYOUT_FIELD_4X2, CAPTION_EXP3_FIG4, LABEL_EXP3_FIG4,
+    ),
 }

@@ -3,9 +3,7 @@
 from __future__ import annotations
 
 from paper_exp1_figs import (
-    exp1_figure_stems, figure_rigid_function_difference_maps,
-    figure_function_shaders, figure_texture_convergence,
-    figure_texture_difference_maps,
+    exp1_figure_stems, figure_function_shaders, figure_texture_convergence,
     remove_superseded_figures,
 )
 from paper_exp2_figs import (
@@ -28,9 +26,7 @@ def write_article(stems: tuple[str, ...]) -> list[Path]:
 def main() -> None:
     remove_superseded_figures()
     written = figure_function_shaders()
-    written.extend(figure_rigid_function_difference_maps())
     written.extend(figure_texture_convergence())
-    written.extend(figure_texture_difference_maps())
     written.extend(generate_exp2())
     written.extend(generate_exp3())
     # Supplementary figures are intentionally kept out of the article and

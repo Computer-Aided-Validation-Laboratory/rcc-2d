@@ -68,11 +68,11 @@ from paperfiglabels import (
     TITLE_FIG3_PANEL_TEMPLATE,
     LABEL_FIG3_DIC_TEMPLATE,
     LABEL_FIG3_GRID_TEMPLATE,
-    TITLE_FIG4_A,
+    TITLE_FIG4_A_TEMPLATE,
     TITLE_FIG4_B_TEMPLATE,
     TITLE_FIG4_C_TEMPLATE,
     TITLE_FIG4_D,
-    TITLE_FIG4_E,
+    TITLE_FIG4_E_TEMPLATE,
     TITLE_FIG4_F_TEMPLATE,
     TITLE_FIG4_G_TEMPLATE,
     TITLE_FIG4_H,
@@ -86,6 +86,8 @@ from paperparams import (
     EXP3_CHIRP_CASE,
     EXP3_FIG1_ZOOM_BIAS_YLIM,
     EXP3_FIG1_ZOOM_RMSE_YLIM,
+    EXP3_FIG4_REFERENCE_OSAMP,
+    EXP3_FIG4_REFERENCE_SSAA,
     LAYOUT_FIELD_4X2,
     LAYOUT_LINE_1X3,
     LAYOUT_LINE_2X2_WIDE,
@@ -1141,7 +1143,8 @@ def generate_figure4(dic_records, grid_records) -> list[Path]:
         and r.bit_depth == EXP3_BIT_DEPTH
     ]
     ref_dic = find_rec(
-        subset_dic, "riley_render_texf", "cubic_bspline", 128, 16
+        subset_dic, "riley_render_texf", "cubic_bspline",
+        EXP3_FIG4_REFERENCE_SSAA, EXP3_FIG4_REFERENCE_OSAMP,
     )
     under_dic = find_rec(
         subset_dic, "riley_render_texf", "cubic_bspline", 1, 1
@@ -1177,7 +1180,9 @@ def generate_figure4(dic_records, grid_records) -> list[Path]:
                 aspect="auto",
             )
             add_map_colourbar(im_a, axes[0, 0])
-            axes[0, 0].set_title(TITLE_FIG4_A, fontsize=FONT_SIZE_PT)
+            axes[0, 0].set_title(TITLE_FIG4_A_TEMPLATE.format(
+                ref_level=EXP3_FIG4_REFERENCE_SSAA,
+            ), fontsize=FONT_SIZE_PT)
 
             # (b) DIC Under-resolved Field
             im_b = axes[1, 0].imshow(
@@ -1194,6 +1199,7 @@ def generate_figure4(dic_records, grid_records) -> list[Path]:
                 name=interp_name_dic,
                 osamp=under_dic.osamp or 1,
                 ssaa=under_dic.ssaa or 1,
+                ref_level=EXP3_FIG4_REFERENCE_SSAA,
             )
             axes[1, 0].set_title(title_b, fontsize=FONT_SIZE_PT)
 
@@ -1288,7 +1294,8 @@ def generate_figure4(dic_records, grid_records) -> list[Path]:
         and r.bit_depth == EXP3_BIT_DEPTH
     ]
     ref_grid = find_rec(
-        subset_grid, "riley_render_texf", "cubic_bspline", 128, 16
+        subset_grid, "riley_render_texf", "cubic_bspline",
+        EXP3_FIG4_REFERENCE_SSAA, EXP3_FIG4_REFERENCE_OSAMP,
     )
     under_grid = find_rec(
         subset_grid, "riley_render_texf", "cubic_bspline", 1, 1
@@ -1325,7 +1332,9 @@ def generate_figure4(dic_records, grid_records) -> list[Path]:
                 aspect="auto",
             )
             add_map_colourbar(im_e, axes[0, 1])
-            axes[0, 1].set_title(TITLE_FIG4_E, fontsize=FONT_SIZE_PT)
+            axes[0, 1].set_title(TITLE_FIG4_E_TEMPLATE.format(
+                ref_level=EXP3_FIG4_REFERENCE_SSAA,
+            ), fontsize=FONT_SIZE_PT)
 
             # (f) Grid Under-resolved Field
             im_f = axes[1, 1].imshow(
@@ -1342,6 +1351,7 @@ def generate_figure4(dic_records, grid_records) -> list[Path]:
                 name=interp_name_grid,
                 osamp=under_grid.osamp or 1,
                 ssaa=under_grid.ssaa or 1,
+                ref_level=EXP3_FIG4_REFERENCE_SSAA,
             )
             axes[1, 1].set_title(title_f, fontsize=FONT_SIZE_PT)
 
@@ -1442,7 +1452,7 @@ def generate_figure4(dic_records, grid_records) -> list[Path]:
     )
 
     save_path = (
-        Path(PAPER_OUTPUT_DIR) / "exp3_riley_gauss_fig4_chirp_combined_b12"
+        Path(PAPER_OUTPUT_DIR) / "exp3_riley_gauss_fig4_finite_star_combined_b12"
     )
     written = save_figure(fig, save_path, PAPER_FORMATS, PAPER_DPI)
     fig.clear()
@@ -1454,7 +1464,7 @@ def figure_stems() -> tuple[str, ...]:
         "exp3_riley_gauss_fig1_rigid_translation_bias_rmse_refinement_b12",
         "exp3_riley_gauss_fig2_rigid_refinement_independence_os_vs_ss_b12",
         "exp3_riley_gauss_fig3_rigid_self_convergence_dic_vs_grid_b12",
-        "exp3_riley_gauss_fig4_chirp_combined_b12",
+        "exp3_riley_gauss_fig4_finite_star_combined_b12",
     )
 
 
@@ -1468,7 +1478,7 @@ def generate_figures() -> list[Path]:
     written.extend(generate_figure2(dic_records))
     print("Generating Figure 3 (Rigid Self-Convergence)...")
     written.extend(generate_figure3(dic_records, grid_records))
-    print("Generating Figure 4 (Combined Chirp Case)...")
+    print("Generating Figure 4 (Combined Finite-star Case)...")
     written.extend(generate_figure4(dic_records, grid_records))
     return written
 
