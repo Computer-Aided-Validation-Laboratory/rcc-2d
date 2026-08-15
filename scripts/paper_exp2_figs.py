@@ -26,6 +26,8 @@ from paperfiglabels import (
     TITLE_PANEL_PX_SS_TEX_OS_TEMPLATE,
     LABEL_SPECK2D_METHOD_TEMPLATE,
     TITLE_EXP2_TEXF_GAUSS, TITLE_EXP2_TEXF_DISK,
+    INTERPOLATOR_LABELS, TITLE_EXP2_DIAGONAL_PANEL_TEMPLATE,
+    LABEL_DIAGONAL_ANALYTIC_TEMPLATE, LABEL_DIAGONAL_H2_TEMPLATE,
 )
 from paperparams import (
     AXIS_LABEL_FONT_SIZE_PT,
@@ -48,14 +50,16 @@ from paperparams import (
     EXP2_DIFF_TEX_FRAME,
     EXP2_FIG2_STEM,
     EXP2_FIG3_STEM,
-    EXP2_FIG4_STEM,
+    EXP2_LEGACY_DIFF_DISK_STEM, EXP2_LEGACY_DIFF_GAUSS_STEM,
     EXP2_FIG7_DIFF_LIMIT_BITS,
     EXP2_FIG8_DIFF_LIMIT_BITS,
     DIFFERENCE_MATRIX_COLORBAR_FRACTION,
     DIFFERENCE_MATRIX_COLORBAR_ASPECT,
     DIFFERENCE_MATRIX_COLORBAR_SHRINK,
     DIFFERENCE_MATRIX_COLORBAR_PAD,
-    LINE_COLOURS,
+    LINE_COLOURS, PAPER_MAIN_TEXTURE_INTERPOLATORS,
+    PAPER_DIAGONAL_ANALYTIC_COLOUR, PAPER_DIAGONAL_H2_COLOUR,
+    PAPER_DIAGONAL_INTERPOLATOR_MARKERS,
 )
 
 OUT = Path("out")
@@ -180,6 +184,60 @@ def texf_series(
     return rows, ref_label
 
 
+def diagonal_reference_series(
+    case: str, pattern: str, frame: int, *, camera_bits: int,
+) -> list[Series]:
+    """Compare diagonal f64 texture renders with analytic and 2x references."""
+    analytic, _ = reference(case, pattern, frame)
+    result: list[Series] = []
+    expression = re.compile(r"ss(\d+)_os(\d+)")
+    for interpolator in PAPER_MAIN_TEXTURE_INTERPOLATORS:
+        root = RILEY_TEXF_RENDER / f"{case}_{pattern}_seed3_{interpolator}"
+        images: dict[int, np.ndarray] = {}
+        if root.is_dir():
+            for directory in root.iterdir():
+                match = expression.fullmatch(directory.name)
+                path = directory / f"image_c00_f{frame:02d}_clamped.npy"
+                if not match or not path.is_file():
+                    continue
+                ssaa, osamp = int(match.group(1)), int(match.group(2))
+                if ssaa == osamp:
+                    images[ssaa] = _load(path)
+        if not images:
+            continue
+        marker = PAPER_DIAGONAL_INTERPOLATOR_MARKERS[interpolator]
+        name = INTERPOLATOR_LABELS[interpolator]
+        analytic_points = [
+            (level, image_error_metrics(
+                image, analytic, camera_bits, quantise_camera,
+            )["e_b"])
+            for level, image in sorted(images.items())
+            if image.shape == analytic.shape
+        ]
+        if analytic_points:
+            result.append(Series(
+                LABEL_DIAGONAL_ANALYTIC_TEMPLATE.format(interpolator=name),
+                tuple(level for level, _ in analytic_points),
+                tuple(value for _, value in analytic_points), camera_bits,
+                PAPER_DIAGONAL_ANALYTIC_COLOUR, marker, "-",
+            ))
+        h2_points = [
+            (level, image_error_metrics(
+                image, images[2 * level], camera_bits, quantise_camera,
+            )["e_b"])
+            for level, image in sorted(images.items())
+            if 2 * level in images and images[2 * level].shape == image.shape
+        ]
+        if h2_points:
+            result.append(Series(
+                LABEL_DIAGONAL_H2_TEMPLATE.format(interpolator=name),
+                tuple(level for level, _ in h2_points),
+                tuple(value for _, value in h2_points), camera_bits,
+                PAPER_DIAGONAL_H2_COLOUR, marker, "--",
+            ))
+    return result
+
+
 def draw(axis, data: list[Series], ylabel: str, title: str) -> list[Line2D]:
     handles: list[Line2D] = []
     samples: list[int] = []
@@ -264,10 +322,45 @@ def figure_riley_texf() -> list[Path]:
     )
 
 
+def figure_diagonal_refinement() -> list[Path]:
+    """Figure 3: f64 diagonal refinement for all selected interpolants."""
+    figure, axes = make_figure(
+        LAYOUT_LINE_2X2_WIDE, rows=2, columns=2,
+        tick_font_size=TICK_FONT_SIZE_PT,
+    )
+    handles: list[Line2D] = []
+    for row, (pattern, texture) in enumerate((
+        ("gaussadd", TITLE_EXP2_TEXF_GAUSS),
+        ("diskadd", TITLE_EXP2_TEXF_DISK),
+    )):
+        for column, (case, frame, deformation) in enumerate(CASES):
+            data = diagonal_reference_series(
+                case, pattern, frame, camera_bits=12,
+            )
+            handles.extend(draw(
+                axes[row, column], data, LABEL_DIGITISED_RMSE, "",
+            ))
+            axes[row, column].set_title(
+                TITLE_EXP2_DIAGONAL_PANEL_TEMPLATE.format(
+                    panel=panel_prefix(row * len(CASES) + column),
+                    texture=texture, deformation=deformation,
+                ),
+                fontsize=FONT_SIZE_PT,
+            )
+    add_figure_legend(
+        figure, list({item.get_label(): item for item in handles}.values()),
+        font_size=LEGEND_FONT_SIZE_PT, columns=3,
+    )
+    return save_figure(
+        figure, PAPER_OUTPUT_DIR / EXP2_FIG3_STEM, PAPER_FORMATS, PAPER_DPI,
+    )
+
+
 def figure_stems() -> tuple[str, ...]:
     return (
         "exp2_fig1_speck2d_gauss_disk_rmse",
         EXP2_FIG2_STEM,
+        EXP2_FIG3_STEM,
     )
 
 
@@ -275,6 +368,7 @@ def generate_figures() -> list[Path]:
     remove_superseded_figures()
     written = figure_speck2d_combined()
     written.extend(figure_riley_texf())
+    written.extend(figure_diagonal_refinement())
     return written
 
 
@@ -283,8 +377,8 @@ def remove_superseded_figures() -> None:
     stems = (
         # Difference maps are supplementary-only as of the current paper
         # layout.  Remove stale main-paper copies when figures are rebuilt.
-        EXP2_FIG3_STEM,
-        EXP2_FIG4_STEM,
+        EXP2_LEGACY_DIFF_DISK_STEM,
+        EXP2_LEGACY_DIFF_GAUSS_STEM,
         "exp2_fig1_speck2d_disk_rmse",
         "exp2_fig2_speck2d_gauss_rmse",
         "exp2_fig3_riley_textures_disk_b8_rmse",

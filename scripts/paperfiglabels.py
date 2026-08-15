@@ -53,8 +53,19 @@ TITLE_EXP2_SPECK2D_PANEL_TEMPLATE = (
 TITLE_TEXTURE_CONVERGENCE_PANEL_TEMPLATE = (
     "{panel} {texture}\n{deformation}, Ref: {reference}"
 )
+# Supplementary diagonal self-convergence panels identify the render only;
+# their two reference definitions are stated in the shared legend.
+TITLE_EXT_DIAGONAL_TEXTURE_PANEL_TEMPLATE = "{panel} {texture}\n{deformation}"
+LABEL_EXT_ANALYTIC_REFERENCE = "Ref: Analytic"
+LABEL_EXT_H2_DIAGONAL_REFERENCE = r"Ref: 2x ($r_{px}$, $r_{tex}$)"
 TITLE_EXP2_TEXF_GAUSS = "Gauss Speckle"
 TITLE_EXP2_TEXF_DISK = "Disk Speckle"
+TITLE_EXP1_DIAGONAL_PANEL_TEMPLATE = "{panel} {texture}\n{deformation}"
+TITLE_EXP2_DIAGONAL_PANEL_TEMPLATE = "{panel} {texture}\n{deformation}"
+LABEL_DIAGONAL_ANALYTIC_TEMPLATE = "{interpolator}, Ref: Analytic"
+LABEL_DIAGONAL_H2_TEMPLATE = (
+    r"{interpolator}, Ref: 2x ($r_{{px}}$, $r_{{tex}}$)"
+)
 
 LABEL_PIXEL_X = "X [px]"
 LABEL_PIXEL_Y = "Y [px]"
@@ -107,6 +118,10 @@ TITLE_FIG3_PANEL_TEMPLATE = (
     "({panel}) {method} {deformation} Def.\n"
     r"Ref. $r_{{px}}$,$r_{{tex}}$={reference}"
 )
+TITLE_FIG3_H2_PANEL_TEMPLATE = (
+    "({panel}) {method} {deformation} Def.\n"
+    r"Ref. 2x $r_{{px}}$,$r_{{tex}}$"
+)
 LABEL_FIG3_DIC_TEMPLATE = "Riley {name}"
 LABEL_FIG3_GRID_TEMPLATE = "Grid Method ({name})"
 LABEL_MISSING_METHOD_RECORDS_TEMPLATE = "Missing {method} records"
@@ -118,8 +133,7 @@ TITLE_FIG4_A_TEMPLATE = (
     "(a) Ref. disp. $u_y$\n($r_{{px}}$,$r_{{tex}}$={ref_level})"
 )
 TITLE_FIG4_B_TEMPLATE = (
-    "(b) {name} ($r_{{px}}$,$r_{{tex}}$={ssaa}) disp. $u_y$\n"
-    "Ref: ($r_{{px}}$,$r_{{tex}}$={ref_level})"
+    "(b) {name} ($r_{{px}}$,$r_{{tex}}$={ssaa}) disp. $u_y$"
 )
 TITLE_FIG4_C_TEMPLATE = (
     r"(c) {name} ($r_{{px}}$,$r_{{tex}}$={ssaa}) $u_y$ diff. map"
@@ -129,8 +143,7 @@ TITLE_FIG4_E_TEMPLATE = (
     "(e) Ref. disp. $u_y$\n($r_{{px}}$,$r_{{tex}}$={ref_level})"
 )
 TITLE_FIG4_F_TEMPLATE = (
-    "(f) {name} ($r_{{px}}$,$r_{{tex}}$={ssaa}) disp. $u_y$\n"
-    "Ref: ($r_{{px}}$,$r_{{tex}}$={ref_level})"
+    "(f) {name} ($r_{{px}}$,$r_{{tex}}$={ssaa}) disp. $u_y$"
 )
 TITLE_FIG4_G_TEMPLATE = (
     r"(g) {name} ($r_{{px}}$,$r_{{tex}}$={ssaa}) $u_y$ diff. map"

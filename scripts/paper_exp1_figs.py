@@ -32,6 +32,8 @@ from paperfiglabels import (
     TITLE_EXP1_TEXTURE_ROW_F64_U12, TITLE_EXP1_TEXTURE_ROW_U12_U12,
     LABEL_TEX_OS_TEMPLATE, TITLE_TEXTURE_CONVERGENCE_PANEL_TEMPLATE,
     LABEL_GRID2D_METHOD_TEMPLATE, LABEL_RILEY_RECT_TEMPLATE,
+    INTERPOLATOR_LABELS, TITLE_EXP1_DIAGONAL_PANEL_TEMPLATE,
+    LABEL_DIAGONAL_ANALYTIC_TEMPLATE, LABEL_DIAGONAL_H2_TEMPLATE,
 )
 from modules.render_outputs import quantise_camera
 from paperparams import (
@@ -44,10 +46,12 @@ from paperparams import (
     EXP1_FIG2_DIFF_SSAA_LEVELS, EXP2_DIFF_SSAA_LEVELS,
     EXP2_DIFF_OVERSAMPLES, EXP1_DIFF_FUNC_CASE, EXP1_DIFF_FUNC_FRAME,
     EXP1_DIFF_TEX_CASE, EXP1_DIFF_TEX_FRAME, EXP1_FIG2_DIFF_LIMIT_BITS,
-    EXP1_FIG4_THIRD_COLUMN_TITLE_X, EXP1_FIG5_DIFF_LIMIT_BITS,
+    EXP1_FIG2_THIRD_COLUMN_TITLE_X, EXP1_FIG5_DIFF_LIMIT_BITS,
     DIFFERENCE_MATRIX_COLORBAR_FRACTION, DIFFERENCE_MATRIX_COLORBAR_ASPECT,
     DIFFERENCE_MATRIX_COLORBAR_SHRINK, DIFFERENCE_MATRIX_COLORBAR_PAD,
-    LINE_COLOURS,
+    LINE_COLOURS, PAPER_MAIN_TEXTURE_INTERPOLATORS,
+    PAPER_DIAGONAL_ANALYTIC_COLOUR, PAPER_DIAGONAL_H2_COLOUR,
+    PAPER_DIAGONAL_INTERPOLATOR_MARKERS,
 )
 
 OUT = Path("out")
@@ -172,6 +176,63 @@ def texture_series(
     ]
 
 
+def diagonal_reference_series(
+    case: str, root: Path, *, source_bits: int | None, camera_bits: int,
+    frame: int,
+) -> list[Series]:
+    """Compare each diagonal texture render with analytic and 2x references."""
+    analytic, _ = analytic_reference(case, frame)
+    expression = re.compile(r"ss(\d+)_(?:b(\d+)_)?os(\d+)(?:_f)?")
+    result: list[Series] = []
+    for interpolator in PAPER_MAIN_TEXTURE_INTERPOLATORS:
+        images: dict[int, np.ndarray] = {}
+        for case_dir in root.glob(f"{case}_{interpolator}"):
+            for directory in case_dir.iterdir():
+                match = expression.fullmatch(directory.name)
+                path = directory / f"image_c00_f{frame:02d}.npy"
+                if not match or not path.is_file():
+                    continue
+                texture_bits = int(match.group(2)) if match.group(2) else None
+                if texture_bits != source_bits:
+                    continue
+                ssaa, osamp = int(match.group(1)), int(match.group(3))
+                if ssaa == osamp:
+                    images[ssaa] = load_normalised(path, texture_bits)
+        if not images:
+            continue
+        marker = PAPER_DIAGONAL_INTERPOLATOR_MARKERS[interpolator]
+        name = INTERPOLATOR_LABELS[interpolator]
+        analytic_points = [
+            (level, image_error_metrics(
+                image, analytic, camera_bits, quantise_camera,
+            )["e_b"])
+            for level, image in sorted(images.items())
+            if image.shape == analytic.shape
+        ]
+        if analytic_points:
+            result.append(Series(
+                LABEL_DIAGONAL_ANALYTIC_TEMPLATE.format(interpolator=name),
+                tuple(level for level, _ in analytic_points),
+                tuple(value for _, value in analytic_points), camera_bits,
+                PAPER_DIAGONAL_ANALYTIC_COLOUR, marker, "-",
+            ))
+        h2_points = [
+            (level, image_error_metrics(
+                image, images[2 * level], camera_bits, quantise_camera,
+            )["e_b"])
+            for level, image in sorted(images.items())
+            if 2 * level in images and images[2 * level].shape == image.shape
+        ]
+        if h2_points:
+            result.append(Series(
+                LABEL_DIAGONAL_H2_TEMPLATE.format(interpolator=name),
+                tuple(level for level, _ in h2_points),
+                tuple(value for _, value in h2_points), camera_bits,
+                PAPER_DIAGONAL_H2_COLOUR, marker, "--",
+            ))
+    return result
+
+
 def draw_series(axis, series: list[Series], metric_label: str, reference: str) -> list[Line2D]:
     handles = []
     all_samples: list[int] = []; all_values: list[float] = []
@@ -250,17 +311,10 @@ def figure_function_shaders() -> list[Path]:
 
 
 def figure_texture_convergence() -> list[Path]:
-    """Figs. 3--4: Riley texture convergence at u8 and u12 output."""
+    """Figure 2: u12 Riley texture convergence."""
     figures = (
         (
-            "exp1_fig3_riley_textures_b8_rmse",
-            (
-                (TITLE_EXP1_TEXTURE_ROW_F64_U8, TEXFLOAT_RENDER, None, 8),
-                (TITLE_EXP1_TEXTURE_ROW_U8_U8, TEXUINT_RENDER, 8, 8),
-            ),
-        ),
-        (
-            "exp1_fig4_riley_textures_b12_rmse",
+            "exp1_fig2_riley_textures_b12_rmse",
             (
                 (TITLE_EXP1_TEXTURE_ROW_F64_U12, TEXFLOAT_RENDER, None, 12),
                 (TITLE_EXP1_TEXTURE_ROW_U12_U12, TEXUINT_RENDER, 12, 12),
@@ -292,9 +346,9 @@ def figure_texture_convergence() -> list[Path]:
                     ),
                     fontsize=FONT_SIZE_PT,
                 )
-                if stem == "exp1_fig4_riley_textures_b12_rmse" and column == 2:
+                if stem == "exp1_fig2_riley_textures_b12_rmse" and column == 2:
                     axes[row, column].title.set_x(
-                        EXP1_FIG4_THIRD_COLUMN_TITLE_X
+                        EXP1_FIG2_THIRD_COLUMN_TITLE_X
                     )
         unique = {handle.get_label(): handle for handle in handles}
         add_figure_legend(
@@ -307,11 +361,51 @@ def figure_texture_convergence() -> list[Path]:
     return written
 
 
+def figure_diagonal_refinement() -> list[Path]:
+    """Figure 3: u12 diagonal refinement for all selected interpolants."""
+    rows_config = (
+        (TITLE_EXP1_TEXTURE_ROW_F64_U12, TEXFLOAT_RENDER, None, 12),
+        (TITLE_EXP1_TEXTURE_ROW_U12_U12, TEXUINT_RENDER, 12, 12),
+    )
+    figure, axes = make_figure(
+        LAYOUT_LINE_2X3, rows=2, columns=3,
+        tick_font_size=TICK_FONT_SIZE_PT,
+    )
+    handles: list[Line2D] = []
+    for row, (texture, root, source_bits, bits) in enumerate(rows_config):
+        for column, (case, frame, deformation) in enumerate(TEXTURE_STUDIES):
+            data = diagonal_reference_series(
+                case, root, source_bits=source_bits, camera_bits=bits,
+                frame=frame,
+            )
+            handles.extend(draw_series(
+                axes[row, column], data, LABEL_DIGITISED_RMSE, "",
+            ))
+            axes[row, column].set_title(
+                TITLE_EXP1_DIAGONAL_PANEL_TEMPLATE.format(
+                    panel=panel_prefix(row * len(TEXTURE_STUDIES) + column),
+                    texture=texture, deformation=deformation,
+                ),
+                fontsize=FONT_SIZE_PT,
+            )
+            if column == 2:
+                axes[row, column].title.set_x(EXP1_FIG2_THIRD_COLUMN_TITLE_X)
+    add_figure_legend(
+        figure, list({item.get_label(): item for item in handles}.values()),
+        font_size=LEGEND_FONT_SIZE_PT, columns=3,
+    )
+    return save_figure(
+        figure,
+        PAPER_OUTPUT_DIR / "exp1_fig3_riley_textures_u12_diagonal_refinement_rmse",
+        PAPER_FORMATS, PAPER_DPI,
+    )
+
+
 def exp1_figure_stems() -> tuple[str, ...]:
     return (
         "exp1_fig1_eggbox_function_shaders_rmse",
-        "exp1_fig3_riley_textures_b8_rmse",
-        "exp1_fig4_riley_textures_b12_rmse",
+        "exp1_fig2_riley_textures_b12_rmse",
+        "exp1_fig3_riley_textures_u12_diagonal_refinement_rmse",
     )
 
 
@@ -464,6 +558,8 @@ def remove_superseded_figures() -> None:
         # layout.  Remove stale main-paper copies when figures are rebuilt.
         "exp1_fig2_rigid_eggbox_difference_maps",
         "exp1_fig5_riley_texf_difference_maps",
+        "exp1_fig3_riley_textures_b8_rmse",
+        "exp1_fig4_riley_textures_b12_rmse",
         "exp1_fig1_1_rigid_eggbox_function_shaders",
         "exp1_fig1_2_affine_eggbox_function_shaders",
         "exp1_fig2_riley_textures_pt42_cam32_q9_rig",
@@ -504,6 +600,7 @@ def main() -> None:
     remove_superseded_figures()
     written = figure_function_shaders()
     written.extend(figure_texture_convergence())
+    written.extend(figure_diagonal_refinement())
     written.extend(write_tex_preview())
     print("Wrote paper figures:")
     for path in written:

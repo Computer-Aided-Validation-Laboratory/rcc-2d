@@ -3,11 +3,13 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from paperfigtex import (
-    CAPTION_EXP1_FIG1, CAPTION_EXP1_FIG3, CAPTION_EXP1_FIG4,
-    CAPTION_EXP2_FIG1, CAPTION_EXP2_FIG2, CAPTION_EXP3_FIG1,
+    CAPTION_EXP1_FIG1, CAPTION_EXP1_FIG2, CAPTION_EXP1_FIG3,
+    CAPTION_EXP2_FIG1, CAPTION_EXP2_FIG2, CAPTION_EXP2_FIG3,
+    CAPTION_EXP3_FIG1,
     CAPTION_EXP3_FIG2, CAPTION_EXP3_FIG3, CAPTION_EXP3_FIG4,
-    LABEL_EXP1_FIG1, LABEL_EXP1_FIG3, LABEL_EXP1_FIG4,
-    LABEL_EXP2_FIG1, LABEL_EXP2_FIG2, LABEL_EXP3_FIG1,
+    LABEL_EXP1_FIG1, LABEL_EXP1_FIG2, LABEL_EXP1_FIG3,
+    LABEL_EXP2_FIG1, LABEL_EXP2_FIG2, LABEL_EXP2_FIG3,
+    LABEL_EXP3_FIG1,
     LABEL_EXP3_FIG2, LABEL_EXP3_FIG3, LABEL_EXP3_FIG4,
 )
 
@@ -132,11 +134,20 @@ LAYOUT_FIELD_4X2 = PaperLayout(
 PAPER_FRAME = 0
 # Short output-directory token for Riley's cubic Catmull--Rom sampler.
 PAPER_TEXTURE_INTERPOLATOR = "cubiccm"
+# Main-paper diagonal reference figures compare these three texture samplers.
+PAPER_MAIN_TEXTURE_INTERPOLATORS = ("line", "cubic_bspline", "cubiccm")
+# Reference type is encoded by colour and line style; marker shape identifies
+# the interpolant.  These are deliberately separate from ``LINE_COLOURS``.
+PAPER_DIAGONAL_ANALYTIC_COLOUR = "#332288"
+PAPER_DIAGONAL_H2_COLOUR = "#44AA99"
+PAPER_DIAGONAL_INTERPOLATOR_MARKERS = {
+    "line": "o", "cubic_bspline": "s", "cubiccm": "^",
+}
 # Paper figures show each of these on-the-fly camera digitisations.
 PAPER_EXP2_BIT_DEPTHS = (8, 12)
-# Exp. 1 Fig. 4's long third-column titles are offset slightly left in their
+# Exp. 1 Fig. 2's long third-column titles are offset slightly left in their
 # own axes coordinates to keep a clear right-hand canvas margin.
-EXP1_FIG4_THIRD_COLUMN_TITLE_X = 0.46
+EXP1_FIG2_THIRD_COLUMN_TITLE_X = 0.46
 # Color map for the difference images.
 DIFFERENCE_CMAP = "RdBu"
 # Fixed, symmetric image-difference limits make paper panels directly
@@ -164,8 +175,13 @@ EXP2_DIFF_OVERSAMPLES = (1, 8, 32)
 # Each texture pattern has one two-row f64 convergence figure: u8 camera
 # digitisation on top and u12 camera digitisation below.
 EXP2_FIG2_STEM = f"exp2_fig2_texf_gauss_disk_u12_{PAPER_TEXTURE_INTERPOLATOR}_rmse"
-EXP2_FIG3_STEM = f"exp2_fig3_riley_texf_disk_{PAPER_TEXTURE_INTERPOLATOR}_difference_maps"
-EXP2_FIG4_STEM = f"exp2_fig4_riley_texf_gauss_{PAPER_TEXTURE_INTERPOLATOR}_difference_maps"
+EXP2_FIG3_STEM = "exp2_fig3_riley_texf_u12_diagonal_refinement_rmse"
+EXP2_LEGACY_DIFF_DISK_STEM = (
+    f"exp2_fig3_riley_texf_disk_{PAPER_TEXTURE_INTERPOLATOR}_difference_maps"
+)
+EXP2_LEGACY_DIFF_GAUSS_STEM = (
+    f"exp2_fig4_riley_texf_gauss_{PAPER_TEXTURE_INTERPOLATOR}_difference_maps"
+)
 
 # Selected deformation cases and frames for difference images.
 EXP1_DIFF_FUNC_CASE = "pt42_cam32_q9_rig"
@@ -190,23 +206,32 @@ EXP3_BIT_DEPTH = 12
 # completed, highest diagonal Riley texture render for both DIC and Grid.
 EXP3_FIG4_REFERENCE_SSAA = 128
 EXP3_FIG4_REFERENCE_OSAMP = 128
+# Finite-star Figure 4 shows a resolved reference beside this diagonal
+# texture/pixel-integration refinement and its difference from the reference.
+EXP3_FIG4_MAP_LEVEL = 2
+# Diagonal refinements included in the Figure 4 DIC and Grid Method profiles.
+# Each level is plotted for both cubic B-spline and Catmull--Rom interpolation.
+EXP3_FIG4_PROFILE_LEVELS = (2, 4, 8)
 
 # Generated-figure registry: layout, caption, and LaTeX label share one key.
 PAPER_FIGURES = {
     "exp1_fig1_eggbox_function_shaders_rmse": PaperFigure(
         LAYOUT_LINE_2X3, CAPTION_EXP1_FIG1, LABEL_EXP1_FIG1,
     ),
-    "exp1_fig3_riley_textures_b8_rmse": PaperFigure(
-        LAYOUT_LINE_2X3, CAPTION_EXP1_FIG3, LABEL_EXP1_FIG3,
+    "exp1_fig2_riley_textures_b12_rmse": PaperFigure(
+        LAYOUT_LINE_2X3, CAPTION_EXP1_FIG2, LABEL_EXP1_FIG2,
     ),
-    "exp1_fig4_riley_textures_b12_rmse": PaperFigure(
-        LAYOUT_LINE_2X3, CAPTION_EXP1_FIG4, LABEL_EXP1_FIG4,
+    "exp1_fig3_riley_textures_u12_diagonal_refinement_rmse": PaperFigure(
+        LAYOUT_LINE_2X3, CAPTION_EXP1_FIG3, LABEL_EXP1_FIG3,
     ),
     "exp2_fig1_speck2d_gauss_disk_rmse": PaperFigure(
         LAYOUT_LINE_2X2_WIDE, CAPTION_EXP2_FIG1, LABEL_EXP2_FIG1,
     ),
     EXP2_FIG2_STEM: PaperFigure(
         LAYOUT_LINE_2X2_WIDE, CAPTION_EXP2_FIG2, LABEL_EXP2_FIG2,
+    ),
+    EXP2_FIG3_STEM: PaperFigure(
+        LAYOUT_LINE_2X2_WIDE, CAPTION_EXP2_FIG3, LABEL_EXP2_FIG3,
     ),
     "exp3_riley_gauss_fig1_rigid_translation_bias_rmse_refinement_b12": PaperFigure(
         LAYOUT_LINE_2X2_WIDE_DETACHED, CAPTION_EXP3_FIG1, LABEL_EXP3_FIG1,
@@ -215,7 +240,7 @@ PAPER_FIGURES = {
         LAYOUT_LINE_1X3, CAPTION_EXP3_FIG2, LABEL_EXP3_FIG2,
     ),
     "exp3_riley_gauss_fig3_rigid_self_convergence_dic_vs_grid_b12": PaperFigure(
-        LAYOUT_LINE_1X3, CAPTION_EXP3_FIG3, LABEL_EXP3_FIG3,
+        LAYOUT_LINE_2X2_WIDE, CAPTION_EXP3_FIG3, LABEL_EXP3_FIG3,
     ),
     "exp3_riley_gauss_fig4_finite_star_combined_b12": PaperFigure(
         LAYOUT_FIELD_4X2, CAPTION_EXP3_FIG4, LABEL_EXP3_FIG4,

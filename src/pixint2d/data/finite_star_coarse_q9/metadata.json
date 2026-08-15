@@ -1,0 +1,7 @@
+{
+  "camera_pixels": [1020, 252],
+  "roi_size": [256.0, 64.0],
+  "wavelength_final_pixels": [64.0, 128.0],
+  "elements": [12, 16],
+  "peak_displacement_final_pixels": 0.5
+}

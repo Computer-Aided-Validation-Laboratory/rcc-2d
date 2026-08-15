@@ -27,10 +27,11 @@ from modules.paperfigs import (
 from modules.render_outputs import quantise_camera
 from paperfiglabels import (
     LABEL_DIGITISED_RMSE, LABEL_MAX_DIGITISED_ERROR,
-    LABEL_MISMATCHED_PIXEL_FRACTION, LABEL_NO_DATA, LABEL_DISP_RMSE_PX,
+    LABEL_NO_DATA, LABEL_DISP_RMSE_PX,
     LABEL_AXIS_REFINEMENT_LEVEL,
     TITLE_H2_DIAGONAL, TITLE_H2_DISPLACEMENT, TITLE_H2_PX_SS,
-    TITLE_H2_TEX_OS,
+    TITLE_EXT_DIAGONAL_TEXTURE_PANEL_TEMPLATE,
+    LABEL_EXT_ANALYTIC_REFERENCE, LABEL_EXT_H2_DIAGONAL_REFERENCE,
 )
 from paperparams import (
     AXIS_LABEL_FONT_SIZE_PT, FONT_SIZE_PT, GRID_LINE_WIDTH_PT,
@@ -50,7 +51,6 @@ H2_METRICS = (("e_b", LABEL_DIGITISED_RMSE, "rmse"), *METRICS)
 # Supplementary self-convergence uses only simultaneous texture/pixel
 # refinement.  The former fixed-OS and fixed-SSAA h/2 figures were removed.
 H2_MODES = (("diagonal", TITLE_H2_DIAGONAL, "diagonal"),)
-H2_TITLES = {mode: title for mode, title, _ in H2_MODES}
 
 # Filesystem identifiers are intentionally used to discover completed render
 # families.  Output stems use the shorter article-facing forms below.
@@ -182,6 +182,41 @@ def _h2_rows(
     return rows_by_metric
 
 
+def _reference_rows(
+    rows: list[exp1.Series], *, label: str, linestyle: object,
+) -> list[exp1.Series]:
+    """Clone series with the reference definition encoded in the legend."""
+    return [
+        exp1.Series(
+            label, row.samples, row.values, row.bit_depth, row.colour,
+            row.marker, linestyle,
+        )
+        for row in rows
+    ]
+
+
+def _diagonal_analytic_rows(
+    images: dict[tuple[int, int], np.ndarray], reference: np.ndarray,
+    *, bit_depth: int, metric: str,
+) -> list[exp1.Series]:
+    """Return analytic-reference metrics for the diagonal resolution path."""
+    points = []
+    for (ssaa, osamp), image in images.items():
+        if ssaa == osamp and image.shape == reference.shape:
+            points.append((ssaa, image_error_metrics(
+                image, reference, bit_depth, quantise_camera,
+            )[metric]))
+    if not points:
+        return []
+    ordered = sorted(points)
+    return [exp1.Series(
+        LABEL_EXT_ANALYTIC_REFERENCE,
+        tuple(level for level, _ in ordered),
+        tuple(value for _, value in ordered), bit_depth,
+        LINE_COLOURS[0], "o", "-",
+    )]
+
+
 def _h2_function_rows(case: str, frame: int, bit_depths: set[int]):
     """h/2 rows for Exp1 function shaders (Px-SS is the only resolution)."""
     methods: list[tuple[str, str, str, str, dict[int, np.ndarray]]] = []
@@ -290,21 +325,36 @@ def _plot_exp1_texture(
         for row, (texture, root, source_bits, bits) in enumerate(rows_config):
             for col, (case, frame, deformation) in enumerate(exp1.TEXTURE_STUDIES):
                 if h2:
-                    rows = _h2_rows(
-                        _texture_images(
+                    images = _texture_images(
                             case, root, source_bits, frame, interpolator,
-                        ),
-                        bit_depth=bits, relation=relation,
+                    )
+                    diagonal_rows = _h2_rows(
+                        images, bit_depth=bits, relation=relation,
                     )[metric]
-                    ref = H2_TITLES[relation]
+                    analytic_reference, _ = exp1.analytic_reference(case, frame)
+                    rows = _diagonal_analytic_rows(
+                        images, analytic_reference, bit_depth=bits,
+                        metric=metric,
+                    ) + _reference_rows(
+                        diagonal_rows,
+                        label=LABEL_EXT_H2_DIAGONAL_REFERENCE,
+                        linestyle="--",
+                    )
+                    title = TITLE_EXT_DIAGONAL_TEXTURE_PANEL_TEMPLATE.format(
+                        panel=exp1.panel_prefix(row * 3 + col),
+                        texture=texture, deformation=deformation,
+                    )
                 else:
                     rows = exp1.texture_series(
                         case, root, source_bits=source_bits, camera_bits=bits,
                         metric=metric, frame=frame, interpolator=interpolator,
                     )
                     _, ref = exp1.analytic_reference(case, frame)
-                handles.extend(_draw(axes[row, col], rows, ylabel,
-                    f"{exp1.panel_prefix(row * 3 + col)} {texture}\n{deformation}, Ref: {ref}"))
+                    title = (
+                        f"{exp1.panel_prefix(row * 3 + col)} {texture}\n"
+                        f"{deformation}, Ref: {ref}"
+                    )
+                handles.extend(_draw(axes[row, col], rows, ylabel, title))
         add_figure_legend(figure, _dedupe(handles), font_size=LEGEND_FONT_SIZE_PT, columns=4)
         written.extend(_save(
             figure,
@@ -355,18 +405,35 @@ def _plot_exp2_tex(
     for row, (pattern, name) in enumerate((("gaussadd", "Gauss"), ("diskadd", "Disk"))):
         for col, (case, frame, deformation) in enumerate(exp2.CASES):
             if h2:
-                rows = _h2_rows(
-                    _exp2_texture_images(case, pattern, frame, interpolator),
+                images = _exp2_texture_images(
+                    case, pattern, frame, interpolator,
+                )
+                diagonal_rows = _h2_rows(
+                    images,
                     bit_depth=12, relation=relation,
                 )[metric]
-                ref = H2_TITLES[relation]
+                analytic_reference, _ = exp2.reference(case, pattern, frame)
+                rows = _diagonal_analytic_rows(
+                    images, analytic_reference, bit_depth=12, metric=metric,
+                ) + _reference_rows(
+                    diagonal_rows,
+                    label=LABEL_EXT_H2_DIAGONAL_REFERENCE,
+                    linestyle="--",
+                )
+                title = TITLE_EXT_DIAGONAL_TEXTURE_PANEL_TEMPLATE.format(
+                    panel=exp2.panel_prefix(row * 2 + col),
+                    texture=f"{name} Speckle", deformation=deformation,
+                )
             else:
                 rows, ref = exp2.texf_series(
                     case, pattern, frame, metric, 12,
                     interpolator=interpolator,
                 )
-            handles.extend(_draw(axes[row, col], rows, ylabel,
-                f"{exp2.panel_prefix(row * 2 + col)} {name} Speckle, {deformation}\nRef: {ref}"))
+                title = (
+                    f"{exp2.panel_prefix(row * 2 + col)} {name} Speckle, "
+                    f"{deformation}\nRef: {ref}"
+                )
+            handles.extend(_draw(axes[row, col], rows, ylabel, title))
     add_figure_legend(figure, _dedupe(handles), font_size=LEGEND_FONT_SIZE_PT, columns=4)
     return _save(
         figure,

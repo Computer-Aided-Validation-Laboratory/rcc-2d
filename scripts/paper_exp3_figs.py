@@ -66,6 +66,7 @@ from paperfiglabels import (
     LABEL_FIG2_B_TEMPLATE,
     LABEL_FIG2_C_TEMPLATE,
     TITLE_FIG3_PANEL_TEMPLATE,
+    TITLE_FIG3_H2_PANEL_TEMPLATE,
     LABEL_FIG3_DIC_TEMPLATE,
     LABEL_FIG3_GRID_TEMPLATE,
     TITLE_FIG4_A_TEMPLATE,
@@ -88,6 +89,8 @@ from paperparams import (
     EXP3_FIG1_ZOOM_RMSE_YLIM,
     EXP3_FIG4_REFERENCE_OSAMP,
     EXP3_FIG4_REFERENCE_SSAA,
+    EXP3_FIG4_MAP_LEVEL,
+    EXP3_FIG4_PROFILE_LEVELS,
     LAYOUT_FIELD_4X2,
     LAYOUT_LINE_1X3,
     LAYOUT_LINE_2X2_WIDE,
@@ -125,16 +128,6 @@ EXP3_FIG1_CASES = (
     ("cubiccm", 8, 8, LINE_COLOURS[3], "--", "+"),
 )
 
-# Profile configurations for Figs 4 & 5: (interpolator, OS, SS, color, linestyle)
-EXP3_FIG4_5_PROFILES = (
-    ("cubic_bspline", 1, 1, LINE_COLOURS[0], "-"),
-    ("cubic_bspline", 4, 4, LINE_COLOURS[1], "-"),
-    ("cubic_bspline", 32, 32, LINE_COLOURS[2], "-"),
-    ("cubiccm", 1, 1, LINE_COLOURS[3], "--"),
-    ("cubiccm", 4, 4, LINE_COLOURS[4], "--"),
-    ("cubiccm", 32, 32, LINE_COLOURS[5], "--"),
-)
-
 def find_rec(
     records,
     root_pat: str,
@@ -156,6 +149,20 @@ def find_rec(
             continue
         return r
     return None
+
+
+def figure4_profile_cases() -> tuple[tuple[str, int, str, str], ...]:
+    """Return the configured diagonal Figure 4 profile render cases.
+
+    A colour identifies the common ``r_px=r_tex`` level, while the line style
+    identifies the texture interpolant.  This keeps the two interpolants easy
+    to compare at each requested refinement.
+    """
+    cases: list[tuple[str, int, str, str]] = []
+    for interpolator, linestyle in (("cubic_bspline", "-"), ("cubiccm", "--")):
+        for index, level in enumerate(EXP3_FIG4_PROFILE_LEVELS):
+            cases.append((interpolator, level, LINE_COLOURS[index], linestyle))
+    return tuple(cases)
 
 
 def get_rmse_vs_ref(rec, ref, is_dic=True) -> list[float]:
@@ -1018,9 +1025,10 @@ def _generate_figure3_with_affine(dic_records, grid_records) -> None:
 
 
 def generate_figure3(dic_records, grid_records) -> list[Path]:
-    """Figure 3: rigid-only DIC and Grid Method self-convergence."""
+    """Figure 3: highest- and sliding-reference self-convergence."""
     figure, axes = make_figure(
-        LAYOUT_LINE_1X3, rows=1, columns=2, tick_font_size=TICK_FONT_SIZE_PT,
+        LAYOUT_LINE_2X2_WIDE, rows=2, columns=2,
+        tick_font_size=TICK_FONT_SIZE_PT,
     )
     diag_levels = [1, 2, 4, 8, 16, 32, 64, 128]
     samplers = [
@@ -1029,10 +1037,12 @@ def generate_figure3(dic_records, grid_records) -> list[Path]:
         ("line", INTERPOLATOR_LABELS["line"], LINE_COLOURS[2], ":", "d"),
     ]
     panels = (
-        (axes[0, 0], dic_records, "gausscont", METHOD_DIC, True, "a"),
-        (axes[0, 1], grid_records, "eggbox", METHOD_GRID, False, "b"),
+        (axes[0, 0], dic_records, "gausscont", METHOD_DIC, True, "a", "highest"),
+        (axes[0, 1], grid_records, "eggbox", METHOD_GRID, False, "b", "highest"),
+        (axes[1, 0], dic_records, "gausscont", METHOD_DIC, True, "c", "sliding"),
+        (axes[1, 1], grid_records, "eggbox", METHOD_GRID, False, "d", "sliding"),
     )
-    for axis, records, pattern, method, is_dic, panel in panels:
+    for axis, records, pattern, method, is_dic, panel, reference_mode in panels:
         subset = [
             record for record in records
             if record.case == EXP3_RIGID_CASE
@@ -1058,7 +1068,13 @@ def generate_figure3(dic_records, grid_records) -> list[Path]:
                         subset, "riley_render_texf", interpolator,
                         ssaa=level, osamp=level,
                     )
-                    reference = references.get(interpolator)
+                    if reference_mode == "highest":
+                        reference = references.get(interpolator)
+                    else:
+                        reference = find_rec(
+                            subset, "riley_render_texf", interpolator,
+                            ssaa=2 * level, osamp=2 * level,
+                        )
                     if record is None or reference is None:
                         continue
                     errors = get_rmse_vs_ref(record, reference, is_dic=is_dic)
@@ -1089,14 +1105,17 @@ def generate_figure3(dic_records, grid_records) -> list[Path]:
         axis.grid(True, which="both", linestyle=":", alpha=0.6)
         axis.set_ylim(bottom=0.0)
         axis.set_ylabel(LABEL_SELF_CONV_RMSE, fontsize=FONT_SIZE_PT)
-        axis.set_title(
-            TITLE_FIG3_PANEL_TEMPLATE.format(
+        if reference_mode == "highest":
+            title = TITLE_FIG3_PANEL_TEMPLATE.format(
                 panel=panel, method=method,
                 reference=diagonal_reference_label(references),
                 deformation="Rigid",
-            ),
-            fontsize=FONT_SIZE_PT,
-        )
+            )
+        else:
+            title = TITLE_FIG3_H2_PANEL_TEMPLATE.format(
+                panel=panel, method=method, deformation="Rigid",
+            )
+        axis.set_title(title, fontsize=FONT_SIZE_PT)
 
     handles = [
         Line2D(
@@ -1144,13 +1163,16 @@ def generate_figure4(dic_records, grid_records) -> list[Path]:
     ]
     ref_dic = find_rec(
         subset_dic, "riley_render_texf", "cubic_bspline",
-        EXP3_FIG4_REFERENCE_SSAA, EXP3_FIG4_REFERENCE_OSAMP,
+        ssaa=EXP3_FIG4_REFERENCE_SSAA,
+        osamp=EXP3_FIG4_REFERENCE_OSAMP,
     )
-    under_dic = find_rec(
-        subset_dic, "riley_render_texf", "cubic_bspline", 1, 1
+    map_dic = find_rec(
+        subset_dic, "riley_render_texf", "cubic_bspline",
+        ssaa=EXP3_FIG4_MAP_LEVEL,
+        osamp=EXP3_FIG4_MAP_LEVEL,
     )
 
-    if ref_dic is None or under_dic is None:
+    if ref_dic is None or map_dic is None:
         for row in range(4):
             annotate_no_data(
                 axes[row, 0],
@@ -1159,8 +1181,8 @@ def generate_figure4(dic_records, grid_records) -> list[Path]:
             )
     else:
         ref_data_dic = load_dic(ref_dic, 1)
-        under_data_dic = load_dic(under_dic, 1)
-        if ref_data_dic is None or under_data_dic is None:
+        map_data_dic = load_dic(map_dic, 1)
+        if ref_data_dic is None or map_data_dic is None:
             for row in range(4):
                 annotate_no_data(
                     axes[row, 0],
@@ -1169,8 +1191,8 @@ def generate_figure4(dic_records, grid_records) -> list[Path]:
                 )
         else:
             x, y, ru_dic, rv_dic = ref_data_dic
-            _, _, cu_dic, cv_dic = under_data_dic
-            du_dic, dv_dic = cu_dic - ru_dic, cv_dic - rv_dic
+            _, _, _, map_v_dic = map_data_dic
+            diff_v_dic = map_v_dic - rv_dic
 
             # (a) DIC Reference Field
             im_a = axes[0, 0].imshow(
@@ -1186,19 +1208,19 @@ def generate_figure4(dic_records, grid_records) -> list[Path]:
 
             # (b) DIC Under-resolved Field
             im_b = axes[1, 0].imshow(
-                cv_dic,
+                map_v_dic,
                 extent=(x.min(), x.max(), y.max(), y.min()),
                 cmap="coolwarm",
                 aspect="auto",
             )
             add_map_colourbar(im_b, axes[1, 0])
             interp_name_dic = INTERPOLATOR_NAMES.get(
-                under_dic.interpolator, under_dic.interpolator
+                map_dic.interpolator, map_dic.interpolator
             )
             title_b = TITLE_FIG4_B_TEMPLATE.format(
                 name=interp_name_dic,
-                osamp=under_dic.osamp or 1,
-                ssaa=under_dic.ssaa or 1,
+                osamp=map_dic.osamp or 1,
+                ssaa=map_dic.ssaa or 1,
                 ref_level=EXP3_FIG4_REFERENCE_SSAA,
             )
             axes[1, 0].set_title(title_b, fontsize=FONT_SIZE_PT)
@@ -1212,11 +1234,11 @@ def generate_figure4(dic_records, grid_records) -> list[Path]:
                 | (y < y_min + EDGE_EXCLUSION_DIC)
                 | (y > y_max - EDGE_EXCLUSION_DIC)
             )
-            dv_dic_masked = np.where(mask_dic, np.nan, dv_dic)
+            dv_dic_masked = np.where(mask_dic, np.nan, diff_v_dic)
             limit_dic = float(np.nanpercentile(np.abs(dv_dic_masked), 95))
             limit_dic = max(limit_dic, 1e-5)
             im_c = axes[2, 0].imshow(
-                dv_dic,
+                diff_v_dic,
                 extent=(x.min(), x.max(), y.max(), y.min()),
                 cmap="coolwarm",
                 aspect="auto",
@@ -1226,20 +1248,21 @@ def generate_figure4(dic_records, grid_records) -> list[Path]:
             add_map_colourbar(im_c, axes[2, 0])
             title_c = TITLE_FIG4_C_TEMPLATE.format(
                 name=interp_name_dic,
-                osamp=under_dic.osamp or 1,
-                ssaa=under_dic.ssaa or 1,
+                osamp=map_dic.osamp or 1,
+                ssaa=map_dic.ssaa or 1,
             )
             axes[2, 0].set_title(title_c, fontsize=FONT_SIZE_PT)
 
             # (d) DIC Column RMSE Profiles
             cases_dic = []
-            for interp, osamp, ssaa, col, lstyle in EXP3_FIG4_5_PROFILES:
+            for interp, level, col, lstyle in figure4_profile_cases():
                 rec = find_rec(
-                    subset_dic, "riley_render_texf", interp, osamp, ssaa
+                    subset_dic, "riley_render_texf", interp,
+                    ssaa=level, osamp=level,
                 )
                 name = INTERPOLATOR_NAMES.get(interp, interp)
                 label = LABEL_FIG4_5_PROFILE_TEMPLATE.format(
-                    name=name, osamp=osamp, ssaa=ssaa
+                    name=name, osamp=level, ssaa=level
                 )
                 cases_dic.append((rec, label, col, lstyle))
 
@@ -1250,8 +1273,8 @@ def generate_figure4(dic_records, grid_records) -> list[Path]:
                 c_data = load_dic(rec, 1)
                 if c_data is None:
                     continue
-                _, _, c_u, c_v = c_data
-                d_u, d_v = c_u - ru_dic, c_v - rv_dic
+                _, _, _, c_v = c_data
+                d_v = c_v - rv_dic
                 d_v_masked = np.where(mask_dic, np.nan, d_v)
 
                 unique_x = np.unique(x[np.isfinite(x)])
@@ -1295,13 +1318,16 @@ def generate_figure4(dic_records, grid_records) -> list[Path]:
     ]
     ref_grid = find_rec(
         subset_grid, "riley_render_texf", "cubic_bspline",
-        EXP3_FIG4_REFERENCE_SSAA, EXP3_FIG4_REFERENCE_OSAMP,
+        ssaa=EXP3_FIG4_REFERENCE_SSAA,
+        osamp=EXP3_FIG4_REFERENCE_OSAMP,
     )
-    under_grid = find_rec(
-        subset_grid, "riley_render_texf", "cubic_bspline", 1, 1
+    map_grid = find_rec(
+        subset_grid, "riley_render_texf", "cubic_bspline",
+        ssaa=EXP3_FIG4_MAP_LEVEL,
+        osamp=EXP3_FIG4_MAP_LEVEL,
     )
 
-    if ref_grid is None or under_grid is None:
+    if ref_grid is None or map_grid is None:
         for row in range(4):
             annotate_no_data(
                 axes[row, 1],
@@ -1310,8 +1336,8 @@ def generate_figure4(dic_records, grid_records) -> list[Path]:
             )
     else:
         ref_data_grid = load_grid(ref_grid, 1)
-        under_data_grid = load_grid(under_grid, 1)
-        if ref_data_grid is None or under_data_grid is None:
+        map_data_grid = load_grid(map_grid, 1)
+        if ref_data_grid is None or map_data_grid is None:
             for row in range(4):
                 annotate_no_data(
                     axes[row, 1],
@@ -1320,8 +1346,8 @@ def generate_figure4(dic_records, grid_records) -> list[Path]:
                 )
         else:
             ru_grid, rv_grid = ref_data_grid
-            cu_grid, cv_grid = under_data_grid
-            du_grid, dv_grid = cu_grid - ru_grid, cv_grid - rv_grid
+            _, map_v_grid = map_data_grid
+            diff_v_grid = map_v_grid - rv_grid
             H, W = ru_grid.shape
 
             # (e) Grid Reference Field
@@ -1338,19 +1364,19 @@ def generate_figure4(dic_records, grid_records) -> list[Path]:
 
             # (f) Grid Under-resolved Field
             im_f = axes[1, 1].imshow(
-                cv_grid,
+                map_v_grid,
                 extent=(0, W, H, 0),
                 cmap="coolwarm",
                 aspect="auto",
             )
             add_map_colourbar(im_f, axes[1, 1])
             interp_name_grid = INTERPOLATOR_NAMES.get(
-                under_grid.interpolator, under_grid.interpolator
+                map_grid.interpolator, map_grid.interpolator
             )
             title_f = TITLE_FIG4_F_TEMPLATE.format(
                 name=interp_name_grid,
-                osamp=under_grid.osamp or 1,
-                ssaa=under_grid.ssaa or 1,
+                osamp=map_grid.osamp or 1,
+                ssaa=map_grid.ssaa or 1,
                 ref_level=EXP3_FIG4_REFERENCE_SSAA,
             )
             axes[1, 1].set_title(title_f, fontsize=FONT_SIZE_PT)
@@ -1361,11 +1387,11 @@ def generate_figure4(dic_records, grid_records) -> list[Path]:
                 EDGE_EXCLUSION_GRID:-EDGE_EXCLUSION_GRID,
                 EDGE_EXCLUSION_GRID:-EDGE_EXCLUSION_GRID
             ] = False
-            dv_grid_masked = np.where(mask_grid, np.nan, dv_grid)
+            dv_grid_masked = np.where(mask_grid, np.nan, diff_v_grid)
             limit_grid = float(np.nanpercentile(np.abs(dv_grid_masked), 95))
             limit_grid = max(limit_grid, 1e-5)
             im_g = axes[2, 1].imshow(
-                dv_grid,
+                diff_v_grid,
                 extent=(0, W, H, 0),
                 cmap="coolwarm",
                 aspect="auto",
@@ -1375,20 +1401,21 @@ def generate_figure4(dic_records, grid_records) -> list[Path]:
             add_map_colourbar(im_g, axes[2, 1])
             title_g = TITLE_FIG4_G_TEMPLATE.format(
                 name=interp_name_grid,
-                osamp=under_grid.osamp or 1,
-                ssaa=under_grid.ssaa or 1,
+                osamp=map_grid.osamp or 1,
+                ssaa=map_grid.ssaa or 1,
             )
             axes[2, 1].set_title(title_g, fontsize=FONT_SIZE_PT)
 
             # (h) Grid Column RMSE Profiles
             cases_grid = []
-            for interp, osamp, ssaa, col, lstyle in EXP3_FIG4_5_PROFILES:
+            for interp, level, col, lstyle in figure4_profile_cases():
                 rec = find_rec(
-                    subset_grid, "riley_render_texf", interp, osamp, ssaa
+                    subset_grid, "riley_render_texf", interp,
+                    ssaa=level, osamp=level,
                 )
                 name = INTERPOLATOR_NAMES.get(interp, interp)
                 label = LABEL_FIG4_5_PROFILE_TEMPLATE.format(
-                    name=name, osamp=osamp, ssaa=ssaa
+                    name=name, osamp=level, ssaa=level
                 )
                 cases_grid.append((rec, label, col, lstyle))
 

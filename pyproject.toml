@@ -1,0 +1,35 @@
+[build-system]
+requires = ["setuptools>=61", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "pixint2d"
+version = "0.1.0"
+description = "2D orthographic rendering of analytic textures and pixel integrals."
+readme = "README.md"
+license = { file = "LICENSE" }
+requires-python = ">=3.11"
+authors = [{ name = "Lloyd Fletcher" }]
+dependencies = [
+    "numpy>=2.0",
+    "scipy>=1.14",
+    "Pillow>=10",
+    "matplotlib>=3.8",
+    "numba>=0.60",
+    "pyvista>=0.43",
+    "vtk>=9.5",
+]
+
+[project.optional-dependencies]
+dev = ["pytest>=8"]
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.setuptools.package-data]
+pixint2d = ["data/**/*"]
+
+[tool.pytest.ini_options]
+testpaths = ["test"]
+pythonpath = ["src"]
+addopts = "-ra"
