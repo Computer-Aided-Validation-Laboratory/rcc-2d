@@ -73,6 +73,13 @@ Gaussian coverage, and map validity. Regression tests use committed 32x32
 goldens for rigid frame 0/3 Grid2D eggbox and disk/Gaussian Speck2D paths.
 Serial and multi-worker results must agree. Tests never rely on `out/`.
 
+## Examples
+
+The distributed examples cover rigid and global-affine 32x32 Grid2D/Speck2D
+renders as well as Grid2D/Speck2D renders of the compact finite-star mesh.
+The finite-star examples explicitly select `MappingMode.STRUCTURED_QUAD9`, the
+package's own structured Quad9 Newton inverse, rather than VTK.
+
 ## Installation and use
 
 ```bash

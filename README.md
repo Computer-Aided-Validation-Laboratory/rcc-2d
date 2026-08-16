@@ -31,11 +31,16 @@ large generated `out/` directory.
 python -m pixint2d.examples.grid2d_eggbox_rigid
 python -m pixint2d.examples.speck2d_disk_rigid
 python -m pixint2d.examples.speck2d_gauss_rigid
-python -m pixint2d.examples.finite_star_vtk
+python -m pixint2d.examples.grid2d_affine
+python -m pixint2d.examples.speck2d_affine
+python -m pixint2d.examples.grid2d_finite_star
+python -m pixint2d.examples.speck2d_finite_star
 ```
 
 Each example has inputs as constants at the top of its module and writes a
 float `.npy` image plus an 8-bit TIFF preview beneath `out/pixint2d_examples/`.
+The finite-star examples use PixInt2D's structured Quad9 Newton inverse map,
+not the VTK mapping path.
 
 ## Image convention
 

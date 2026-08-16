@@ -20,6 +20,10 @@ plans/
 notes/
 refs/
 examples/
+# The study's historical output/examples directory is ignored, but PixInt2D
+# ships runnable Python examples as part of the installed package.
+!src/pixint2d/examples/
+!src/pixint2d/examples/**/*.py
 out/
 
 .venv/

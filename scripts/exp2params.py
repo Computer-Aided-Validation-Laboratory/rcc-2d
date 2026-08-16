@@ -66,12 +66,12 @@ if RUN_MODE is RunMode.TEST:
     
     
 else:
-    TEX_OVERSAMPLES: List[int] = [1, 2, 4, 8, 16, 32, 64, 128, 256, 512]
+    TEX_OVERSAMPLES: List[int] = [1, 2, 4, 8, 16, 32, 64, 128, 256, 512, 1024]
     # Per-texel SSAA levels for the analytic speckle texture generator.
     # Used for digitised input texture creation
-    TEX_SSAA_LEVELS: List[int] = [1, 2, 4, 8, 16, 32, 64, 128, 256, 512]
+    TEX_SSAA_LEVELS: List[int] = [1, 2, 4, 8, 16, 32, 64, 128, 256, 512, 1024]
     # Actually used for riley renders
-    RILEY_SSAA_LEVLES: List[int] = [1, 2, 4, 8, 16, 32, 64, 128, 256, 512] 
+    RILEY_SSAA_LEVLES: List[int] = [1, 2, 4, 8, 16, 32, 64, 128, 256, 512, 1024] 
     TEX_INTERPOLATORS: dict[str, riley.TextureSample] = {
         #"nearest": riley.TextureSample.nearest,
         "linear": riley.TextureSample.linear,
@@ -91,7 +91,7 @@ else:
         ("rect", 128),
         ("rect", 256),
         ("rect", 512),
-        #("rect", 1024), # TODO: check we have the RAM for this
+        ("rect", 1024),
         ("gauss", 2),
         ("gauss", 4),
         ("gauss", 8),
@@ -101,7 +101,7 @@ else:
         ("gauss", 128),
         ("gauss", 256),
         ("gauss", 512),
-        #("gauss", 1024),
+        ("gauss", 1024),
         ("analytic", 0),
     ]
 
