@@ -34,11 +34,11 @@ from paperfiglabels import (
     LABEL_EXT_ANALYTIC_REFERENCE, LABEL_EXT_H2_DIAGONAL_REFERENCE,
 )
 from paperparams import (
-    AXIS_LABEL_FONT_SIZE_PT, FONT_SIZE_PT, GRID_LINE_WIDTH_PT,
-    GRID_MARKER_SIZE_PT, LAYOUT_LINE_1X3, LAYOUT_LINE_2X2_WIDE,
+    AXIS_LABEL_FONT_SIZE_PT, FONT_SIZE_PT, LINE_WIDTH_PT, MARKER_SIZE_PT,
+    LAYOUT_LINE_1X3, LAYOUT_LINE_2X2_BALANCED,
     LAYOUT_LINE_2X3, LEGEND_FONT_SIZE_PT, LINE_COLOURS, PAPER_DPI,
-    PAPER_EXT_OUTPUT_DIR, PAPER_FORMATS, RILEY_LINE_WIDTH_PT,
-    RILEY_MARKER_SIZE_PT, TICK_FONT_SIZE_PT, PAPER_EXT_INSET_BOUNDS,
+    PAPER_EXT_OUTPUT_DIR, PAPER_FORMATS, TICK_FONT_SIZE_PT,
+    PAPER_EXT_INSET_BOUNDS,
     PAPER_EXT_INSET_MIN_LEVEL,
     PAPER_TEXTURE_INTERPOLATOR,
     EXP2_DIFF_TEX_CASE, EXP2_DIFF_TEX_FRAME,
@@ -110,11 +110,7 @@ def _draw(axis, rows, ylabel: str, title: str) -> list[Line2D]:
     samples: list[int] = []
     values: list[float] = []
     for row in rows:
-        width, size = (
-            (GRID_LINE_WIDTH_PT, GRID_MARKER_SIZE_PT)
-            if row.label.startswith("Grid2D") else
-            (RILEY_LINE_WIDTH_PT, RILEY_MARKER_SIZE_PT)
-        )
+        width, size = LINE_WIDTH_PT, MARKER_SIZE_PT
         axis.plot(row.samples, row.values, color=row.colour, marker=row.marker,
                   linestyle=row.linestyle, linewidth=width, markersize=size)
         handles.append(Line2D([], [], color=row.colour, marker=row.marker,
@@ -380,7 +376,7 @@ def _exp2_speck_h2(case: str, pattern: str, frame: int, bits: int):
 
 
 def _plot_exp2_speck(metric: str, ylabel: str, token: str, h2: bool) -> list[Path]:
-    figure, axes = make_figure(LAYOUT_LINE_2X2_WIDE, rows=2, columns=2, tick_font_size=TICK_FONT_SIZE_PT)
+    figure, axes = make_figure(LAYOUT_LINE_2X2_BALANCED, rows=2, columns=2, tick_font_size=TICK_FONT_SIZE_PT)
     handles = []
     for row, (pattern, name) in enumerate((("gaussadd", "Gauss"), ("diskadd", "Disk"))):
         for col, (case, frame, deformation) in enumerate(exp2.CASES):
@@ -400,7 +396,7 @@ def _plot_exp2_tex(
     metric: str, ylabel: str, token: str, h2: bool, *, interpolator: str,
     relation: str | None = None,
 ) -> list[Path]:
-    figure, axes = make_figure(LAYOUT_LINE_2X2_WIDE, rows=2, columns=2, tick_font_size=TICK_FONT_SIZE_PT)
+    figure, axes = make_figure(LAYOUT_LINE_2X2_BALANCED, rows=2, columns=2, tick_font_size=TICK_FONT_SIZE_PT)
     handles = []
     for row, (pattern, name) in enumerate((("gaussadd", "Gauss"), ("diskadd", "Disk"))):
         for col, (case, frame, deformation) in enumerate(exp2.CASES):
@@ -485,12 +481,12 @@ def _plot_exp3_h2_figure2(records) -> list[Path]:
                     points.append((x, value))
             points = sorted(set(points))
             if points:
-                axis.plot(*zip(*points), color=colour, marker=marker, linestyle=style, linewidth=RILEY_LINE_WIDTH_PT, markersize=RILEY_MARKER_SIZE_PT)
+                axis.plot(*zip(*points), color=colour, marker=marker, linestyle=style, linewidth=LINE_WIDTH_PT, markersize=MARKER_SIZE_PT)
                 inset_points = [point for point in points if point[0] >= PAPER_EXT_INSET_MIN_LEVEL]
                 if inset_points:
                     inset.plot(*zip(*inset_points), color=colour, marker=marker,
-                               linestyle=style, linewidth=RILEY_LINE_WIDTH_PT * 0.8,
-                               markersize=RILEY_MARKER_SIZE_PT * 0.75)
+                               linestyle=style, linewidth=LINE_WIDTH_PT * 0.8,
+                               markersize=MARKER_SIZE_PT * 0.75)
                     inset_samples.extend(point[0] for point in inset_points)
                 handles.append(Line2D([], [], color=colour, marker=marker, linestyle=style, label=f"Riley {name}"))
                 samples.extend(x for x, _ in points); values.extend(y for _, y in points)
@@ -531,7 +527,7 @@ def _plot_main_paper_difference_maps() -> list[Path]:
 
 
 def _plot_exp3_h2_figure3(dic_records, grid_records) -> list[Path]:
-    figure, axes = make_figure(LAYOUT_LINE_2X2_WIDE, rows=1, columns=2, tick_font_size=TICK_FONT_SIZE_PT)
+    figure, axes = make_figure(LAYOUT_LINE_2X2_BALANCED, rows=1, columns=2, tick_font_size=TICK_FONT_SIZE_PT)
     samplers = (("cubic_bspline", "B-spline", LINE_COLOURS[0], "-", "o"), ("cubiccm", "Catmull-Rom", LINE_COLOURS[1], "--", "x"), ("line", "Linear", LINE_COLOURS[2], ":", "d"))
     panels = ((axes[0, 0], dic_records, "gausscont", "DIC", True), (axes[0, 1], grid_records, "eggbox", "Grid method", False))
     handles = []
@@ -550,12 +546,12 @@ def _plot_exp3_h2_figure3(dic_records, grid_records) -> list[Path]:
                     points.append((rec.ssaa, value))
             points = sorted(set(points))
             if points:
-                axis.plot(*zip(*points), color=colour, marker=marker, linestyle=style, linewidth=RILEY_LINE_WIDTH_PT, markersize=RILEY_MARKER_SIZE_PT)
+                axis.plot(*zip(*points), color=colour, marker=marker, linestyle=style, linewidth=LINE_WIDTH_PT, markersize=MARKER_SIZE_PT)
                 inset_points = [point for point in points if point[0] >= PAPER_EXT_INSET_MIN_LEVEL]
                 if inset_points:
                     inset.plot(*zip(*inset_points), color=colour, marker=marker,
-                               linestyle=style, linewidth=RILEY_LINE_WIDTH_PT * 0.8,
-                               markersize=RILEY_MARKER_SIZE_PT * 0.75)
+                               linestyle=style, linewidth=LINE_WIDTH_PT * 0.8,
+                               markersize=MARKER_SIZE_PT * 0.75)
                     inset_samples.extend(point[0] for point in inset_points)
                 handles.append(Line2D([], [], color=colour, marker=marker, linestyle=style, label=f"Riley {name}"))
                 samples.extend(x for x, _ in points); values.extend(y for _, y in points)

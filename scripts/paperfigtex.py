@@ -4,7 +4,7 @@
 # Float-placement specifier used by every generated journal-figure block.
 # ``tbp`` lets LaTeX place a figure at the top or bottom of a text page, or
 # on a float page when necessary.
-FIGURE_PLACEMENT = "tbp"
+FIGURE_PLACEMENT = "!htbp"
 
 # Experiment 1
 CAPTION_EXP1_FIG1 = (

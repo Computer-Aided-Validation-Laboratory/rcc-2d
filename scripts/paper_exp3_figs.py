@@ -82,7 +82,6 @@ from paperfiglabels import (
 from paperparams import (
     COLORBAR_FONT_SIZE_PT,
     EXP3_AFFINE_CASE,
-    EXP3_ANALYTIC_LINE_WIDTH_PT,
     EXP3_BIT_DEPTH,
     EXP3_CHIRP_CASE,
     EXP3_FIG1_ZOOM_BIAS_YLIM,
@@ -95,8 +94,10 @@ from paperparams import (
     LAYOUT_LINE_1X3,
     LAYOUT_LINE_2X2_WIDE,
     LAYOUT_LINE_2X2_WIDE_DETACHED,
-    EXP3_LINE_WIDTH_PT,
-    EXP3_MARKER_SIZE_PT,
+    LAYOUT_LINE_2X2_TITLED,
+    LINE_WIDTH_PT as EXP3_ANALYTIC_LINE_WIDTH_PT,
+    LINE_WIDTH_PT as EXP3_LINE_WIDTH_PT,
+    MARKER_SIZE_PT as EXP3_MARKER_SIZE_PT,
     EXP3_RIGID_CASE,
     FONT_SIZE_PT,
     LEGEND_FONT_SIZE_PT,
@@ -1027,7 +1028,7 @@ def _generate_figure3_with_affine(dic_records, grid_records) -> None:
 def generate_figure3(dic_records, grid_records) -> list[Path]:
     """Figure 3: highest- and sliding-reference self-convergence."""
     figure, axes = make_figure(
-        LAYOUT_LINE_2X2_WIDE, rows=2, columns=2,
+        LAYOUT_LINE_2X2_TITLED, rows=2, columns=2,
         tick_font_size=TICK_FONT_SIZE_PT,
     )
     diag_levels = [1, 2, 4, 8, 16, 32, 64, 128]
@@ -1199,7 +1200,7 @@ def generate_figure4(dic_records, grid_records) -> list[Path]:
                 rv_dic,
                 extent=(x.min(), x.max(), y.max(), y.min()),
                 cmap="coolwarm",
-                aspect="auto",
+                aspect="equal",
             )
             add_map_colourbar(im_a, axes[0, 0])
             axes[0, 0].set_title(TITLE_FIG4_A_TEMPLATE.format(
@@ -1211,7 +1212,7 @@ def generate_figure4(dic_records, grid_records) -> list[Path]:
                 map_v_dic,
                 extent=(x.min(), x.max(), y.max(), y.min()),
                 cmap="coolwarm",
-                aspect="auto",
+                aspect="equal",
             )
             add_map_colourbar(im_b, axes[1, 0])
             interp_name_dic = INTERPOLATOR_NAMES.get(
@@ -1241,7 +1242,7 @@ def generate_figure4(dic_records, grid_records) -> list[Path]:
                 diff_v_dic,
                 extent=(x.min(), x.max(), y.max(), y.min()),
                 cmap="coolwarm",
-                aspect="auto",
+                aspect="equal",
                 vmin=-limit_dic,
                 vmax=limit_dic,
             )
@@ -1355,7 +1356,7 @@ def generate_figure4(dic_records, grid_records) -> list[Path]:
                 rv_grid,
                 extent=(0, W, H, 0),
                 cmap="coolwarm",
-                aspect="auto",
+                aspect="equal",
             )
             add_map_colourbar(im_e, axes[0, 1])
             axes[0, 1].set_title(TITLE_FIG4_E_TEMPLATE.format(
@@ -1367,7 +1368,7 @@ def generate_figure4(dic_records, grid_records) -> list[Path]:
                 map_v_grid,
                 extent=(0, W, H, 0),
                 cmap="coolwarm",
-                aspect="auto",
+                aspect="equal",
             )
             add_map_colourbar(im_f, axes[1, 1])
             interp_name_grid = INTERPOLATOR_NAMES.get(
@@ -1394,7 +1395,7 @@ def generate_figure4(dic_records, grid_records) -> list[Path]:
                 diff_v_grid,
                 extent=(0, W, H, 0),
                 cmap="coolwarm",
-                aspect="auto",
+                aspect="equal",
                 vmin=-limit_grid,
                 vmax=limit_grid,
             )

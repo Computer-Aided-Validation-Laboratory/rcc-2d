@@ -17,6 +17,7 @@ from paperfigtex import (
 A4_WIDTH_CM = 21.0
 PAGE_MARGIN_CM = 2.5
 CONTENT_WIDTH_CM = A4_WIDTH_CM - 2.0 * PAGE_MARGIN_CM
+#CONTENT_WIDTH = 14.0
 
 PAPER_OUTPUT_DIR = Path("out/paper")
 # Supplementary/extended figures are deliberately not mirrored to the article
@@ -30,6 +31,10 @@ PAPER_EXT_INSET_BOUNDS = (0.50, 0.45, 0.45, 0.43)
 PAPER_DIR = Path.home() / "paper-render-conv-uq"
 PAPER_FORMATS = ("pdf", "png")
 PAPER_DPI = 300
+# The preview article is for checking typography and float placement.  Keep
+# this false to let LaTeX place figures around text just as it will in the
+# manuscript; turn it on only when inspecting one figure per page.
+PAPER_PREVIEW_CLEARPAGE = False
 
 # Paper typography: match the preview article's ``lmodern`` package exactly.
 # ``usetex`` delegates all labels, titles, legends, and maths to the local
@@ -52,18 +57,11 @@ COLORBAR_FONT_SIZE_PT = 8.0
 PANEL_TITLE_LINE_GAP_EX = 0.65
 PANEL_TITLE_LINE_SPACING = 1.32  # Fallback when ``PAPER_USE_TEX=False``.
 
-# Matplotlib line widths and marker sizes are expressed in typographic points.
-# Grid2D is deliberately heavier so it remains visible beneath Riley when
-# parity makes their curves coincide.
-GRID_LINE_WIDTH_PT = 1.0
-GRID_MARKER_SIZE_PT = 4.0
-RILEY_LINE_WIDTH_PT = 0.8
-RILEY_MARKER_SIZE_PT = 3.2
-
-# Experiment 3 specific plot styling constants
-EXP3_LINE_WIDTH_PT = 1.0
-EXP3_MARKER_SIZE_PT = 4.0
-EXP3_ANALYTIC_LINE_WIDTH_PT = 0.8
+# Shared line styling for every journal and supplementary line plot.
+# Values are Matplotlib points.  Inset traces use a fixed proportion of these
+# values, so changing either constant scales the complete paper consistently.
+LINE_WIDTH_PT = 0.9
+MARKER_SIZE_PT = 3.2
 # Shared muted, colourblind-friendly line palette.  Cycle this list whenever
 # a paper plot has more line series than colours; line/marker styles remain a
 # second independent discriminator.  Black is deliberately reserved for an
@@ -89,14 +87,25 @@ EXP3_FIG1_ZOOM_RMSE_YLIM = (-0.0001, 0.0030)
 
 @dataclass(frozen=True)
 class PaperLayout:
-    """Physical canvas and constrained-layout settings for a figure family."""
+    """A figure family's derived physical layout.
 
-    canvas_cm: tuple[float, float]
+    The four public sizing constants below are the only controls for the
+    printed panel geometry.  ``extra_height_cm`` is deliberately internal
+    layout allowance for titles, tick labels, and an optional figure legend.
+    """
+
+    width_cm: float
+    panel_height_cm: float
+    extra_height_cm: float
     legend_band: float = 0.11
     w_pad: float = 0.08
     h_pad: float = 0.08
     wspace: float = 0.08
     hspace: float = 0.12
+
+    def canvas_cm(self, rows: int) -> tuple[float, float]:
+        """Return the native PDF dimensions for a requested subplot grid."""
+        return self.width_cm, rows * self.panel_height_cm + self.extra_height_cm
 
 
 @dataclass(frozen=True)
@@ -109,23 +118,58 @@ class PaperFigure:
 
 
 # -------------------------------------------------------------------------
-# Figure layouts — the only panel-size controls.
+# Figure sizing — the only panel-size controls.
 # -------------------------------------------------------------------------
-# Matplotlib fonts are physical points, so TeX includes every PDF at this
-# exact native width.  The common line layouts consequently retain the same
-# printed font and panel dimensions across experiments.
-LAYOUT_LINE_1X3 = PaperLayout((CONTENT_WIDTH_CM, 7.0), legend_band=0.15)
-LAYOUT_LINE_2X3 = PaperLayout((CONTENT_WIDTH_CM, 14.0), legend_band=0.13)
-LAYOUT_LINE_2X2_WIDE = PaperLayout((CONTENT_WIDTH_CM, 14.0))
-LAYOUT_LINE_2X2_WIDE_DETACHED = PaperLayout(
-    (CONTENT_WIDTH_CM, 14.0), legend_band=0.17,
+# Change these four values to adjust every journal figure consistently.
+# Width is used both by Matplotlib's native PDF canvas and by the generated
+# ``\\includegraphics`` command, preserving the intended physical font size.
+PAPER_FIGURE_WIDTH_CM = 16.0
+LINE_PANEL_HEIGHT_CM = 5.25
+IMAGE_PANEL_HEIGHT_CM = 5.0
+FIELD_PANEL_HEIGHT_CM = 5.0
+
+# Derived figure families.  Their short fixed allowances are not user-facing
+# sizing knobs: they reserve room for labels, titles, and legends so that the
+# panel-height constants above retain a direct, predictable meaning.
+LAYOUT_LINE_1X3 = PaperLayout(
+    PAPER_FIGURE_WIDTH_CM, LINE_PANEL_HEIGHT_CM, 1.25, legend_band=0.15,
 )
-LAYOUT_IMAGE_1X3 = PaperLayout((CONTENT_WIDTH_CM, 6.0))
-LAYOUT_IMAGE_2X3 = PaperLayout((CONTENT_WIDTH_CM, 12.0))
-LAYOUT_IMAGE_3X3 = PaperLayout((CONTENT_WIDTH_CM, 12.0))
-LAYOUT_IMAGE_MATRIX = PaperLayout((CONTENT_WIDTH_CM, 16.0))
+LAYOUT_LINE_2X3 = PaperLayout(
+    PAPER_FIGURE_WIDTH_CM, LINE_PANEL_HEIGHT_CM, 1.35, legend_band=0.13,
+)
+LAYOUT_LINE_2X2_WIDE = PaperLayout(
+    PAPER_FIGURE_WIDTH_CM, LINE_PANEL_HEIGHT_CM, 1.20,
+)
+# Two columns at two-thirds of the standard figure width give each line panel
+# the same width as a panel in the full-width 2x3 figures.  Use this for the
+# Exp. 1/2-style four-panel convergence figures rather than stretching them
+# across the page.
+LAYOUT_LINE_2X2_BALANCED = PaperLayout(
+    PAPER_FIGURE_WIDTH_CM * (2.0 / 3.0), LINE_PANEL_HEIGHT_CM, 1.20,
+)
+LAYOUT_LINE_2X2_WIDE_DETACHED = PaperLayout(
+    PAPER_FIGURE_WIDTH_CM, LINE_PANEL_HEIGHT_CM, 2.00, legend_band=0.23,
+)
+# Exp. 3 Fig. 3 has a two-line title and inset in every panel.  Preserve the
+# shared line-panel height by reserving their additional vertical overhead in
+# the canvas rather than silently shrinking the axes.
+LAYOUT_LINE_2X2_TITLED = PaperLayout(
+    PAPER_FIGURE_WIDTH_CM, LINE_PANEL_HEIGHT_CM, 4.10, legend_band=0.11,
+)
+LAYOUT_IMAGE_1X3 = PaperLayout(
+    PAPER_FIGURE_WIDTH_CM, IMAGE_PANEL_HEIGHT_CM, 0.70,
+)
+LAYOUT_IMAGE_2X3 = PaperLayout(
+    PAPER_FIGURE_WIDTH_CM, IMAGE_PANEL_HEIGHT_CM, 0.70,
+)
+LAYOUT_IMAGE_3X3 = PaperLayout(
+    PAPER_FIGURE_WIDTH_CM, IMAGE_PANEL_HEIGHT_CM, 0.80,
+)
+LAYOUT_IMAGE_MATRIX = PaperLayout(
+    PAPER_FIGURE_WIDTH_CM, IMAGE_PANEL_HEIGHT_CM, 0.80,
+)
 LAYOUT_FIELD_4X2 = PaperLayout(
-    (CONTENT_WIDTH_CM, 14.0), legend_band=0.08,
+    PAPER_FIGURE_WIDTH_CM, FIELD_PANEL_HEIGHT_CM, 0.90, legend_band=0.08,
     w_pad=0.025, h_pad=0.035, wspace=0.045, hspace=0.055,
 )
 
@@ -225,13 +269,13 @@ PAPER_FIGURES = {
         LAYOUT_LINE_2X3, CAPTION_EXP1_FIG3, LABEL_EXP1_FIG3,
     ),
     "exp2_fig1_speck2d_gauss_disk_rmse": PaperFigure(
-        LAYOUT_LINE_2X2_WIDE, CAPTION_EXP2_FIG1, LABEL_EXP2_FIG1,
+        LAYOUT_LINE_2X2_BALANCED, CAPTION_EXP2_FIG1, LABEL_EXP2_FIG1,
     ),
     EXP2_FIG2_STEM: PaperFigure(
-        LAYOUT_LINE_2X2_WIDE, CAPTION_EXP2_FIG2, LABEL_EXP2_FIG2,
+        LAYOUT_LINE_2X2_BALANCED, CAPTION_EXP2_FIG2, LABEL_EXP2_FIG2,
     ),
     EXP2_FIG3_STEM: PaperFigure(
-        LAYOUT_LINE_2X2_WIDE, CAPTION_EXP2_FIG3, LABEL_EXP2_FIG3,
+        LAYOUT_LINE_2X2_BALANCED, CAPTION_EXP2_FIG3, LABEL_EXP2_FIG3,
     ),
     "exp3_riley_gauss_fig1_rigid_translation_bias_rmse_refinement_b12": PaperFigure(
         LAYOUT_LINE_2X2_WIDE_DETACHED, CAPTION_EXP3_FIG1, LABEL_EXP3_FIG1,
@@ -240,7 +284,7 @@ PAPER_FIGURES = {
         LAYOUT_LINE_1X3, CAPTION_EXP3_FIG2, LABEL_EXP3_FIG2,
     ),
     "exp3_riley_gauss_fig3_rigid_self_convergence_dic_vs_grid_b12": PaperFigure(
-        LAYOUT_LINE_2X2_WIDE, CAPTION_EXP3_FIG3, LABEL_EXP3_FIG3,
+        LAYOUT_LINE_2X2_TITLED, CAPTION_EXP3_FIG3, LABEL_EXP3_FIG3,
     ),
     "exp3_riley_gauss_fig4_finite_star_combined_b12": PaperFigure(
         LAYOUT_FIELD_4X2, CAPTION_EXP3_FIG4, LABEL_EXP3_FIG4,

@@ -39,8 +39,8 @@ from modules.render_outputs import quantise_camera
 from paperparams import (
     AXIS_LABEL_FONT_SIZE_PT, DIFFERENCE_CMAP,
     LAYOUT_LINE_2X3, LAYOUT_IMAGE_1X3, LAYOUT_IMAGE_MATRIX, FONT_SIZE_PT,
-    LEGEND_FONT_SIZE_PT, GRID_LINE_WIDTH_PT, GRID_MARKER_SIZE_PT,
-    RILEY_LINE_WIDTH_PT, RILEY_MARKER_SIZE_PT, PAPER_DPI, PAPER_FORMATS,
+    LEGEND_FONT_SIZE_PT, LINE_WIDTH_PT, MARKER_SIZE_PT, PAPER_DPI,
+    PAPER_FORMATS,
     PAPER_FRAME, PAPER_OUTPUT_DIR,
     PAPER_TEXTURE_INTERPOLATOR, TICK_FONT_SIZE_PT,
     EXP1_FIG2_DIFF_SSAA_LEVELS, EXP2_DIFF_SSAA_LEVELS,
@@ -237,15 +237,7 @@ def draw_series(axis, series: list[Series], metric_label: str, reference: str) -
     handles = []
     all_samples: list[int] = []; all_values: list[float] = []
     for item in series:
-        is_grid = item.label.startswith("Grid2D")
-        # Riley is drawn after Grid2D.  The heavier Grid2D trace remains
-        # visible around the narrower Riley trace where parity makes them
-        # coincide.
-        linewidth, markersize = (
-            (GRID_LINE_WIDTH_PT, GRID_MARKER_SIZE_PT)
-            if is_grid
-            else (RILEY_LINE_WIDTH_PT, RILEY_MARKER_SIZE_PT)
-        )
+        linewidth, markersize = LINE_WIDTH_PT, MARKER_SIZE_PT
         axis.plot(item.samples, item.values, color=item.colour, marker=item.marker, linestyle=item.linestyle, linewidth=linewidth, markersize=markersize)
         handles.append(Line2D([], [], color=item.colour, marker=item.marker, linestyle=item.linestyle, linewidth=linewidth, markersize=markersize, label=item.label))
         all_samples.extend(item.samples); all_values.extend(item.values)

@@ -32,7 +32,7 @@ from paperfiglabels import (
 from paperparams import (
     AXIS_LABEL_FONT_SIZE_PT,
     DIFFERENCE_CMAP,
-    LAYOUT_LINE_2X2_WIDE,
+    LAYOUT_LINE_2X2_BALANCED,
     LAYOUT_IMAGE_3X3,
     FONT_SIZE_PT,
     LEGEND_FONT_SIZE_PT,
@@ -41,8 +41,8 @@ from paperparams import (
     PAPER_FORMATS,
     PAPER_OUTPUT_DIR,
     PAPER_TEXTURE_INTERPOLATOR,
-    RILEY_LINE_WIDTH_PT,
-    RILEY_MARKER_SIZE_PT,
+    LINE_WIDTH_PT,
+    MARKER_SIZE_PT,
     TICK_FONT_SIZE_PT,
     EXP2_DIFF_SSAA_LEVELS,
     EXP2_DIFF_OVERSAMPLES,
@@ -243,8 +243,8 @@ def draw(axis, data: list[Series], ylabel: str, title: str) -> list[Line2D]:
     samples: list[int] = []
     values: list[float] = []
     for row in data:
-        axis.plot(row.samples, row.values, color=row.colour, marker=row.marker, linestyle=row.linestyle, linewidth=RILEY_LINE_WIDTH_PT, markersize=RILEY_MARKER_SIZE_PT)
-        handles.append(Line2D([], [], color=row.colour, marker=row.marker, linestyle=row.linestyle, linewidth=RILEY_LINE_WIDTH_PT, markersize=RILEY_MARKER_SIZE_PT, label=row.label))
+        axis.plot(row.samples, row.values, color=row.colour, marker=row.marker, linestyle=row.linestyle, linewidth=LINE_WIDTH_PT, markersize=MARKER_SIZE_PT)
+        handles.append(Line2D([], [], color=row.colour, marker=row.marker, linestyle=row.linestyle, linewidth=LINE_WIDTH_PT, markersize=MARKER_SIZE_PT, label=row.label))
         samples.extend(row.samples); values.extend(row.values)
     if not data:
         annotate_no_data(axis, LABEL_NO_DATA, font_size=FONT_SIZE_PT)
@@ -264,7 +264,7 @@ def display_speck_reference(reference: str) -> str:
 def figure_speck2d_combined() -> list[Path]:
     """Fig. 1: Gaussian and disk Speck2D convergence in a common 2x3 grid."""
     figure, axes = make_figure(
-        LAYOUT_LINE_2X2_WIDE, rows=2, columns=2, tick_font_size=TICK_FONT_SIZE_PT,
+        LAYOUT_LINE_2X2_BALANCED, rows=2, columns=2, tick_font_size=TICK_FONT_SIZE_PT,
     )
     handles: list[Line2D] = []
     # Gaussian first, then the sharper disk texture as requested.
@@ -294,7 +294,7 @@ def figure_speck2d_combined() -> list[Path]:
 def figure_riley_texf() -> list[Path]:
     """Fig. 2: f64 textures at u12 camera output, Gaussian above disk."""
     figure, axes = make_figure(
-        LAYOUT_LINE_2X2_WIDE, rows=2, columns=2,
+        LAYOUT_LINE_2X2_BALANCED, rows=2, columns=2,
         tick_font_size=TICK_FONT_SIZE_PT,
     )
     handles: list[Line2D] = []
@@ -325,7 +325,7 @@ def figure_riley_texf() -> list[Path]:
 def figure_diagonal_refinement() -> list[Path]:
     """Figure 3: f64 diagonal refinement for all selected interpolants."""
     figure, axes = make_figure(
-        LAYOUT_LINE_2X2_WIDE, rows=2, columns=2,
+        LAYOUT_LINE_2X2_BALANCED, rows=2, columns=2,
         tick_font_size=TICK_FONT_SIZE_PT,
     )
     handles: list[Line2D] = []

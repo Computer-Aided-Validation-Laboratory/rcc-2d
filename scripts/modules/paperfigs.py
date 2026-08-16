@@ -29,6 +29,9 @@ def configure_paper_matplotlib() -> None:
         "font.serif": [PAPER_SERIF_FONT],
         "text.usetex": PAPER_USE_TEX,
         "text.latex.preamble": PAPER_TEX_PREAMBLE if PAPER_USE_TEX else "",
+        # Keep all line-series markers hollow in both axes and legends.  This
+        # improves overlap readability without per-figure styling switches.
+        "lines.markerfacecolor": "none",
     })
 
 
@@ -62,10 +65,11 @@ def cm_to_inch(value_cm: float) -> float:
 def make_figure(layout: PaperLayout, *, rows: int, columns: int, tick_font_size: float) -> tuple[Figure, np.ndarray]:
     """Create an Agg-backed figure sized in physical centimetres."""
     configure_paper_matplotlib()
+    canvas_width_cm, canvas_height_cm = layout.canvas_cm(rows)
     figure = Figure(
         figsize=(
-            cm_to_inch(layout.canvas_cm[0]),
-            cm_to_inch(layout.canvas_cm[1]),
+            cm_to_inch(canvas_width_cm),
+            cm_to_inch(canvas_height_cm),
         ),
         layout="constrained",
     )
@@ -287,6 +291,7 @@ def write_latex_preview(
     from paperfigtex import FIGURE_PLACEMENT
     from paperparams import (
         PAGE_MARGIN_CM, PAPER_FIGURES, PAPER_OUTPUT_DIR,
+        PAPER_PREVIEW_CLEARPAGE,
     )
 
     written: list[Path] = []
@@ -299,7 +304,7 @@ def write_latex_preview(
             block.write_text(
                 f"\\begin{{figure}}[{FIGURE_PLACEMENT}]\n"
                 "  \\centering\n"
-                f"  \\includegraphics[width={figure_spec.layout.canvas_cm[0]:g}cm]{{{stem}.pdf}}\n"
+                f"  \\includegraphics[width={figure_spec.layout.width_cm:g}cm]{{{stem}.pdf}}\n"
                 f"  \\caption{{{figure_spec.caption}}}\n"
                 f"  \\label{{{figure_spec.label}}}\n"
                 "\\end{figure}\n",
@@ -310,7 +315,8 @@ def write_latex_preview(
         if output_dir != Path(PAPER_OUTPUT_DIR):
             continue
         article = output_dir / "article.tex"
-        inputs = "\n".join(f"\\input{{{block.stem}}}\n\\clearpage" for block in blocks)
+        separator = "\n\\clearpage\n" if PAPER_PREVIEW_CLEARPAGE else "\n"
+        inputs = separator.join(f"\\input{{{block.stem}}}" for block in blocks)
         article.write_text(
             "\\documentclass[10pt,a4paper]{article}\n"
             f"\\usepackage[a4paper,margin={PAGE_MARGIN_CM:g}cm]{{geometry}}\n"
