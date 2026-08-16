@@ -284,6 +284,7 @@ def write_latex_preview(
     retains the generated preview article and PDF.
     """
     import subprocess
+    from paperfigtex import FIGURE_PLACEMENT
     from paperparams import (
         PAGE_MARGIN_CM, PAPER_FIGURES, PAPER_OUTPUT_DIR,
     )
@@ -296,7 +297,7 @@ def write_latex_preview(
             figure_spec = PAPER_FIGURES[stem]
             block = output_dir / f"{stem}.tex"
             block.write_text(
-                "\\begin{figure}[p]\n"
+                f"\\begin{{figure}}[{FIGURE_PLACEMENT}]\n"
                 "  \\centering\n"
                 f"  \\includegraphics[width={figure_spec.layout.canvas_cm[0]:g}cm]{{{stem}.pdf}}\n"
                 f"  \\caption{{{figure_spec.caption}}}\n"
