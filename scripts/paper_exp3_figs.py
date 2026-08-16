@@ -1299,7 +1299,10 @@ def generate_figure4(dic_records, grid_records) -> list[Path]:
         axis.set_ylim(bottom=-0.04 * max_rmse if max_rmse else -1e-5)
         axis.grid(True, linestyle=":", alpha=0.6)
     unique = {handle.get_label(): handle for handle in handles}
-    add_figure_legend(fig, list(unique.values()), font_size=LEGEND_FONT_SIZE_PT, columns=3)
+    add_figure_legend(
+        fig, list(unique.values()), font_size=LEGEND_FONT_SIZE_PT,
+        columns=3, auto_position=False,
+    )
 
     # Constrained layout now knows the final axes and legend positions.  Add
     # each colourbar in the unused left-hand allowance of its own panel,

@@ -192,6 +192,7 @@ def finish_signed_axis(
 
 def add_figure_legend(
     figure: Figure, handles: Sequence, *, font_size: float, columns: int = 3,
+    auto_position: bool = True,
 ) -> None:
     if handles:
         # Reserve a real band inside the fixed physical canvas.  This avoids
@@ -204,7 +205,7 @@ def add_figure_legend(
         figure.get_layout_engine().set(
             rect=(0.0, reserve, 1.0, 1.0 - reserve)
         )
-        figure.legend(
+        legend = figure.legend(
             handles=handles,
             # The legend lives in the canvas band reserved above.
             loc="lower center",
@@ -215,6 +216,54 @@ def add_figure_legend(
             handlelength=2.0,
             columnspacing=1.1,
         )
+        if not auto_position:
+            # Keep the existing panel geometry intact, but remove excess white
+            # canvas beneath a manually managed legend.  Figure 4 uses this
+            # path because its equal-aspect maps must not be repositioned.
+            figure.canvas.draw()
+            font_height = (font_size / 72.0) / figure.get_figheight()
+            legend.set_bbox_to_anchor(
+                (0.5, 0.5 * font_height), transform=figure.transFigure,
+            )
+            figure.canvas.draw()
+            return
+
+        # Finalise title leading before measuring the tight axes boxes; this
+        # gives every line-plot legend a consistent, small separation from the
+        # lowest x-axis label even when typography is changed globally.
+        prepare_panel_titles(figure)
+        figure.canvas.draw()
+        renderer = figure.canvas.get_renderer()
+        axes = [axis for axis in figure.axes if axis.get_in_layout()]
+        if not axes:
+            return
+        legend_height = legend.get_window_extent(renderer).height / figure.bbox.height
+        font_height = (font_size / 72.0) / figure.get_figheight()
+        # Publication rule: half a legend-font height below the legend, and
+        # one full legend-font height from the legend to the x-axis label.
+        legend_bottom = 0.5 * font_height
+        target_axis_bottom = legend_bottom + legend_height + font_height
+        legend.set_bbox_to_anchor((0.5, legend_bottom), transform=figure.transFigure)
+
+        # The supplied layouts contain a conservative initial legend reserve.
+        # Iteratively reduce/increase it until the final tight axes bounding
+        # box meets the rule above, eliminating both excessive white space and
+        # label/legend collisions after a global font-size change.
+        legend_band = figure._paper_layout.legend_band
+        for _ in range(3):
+            figure.canvas.draw()
+            renderer = figure.canvas.get_renderer()
+            axis_bottom = min(
+                axis.get_tightbbox(renderer).y0 / figure.bbox.height
+                for axis in axes
+            )
+            legend_band = min(
+                0.45, max(0.0, legend_band + target_axis_bottom - axis_bottom)
+            )
+            figure.get_layout_engine().set(
+                rect=(0.0, legend_band, 1.0, 1.0 - legend_band)
+            )
+        figure.canvas.draw()
 
 
 def annotate_no_data(axis, message: str, *, font_size: float) -> None:
