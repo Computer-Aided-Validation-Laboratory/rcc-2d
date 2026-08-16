@@ -43,10 +43,10 @@ TITLE_H2_DISPLACEMENT = "h/2 displacement self-conv."
 TITLE_UNDEFORMED = "Undeformed"
 TITLE_RIGID_03PX = "Rigid 0.3px"
 TITLE_AFFINE_03PX = "Affine 0.3px"
-TITLE_EXP1_TEXTURE_ROW_F64_U8 = "Riley, In: Tex f64, Out: u8"
-TITLE_EXP1_TEXTURE_ROW_U8_U8 = "Riley, In: Tex u8, Out: u8"
-TITLE_EXP1_TEXTURE_ROW_F64_U12 = "Riley, In: Tex f64, Out: u12"
-TITLE_EXP1_TEXTURE_ROW_U12_U12 = "Riley, In: Tex u12, Out: u12"
+TITLE_EXP1_TEXTURE_ROW_F64_U8 = "In: f64, Out: u8"
+TITLE_EXP1_TEXTURE_ROW_U8_U8 = "In: u8, Out: u8"
+TITLE_EXP1_TEXTURE_ROW_F64_U12 = "In: f64, Out: u12"
+TITLE_EXP1_TEXTURE_ROW_U12_U12 = "In: u12, Out: u12"
 TITLE_EXP2_SPECK2D_PANEL_TEMPLATE = (
     "{panel} {pattern} Speckle, {deformation}\nRef: {reference}"
 )
@@ -130,23 +130,27 @@ LABEL_NO_METHOD_DEFORMATION_REFERENCE_TEMPLATE = "No {method} {deformation} refe
 
 # Figure 4 & 5 Labels
 TITLE_FIG4_A_TEMPLATE = (
-    "(a) Ref. disp. $u_y$\n($r_{{px}}$,$r_{{tex}}$={ref_level})"
+    "(a) Ref. disp. $u_y$ [px]\n($r_{{px}}$,$r_{{tex}}$={ref_level})"
 )
 TITLE_FIG4_B_TEMPLATE = (
-    "(b) {name} ($r_{{px}}$,$r_{{tex}}$={ssaa}) disp. $u_y$"
+    "(b) {name} ($r_{{px}}$,$r_{{tex}}$={ssaa})\n"
+    "disp. $u_y$ [px]"
 )
 TITLE_FIG4_C_TEMPLATE = (
-    r"(c) {name} ($r_{{px}}$,$r_{{tex}}$={ssaa}) $u_y$ diff. map"
+    r"(c) {name} ($r_{{px}}$,$r_{{tex}}$={ssaa})" "\n"
+    r"$u_y$ [px] diff. map"
 )
-TITLE_FIG4_D = "(d) $u_y$ RMSE along frequency gradient"
 TITLE_FIG4_E_TEMPLATE = (
-    "(e) Ref. disp. $u_y$\n($r_{{px}}$,$r_{{tex}}$={ref_level})"
+    "(e) Ref. disp. $u_y$ [px]\n($r_{{px}}$,$r_{{tex}}$={ref_level})"
 )
 TITLE_FIG4_F_TEMPLATE = (
-    "(f) {name} ($r_{{px}}$,$r_{{tex}}$={ssaa}) disp. $u_y$"
+    "(f) {name} ($r_{{px}}$,$r_{{tex}}$={ssaa})\n"
+    "disp. $u_y$ [px]"
 )
 TITLE_FIG4_G_TEMPLATE = (
-    r"(g) {name} ($r_{{px}}$,$r_{{tex}}$={ssaa}) $u_y$ diff. map"
+    r"(g) {name} ($r_{{px}}$,$r_{{tex}}$={ssaa})" "\n"
+    r"$u_y$ [px] diff. map"
 )
-TITLE_FIG4_H = "(h) $u_y$ RMSE along frequency gradient"
+TITLE_FIG4_D = "(d) $u_y$ RMSE along\nfrequency gradient"
+TITLE_FIG4_H = "(h) $u_y$ RMSE along\nfrequency gradient"
 LABEL_FIG4_5_PROFILE_TEMPLATE = r"{name} ($r_{{px}}$,$r_{{tex}}$={ssaa})"

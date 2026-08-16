@@ -38,7 +38,8 @@ from paperfiglabels import (
 from modules.render_outputs import quantise_camera
 from paperparams import (
     AXIS_LABEL_FONT_SIZE_PT, DIFFERENCE_CMAP,
-    LAYOUT_LINE_2X3, LAYOUT_IMAGE_1X3, LAYOUT_IMAGE_MATRIX, FONT_SIZE_PT,
+    LAYOUT_LINE_2X3, LAYOUT_LINE_2X3_EXP1_FIG2, LAYOUT_IMAGE_1X3,
+    LAYOUT_IMAGE_MATRIX, FONT_SIZE_PT,
     LEGEND_FONT_SIZE_PT, LINE_WIDTH_PT, MARKER_SIZE_PT, PAPER_DPI,
     PAPER_FORMATS,
     PAPER_FRAME, PAPER_OUTPUT_DIR,
@@ -316,7 +317,7 @@ def figure_texture_convergence() -> list[Path]:
     written: list[Path] = []
     for stem, rows_config in figures:
         figure, axes = make_figure(
-            LAYOUT_LINE_2X3, rows=2, columns=3,
+            LAYOUT_LINE_2X3_EXP1_FIG2, rows=2, columns=3,
             tick_font_size=TICK_FONT_SIZE_PT,
         )
         handles: list[Line2D] = []
@@ -345,7 +346,7 @@ def figure_texture_convergence() -> list[Path]:
         unique = {handle.get_label(): handle for handle in handles}
         add_figure_legend(
             figure, list(unique.values()), font_size=LEGEND_FONT_SIZE_PT,
-            columns=4,
+            columns=5,
         )
         written.extend(save_figure(
             figure, PAPER_OUTPUT_DIR / stem, PAPER_FORMATS, PAPER_DPI,

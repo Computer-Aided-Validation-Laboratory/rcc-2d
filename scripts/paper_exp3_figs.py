@@ -26,18 +26,17 @@ from modules.paperfigs import (
     add_figure_legend,
     annotate_no_data,
     make_figure,
+    prepare_panel_titles,
     save_figure,
     set_sample_axis,
     write_latex_preview,
 )
 from paperfiglabels import (
     LABEL_HORIZ_COORD_PX,
-    LABEL_VERT_COORD_PX,
     LABEL_COLUMN_RMSE_PX,
     LABEL_DISP_RMSE_PX,
     LABEL_SELF_CONV_RMSE,
     LABEL_NO_REFERENCE,
-    LABEL_COLOURBAR_PX,
     LABEL_RILEY_TEMPLATE,
     LABEL_ANALYTIC_REFERENCE,
     LABEL_RILEY_BSPLINE,
@@ -90,6 +89,9 @@ from paperparams import (
     EXP3_FIG4_REFERENCE_SSAA,
     EXP3_FIG4_MAP_LEVEL,
     EXP3_FIG4_PROFILE_LEVELS,
+    EXP3_FIG4_COLORBAR_PAD_FIG,
+    EXP3_FIG4_COLORBAR_WIDTH_FIG,
+    EXP3_FIG4_FIELD_LIMIT_PX,
     LAYOUT_FIELD_4X2,
     LAYOUT_LINE_1X3,
     LAYOUT_LINE_2X2_WIDE,
@@ -702,7 +704,7 @@ def generate_figure2(dic_records) -> None:
             fig,
             handles,
             font_size=LEGEND_FONT_SIZE_PT,
-            columns=2,
+            columns=3,
         )
 
     save_path = (
@@ -1138,351 +1140,221 @@ def generate_figure3(dic_records, grid_records) -> list[Path]:
     return written
 
 
+def _figure4_data(records, *, is_dic: bool) -> dict[str, object] | None:
+    """Load one finite-star method's reference and selected test result."""
+    subset = [
+        record for record in records
+        if record.case == EXP3_CHIRP_CASE
+        and record.pattern == ("gausscont" if is_dic else "eggbox")
+        and record.bit_depth == EXP3_BIT_DEPTH
+    ]
+    reference = find_rec(
+        subset, "riley_render_texf", "cubic_bspline",
+        ssaa=EXP3_FIG4_REFERENCE_SSAA, osamp=EXP3_FIG4_REFERENCE_OSAMP,
+    )
+    selected = find_rec(
+        subset, "riley_render_texf", "cubic_bspline",
+        ssaa=EXP3_FIG4_MAP_LEVEL, osamp=EXP3_FIG4_MAP_LEVEL,
+    )
+    if reference is None or selected is None:
+        return None
+    ref_data = load_dic(reference, 1) if is_dic else load_grid(reference, 1)
+    selected_data = load_dic(selected, 1) if is_dic else load_grid(selected, 1)
+    if ref_data is None or selected_data is None:
+        return None
+    if is_dic:
+        x, y, _, ref_v = ref_data
+        _, _, _, selected_v = selected_data
+        extent = (x.min(), x.max(), y.max(), y.min())
+        mask = (
+            (x < x.min() + EDGE_EXCLUSION_DIC)
+            | (x > x.max() - EDGE_EXCLUSION_DIC)
+            | (y < y.min() + EDGE_EXCLUSION_DIC)
+            | (y > y.max() - EDGE_EXCLUSION_DIC)
+        )
+    else:
+        _, ref_v = ref_data
+        _, selected_v = selected_data
+        height, width = ref_v.shape
+        x = np.arange(width, dtype=float)
+        extent = (0, width, height, 0)
+        mask = np.ones(ref_v.shape, dtype=bool)
+        mask[
+            EDGE_EXCLUSION_GRID:-EDGE_EXCLUSION_GRID,
+            EDGE_EXCLUSION_GRID:-EDGE_EXCLUSION_GRID,
+        ] = False
+    diff_v = selected_v - ref_v
+    return {
+        "subset": subset, "reference": reference, "selected": selected,
+        "ref_v": ref_v, "selected_v": selected_v, "diff_v": diff_v,
+        "x": x, "extent": extent, "mask": mask, "is_dic": is_dic,
+    }
+
+
 def generate_figure4(dic_records, grid_records) -> list[Path]:
-    """Figure 4: Combined Finite-star diagnostic (DIC & Grid)."""
+    """Figure 4: finite-star maps and profiles in one balanced canvas."""
+    dic_data = _figure4_data(dic_records, is_dic=True)
+    grid_data = _figure4_data(grid_records, is_dic=False)
     fig, axes = make_figure(
-        LAYOUT_FIELD_4X2, rows=4, columns=2, tick_font_size=TICK_FONT_SIZE_PT
+        LAYOUT_FIELD_4X2, rows=4, columns=2, tick_font_size=TICK_FONT_SIZE_PT,
     )
     gridspec = axes[0, 0].get_subplotspec().get_gridspec()
-    gridspec.set_height_ratios((1.0, 1.0, 1.0, 1.2))
-    profile_handles: list[Line2D] = []
-
-    def add_map_colourbar(image, axis) -> None:
-        """Keep each colourbar attached closely to its own shallow map."""
-        colourbar = fig.colorbar(
-            image, ax=axis, pad=0.02, fraction=0.055, aspect=18,
+    # A finite-star map is roughly 4:1.  Give the profile row enough vertical
+    # room for a conventional line plot without leaving map-row whitespace.
+    # Taller map rows let the equal-aspect finite-star fields use nearly the
+    # same total panel width as the profiles, once the attached colourbar and
+    # its left-side tick labels are included.
+    gridspec.set_height_ratios((0.95, 0.95, 0.95, 1.55))
+    pending_colourbars: list[tuple[object, object]] = []
+    method_specs = (
+        (dic_data, 0, METHOD_DIC, TITLE_FIG4_A_TEMPLATE,
+         TITLE_FIG4_B_TEMPLATE, TITLE_FIG4_C_TEMPLATE),
+        (grid_data, 1, METHOD_GRID, TITLE_FIG4_E_TEMPLATE,
+         TITLE_FIG4_F_TEMPLATE, TITLE_FIG4_G_TEMPLATE),
+    )
+    for data, column, method, ref_title, selected_title, diff_title in method_specs:
+        if data is None:
+            for row in range(3):
+                annotate_no_data(
+                    axes[row, column],
+                    LABEL_MISSING_METHOD_RECORDS_TEMPLATE.format(method=method),
+                    font_size=FONT_SIZE_PT,
+                )
+            continue
+        selected = data["selected"]
+        name = INTERPOLATOR_NAMES.get(selected.interpolator, selected.interpolator)
+        values = (
+            (data["ref_v"], ref_title.format(ref_level=EXP3_FIG4_REFERENCE_SSAA),
+             EXP3_FIG4_FIELD_LIMIT_PX),
+            (data["selected_v"], selected_title.format(
+                name=name, osamp=selected.osamp or 1, ssaa=selected.ssaa or 1,
+                ref_level=EXP3_FIG4_REFERENCE_SSAA,
+            ), EXP3_FIG4_FIELD_LIMIT_PX),
+            (data["diff_v"], diff_title.format(
+                name=name, osamp=selected.osamp or 1, ssaa=selected.ssaa or 1,
+            ), max(float(np.nanpercentile(
+                np.abs(np.where(data["mask"], np.nan, data["diff_v"])), 95)), 1e-5)),
         )
-        colourbar.set_label(LABEL_COLOURBAR_PX, fontsize=COLORBAR_FONT_SIZE_PT)
+        for row, (field, title, limit) in enumerate(values):
+            kwargs = {"cmap": "coolwarm", "aspect": "equal"}
+            if limit is not None:
+                kwargs.update(vmin=-limit, vmax=limit)
+            image = axes[row, column].imshow(field, extent=data["extent"], **kwargs)
+            pending_colourbars.append((image, axes[row, column]))
+            axes[row, column].set_title(title, fontsize=FONT_SIZE_PT)
+            axes[row, column].set_xticks([])
+            axes[row, column].set_yticks([])
+    handles: list[Line2D] = []
+    for data, column, method, title in (
+        (dic_data, 0, METHOD_DIC, TITLE_FIG4_D),
+        (grid_data, 1, METHOD_GRID, TITLE_FIG4_H),
+    ):
+        axis = axes[3, column]
+        if data is None:
+            annotate_no_data(
+                axis, LABEL_MISSING_METHOD_RECORDS_TEMPLATE.format(method=method),
+                font_size=FONT_SIZE_PT,
+            )
+            continue
+        max_rmse = 0.0
+        for interpolator, level, colour, linestyle in figure4_profile_cases():
+            record = find_rec(
+                data["subset"], "riley_render_texf", interpolator,
+                ssaa=level, osamp=level,
+            )
+            if record is None:
+                continue
+            current = load_dic(record, 1) if data["is_dic"] else load_grid(record, 1)
+            if current is None:
+                continue
+            current_v = current[3] if data["is_dic"] else current[1]
+            difference = np.where(data["mask"], np.nan, current_v - data["ref_v"])
+            if data["is_dic"]:
+                x_values = np.unique(data["x"][np.isfinite(data["x"])])
+                errors = [
+                    float(np.sqrt(np.nanmean(difference[data["x"] == value] ** 2)))
+                    if np.any(np.isfinite(difference[data["x"] == value])) else np.nan
+                    for value in x_values
+                ]
+            else:
+                x_values = data["x"]
+                errors = [
+                    float(np.sqrt(np.nanmean(difference[:, index] ** 2)))
+                    if np.any(np.isfinite(difference[:, index])) else np.nan
+                    for index in range(difference.shape[1])
+                ]
+            max_rmse = max(max_rmse, max((value for value in errors if np.isfinite(value)), default=0.0))
+            name = INTERPOLATOR_NAMES.get(interpolator, interpolator)
+            label = LABEL_FIG4_5_PROFILE_TEMPLATE.format(
+                name=name, osamp=level, ssaa=level,
+            )
+            axis.plot(x_values, errors, color=colour, linestyle=linestyle,
+                      linewidth=EXP3_LINE_WIDTH_PT, label=label)
+            handles.append(Line2D([], [], color=colour, linestyle=linestyle,
+                                  linewidth=EXP3_LINE_WIDTH_PT, label=label))
+        axis.set_title(title, fontsize=FONT_SIZE_PT)
+        axis.set_xlabel(LABEL_HORIZ_COORD_PX, fontsize=FONT_SIZE_PT)
+        axis.set_ylabel(LABEL_COLUMN_RMSE_PX, fontsize=FONT_SIZE_PT)
+        axis.tick_params(labelsize=TICK_FONT_SIZE_PT)
+        axis.set_ylim(bottom=-0.04 * max_rmse if max_rmse else -1e-5)
+        axis.grid(True, linestyle=":", alpha=0.6)
+    unique = {handle.get_label(): handle for handle in handles}
+    add_figure_legend(fig, list(unique.values()), font_size=LEGEND_FONT_SIZE_PT, columns=3)
+
+    # Constrained layout now knows the final axes and legend positions.  Add
+    # each colourbar in the unused left-hand allowance of its own panel,
+    # immediately adjacent to the map.  Automatic ``Figure.colorbar`` left a
+    # large layout gap here because it treated the bar as a separate column.
+    # Match the export title state before reading any geometry.  Otherwise
+    # ``save_figure`` would change two-line title heights after this point.
+    prepare_panel_titles(fig)
+    fig.canvas.draw()
+    renderer = fig.canvas.get_renderer()
+    colourbar_links: list[tuple[object, object, object]] = []
+    for image, axis in pending_colourbars:
+        # ``get_window_extent`` returns the final active equal-aspect axes
+        # box, rather than the taller GridSpec allocation.  This locks the
+        # colourbar top and bottom to the rendered map borders exactly.
+        position = axis.get_window_extent(renderer).transformed(
+            fig.transFigure.inverted()
+        )
+        colour_axis = fig.add_axes([
+            position.x0 - EXP3_FIG4_COLORBAR_PAD_FIG
+            - EXP3_FIG4_COLORBAR_WIDTH_FIG,
+            position.y0,
+            EXP3_FIG4_COLORBAR_WIDTH_FIG,
+            position.height,
+        ])
+        colour_axis.set_in_layout(False)
+        colourbar = fig.colorbar(image, cax=colour_axis)
+        colourbar.ax.yaxis.set_ticks_position("left")
+        colourbar.ax.yaxis.set_label_position("left")
         colourbar.ax.tick_params(labelsize=COLORBAR_FONT_SIZE_PT)
+        colourbar_links.append((image, axis, colour_axis))
 
-    # ------------------ COLUMN 0: DIC Method ------------------
-    subset_dic = [
-        r for r in dic_records
-        if r.case == EXP3_CHIRP_CASE
-        and r.pattern == "gausscont"
-        and r.bit_depth == EXP3_BIT_DEPTH
-    ]
-    ref_dic = find_rec(
-        subset_dic, "riley_render_texf", "cubic_bspline",
-        ssaa=EXP3_FIG4_REFERENCE_SSAA,
-        osamp=EXP3_FIG4_REFERENCE_OSAMP,
+    # Creating the external axes can trigger one final aspect/layout pass.
+    # Re-read the active map boxes afterwards, then snap each colourbar to its
+    # final top, bottom, and fixed left-hand separation before export.
+    fig.canvas.draw()
+    renderer = fig.canvas.get_renderer()
+    for image, axis, colour_axis in colourbar_links:
+        # The image bounding box is the authoritative field extent.  An
+        # equal-aspect axes can contain a small allocation margin above/below
+        # this box, which is why using the axes box alone left bars too high.
+        position = image.get_window_extent(renderer).transformed(
+            fig.transFigure.inverted()
+        )
+        colour_axis.set_position([
+            position.x0 - EXP3_FIG4_COLORBAR_PAD_FIG
+            - EXP3_FIG4_COLORBAR_WIDTH_FIG,
+            position.y0,
+            EXP3_FIG4_COLORBAR_WIDTH_FIG,
+            position.height,
+        ])
+    written = save_figure(
+        fig, Path(PAPER_OUTPUT_DIR) / "exp3_riley_gauss_fig4_finite_star_combined_b12",
+        PAPER_FORMATS, PAPER_DPI,
     )
-    map_dic = find_rec(
-        subset_dic, "riley_render_texf", "cubic_bspline",
-        ssaa=EXP3_FIG4_MAP_LEVEL,
-        osamp=EXP3_FIG4_MAP_LEVEL,
-    )
-
-    if ref_dic is None or map_dic is None:
-        for row in range(4):
-            annotate_no_data(
-                axes[row, 0],
-                LABEL_MISSING_METHOD_RECORDS_TEMPLATE.format(method=METHOD_DIC),
-                font_size=FONT_SIZE_PT,
-            )
-    else:
-        ref_data_dic = load_dic(ref_dic, 1)
-        map_data_dic = load_dic(map_dic, 1)
-        if ref_data_dic is None or map_data_dic is None:
-            for row in range(4):
-                annotate_no_data(
-                    axes[row, 0],
-                    LABEL_ERROR_LOADING_METHOD_DATA_TEMPLATE.format(method=METHOD_DIC),
-                    font_size=FONT_SIZE_PT,
-                )
-        else:
-            x, y, ru_dic, rv_dic = ref_data_dic
-            _, _, _, map_v_dic = map_data_dic
-            diff_v_dic = map_v_dic - rv_dic
-
-            # (a) DIC Reference Field
-            im_a = axes[0, 0].imshow(
-                rv_dic,
-                extent=(x.min(), x.max(), y.max(), y.min()),
-                cmap="coolwarm",
-                aspect="equal",
-            )
-            add_map_colourbar(im_a, axes[0, 0])
-            axes[0, 0].set_title(TITLE_FIG4_A_TEMPLATE.format(
-                ref_level=EXP3_FIG4_REFERENCE_SSAA,
-            ), fontsize=FONT_SIZE_PT)
-
-            # (b) DIC Under-resolved Field
-            im_b = axes[1, 0].imshow(
-                map_v_dic,
-                extent=(x.min(), x.max(), y.max(), y.min()),
-                cmap="coolwarm",
-                aspect="equal",
-            )
-            add_map_colourbar(im_b, axes[1, 0])
-            interp_name_dic = INTERPOLATOR_NAMES.get(
-                map_dic.interpolator, map_dic.interpolator
-            )
-            title_b = TITLE_FIG4_B_TEMPLATE.format(
-                name=interp_name_dic,
-                osamp=map_dic.osamp or 1,
-                ssaa=map_dic.ssaa or 1,
-                ref_level=EXP3_FIG4_REFERENCE_SSAA,
-            )
-            axes[1, 0].set_title(title_b, fontsize=FONT_SIZE_PT)
-
-            # (c) DIC difference Map
-            x_min, x_max = x.min(), x.max()
-            y_min, y_max = y.min(), y.max()
-            mask_dic = (
-                (x < x_min + EDGE_EXCLUSION_DIC)
-                | (x > x_max - EDGE_EXCLUSION_DIC)
-                | (y < y_min + EDGE_EXCLUSION_DIC)
-                | (y > y_max - EDGE_EXCLUSION_DIC)
-            )
-            dv_dic_masked = np.where(mask_dic, np.nan, diff_v_dic)
-            limit_dic = float(np.nanpercentile(np.abs(dv_dic_masked), 95))
-            limit_dic = max(limit_dic, 1e-5)
-            im_c = axes[2, 0].imshow(
-                diff_v_dic,
-                extent=(x.min(), x.max(), y.max(), y.min()),
-                cmap="coolwarm",
-                aspect="equal",
-                vmin=-limit_dic,
-                vmax=limit_dic,
-            )
-            add_map_colourbar(im_c, axes[2, 0])
-            title_c = TITLE_FIG4_C_TEMPLATE.format(
-                name=interp_name_dic,
-                osamp=map_dic.osamp or 1,
-                ssaa=map_dic.ssaa or 1,
-            )
-            axes[2, 0].set_title(title_c, fontsize=FONT_SIZE_PT)
-
-            # (d) DIC Column RMSE Profiles
-            cases_dic = []
-            for interp, level, col, lstyle in figure4_profile_cases():
-                rec = find_rec(
-                    subset_dic, "riley_render_texf", interp,
-                    ssaa=level, osamp=level,
-                )
-                name = INTERPOLATOR_NAMES.get(interp, interp)
-                label = LABEL_FIG4_5_PROFILE_TEMPLATE.format(
-                    name=name, osamp=level, ssaa=level
-                )
-                cases_dic.append((rec, label, col, lstyle))
-
-            max_rmse_dic = 0.0
-            for rec, label, col, lstyle in cases_dic:
-                if rec is None:
-                    continue
-                c_data = load_dic(rec, 1)
-                if c_data is None:
-                    continue
-                _, _, _, c_v = c_data
-                d_v = c_v - rv_dic
-                d_v_masked = np.where(mask_dic, np.nan, d_v)
-
-                unique_x = np.unique(x[np.isfinite(x)])
-                col_rmses = []
-                for ux_val in unique_x:
-                    col_mask = x == ux_val
-                    err2 = d_v_masked[col_mask] ** 2
-                    if np.any(np.isfinite(err2)):
-                        col_rmses.append(float(np.sqrt(np.nanmean(err2))))
-                    else:
-                        col_rmses.append(np.nan)
-
-                valid_rmses = [r for r in col_rmses if np.isfinite(r)]
-                if valid_rmses:
-                    max_rmse_dic = max(max_rmse_dic, max(valid_rmses))
-
-                axes[3, 0].plot(
-                    unique_x,
-                    col_rmses,
-                    color=col,
-                    linestyle=lstyle,
-                    linewidth=EXP3_LINE_WIDTH_PT,
-                    label=label,
-                )
-                profile_handles.append(Line2D([], [], color=col, linestyle=lstyle,
-                                              linewidth=EXP3_LINE_WIDTH_PT, label=label))
-
-            axes[3, 0].set_title(TITLE_FIG4_D, fontsize=FONT_SIZE_PT)
-            if max_rmse_dic > 0:
-                axes[3, 0].set_ylim(bottom=-0.04 * max_rmse_dic)
-            else:
-                axes[3, 0].set_ylim(bottom=-1e-5)
-            axes[3, 0].grid(True, linestyle=":", alpha=0.6)
-
-    # ------------------ COLUMN 1: Grid Method ------------------
-    subset_grid = [
-        r for r in grid_records
-        if r.case == EXP3_CHIRP_CASE
-        and r.pattern == "eggbox"
-        and r.bit_depth == EXP3_BIT_DEPTH
-    ]
-    ref_grid = find_rec(
-        subset_grid, "riley_render_texf", "cubic_bspline",
-        ssaa=EXP3_FIG4_REFERENCE_SSAA,
-        osamp=EXP3_FIG4_REFERENCE_OSAMP,
-    )
-    map_grid = find_rec(
-        subset_grid, "riley_render_texf", "cubic_bspline",
-        ssaa=EXP3_FIG4_MAP_LEVEL,
-        osamp=EXP3_FIG4_MAP_LEVEL,
-    )
-
-    if ref_grid is None or map_grid is None:
-        for row in range(4):
-            annotate_no_data(
-                axes[row, 1],
-                LABEL_MISSING_METHOD_RECORDS_TEMPLATE.format(method=METHOD_GRID),
-                font_size=FONT_SIZE_PT,
-            )
-    else:
-        ref_data_grid = load_grid(ref_grid, 1)
-        map_data_grid = load_grid(map_grid, 1)
-        if ref_data_grid is None or map_data_grid is None:
-            for row in range(4):
-                annotate_no_data(
-                    axes[row, 1],
-                    LABEL_ERROR_LOADING_METHOD_DATA_TEMPLATE.format(method=METHOD_GRID),
-                    font_size=FONT_SIZE_PT,
-                )
-        else:
-            ru_grid, rv_grid = ref_data_grid
-            _, map_v_grid = map_data_grid
-            diff_v_grid = map_v_grid - rv_grid
-            H, W = ru_grid.shape
-
-            # (e) Grid Reference Field
-            im_e = axes[0, 1].imshow(
-                rv_grid,
-                extent=(0, W, H, 0),
-                cmap="coolwarm",
-                aspect="equal",
-            )
-            add_map_colourbar(im_e, axes[0, 1])
-            axes[0, 1].set_title(TITLE_FIG4_E_TEMPLATE.format(
-                ref_level=EXP3_FIG4_REFERENCE_SSAA,
-            ), fontsize=FONT_SIZE_PT)
-
-            # (f) Grid Under-resolved Field
-            im_f = axes[1, 1].imshow(
-                map_v_grid,
-                extent=(0, W, H, 0),
-                cmap="coolwarm",
-                aspect="equal",
-            )
-            add_map_colourbar(im_f, axes[1, 1])
-            interp_name_grid = INTERPOLATOR_NAMES.get(
-                map_grid.interpolator, map_grid.interpolator
-            )
-            title_f = TITLE_FIG4_F_TEMPLATE.format(
-                name=interp_name_grid,
-                osamp=map_grid.osamp or 1,
-                ssaa=map_grid.ssaa or 1,
-                ref_level=EXP3_FIG4_REFERENCE_SSAA,
-            )
-            axes[1, 1].set_title(title_f, fontsize=FONT_SIZE_PT)
-
-            # (g) Grid difference Map
-            mask_grid = np.ones(ru_grid.shape, dtype=bool)
-            mask_grid[
-                EDGE_EXCLUSION_GRID:-EDGE_EXCLUSION_GRID,
-                EDGE_EXCLUSION_GRID:-EDGE_EXCLUSION_GRID
-            ] = False
-            dv_grid_masked = np.where(mask_grid, np.nan, diff_v_grid)
-            limit_grid = float(np.nanpercentile(np.abs(dv_grid_masked), 95))
-            limit_grid = max(limit_grid, 1e-5)
-            im_g = axes[2, 1].imshow(
-                diff_v_grid,
-                extent=(0, W, H, 0),
-                cmap="coolwarm",
-                aspect="equal",
-                vmin=-limit_grid,
-                vmax=limit_grid,
-            )
-            add_map_colourbar(im_g, axes[2, 1])
-            title_g = TITLE_FIG4_G_TEMPLATE.format(
-                name=interp_name_grid,
-                osamp=map_grid.osamp or 1,
-                ssaa=map_grid.ssaa or 1,
-            )
-            axes[2, 1].set_title(title_g, fontsize=FONT_SIZE_PT)
-
-            # (h) Grid Column RMSE Profiles
-            cases_grid = []
-            for interp, level, col, lstyle in figure4_profile_cases():
-                rec = find_rec(
-                    subset_grid, "riley_render_texf", interp,
-                    ssaa=level, osamp=level,
-                )
-                name = INTERPOLATOR_NAMES.get(interp, interp)
-                label = LABEL_FIG4_5_PROFILE_TEMPLATE.format(
-                    name=name, osamp=level, ssaa=level
-                )
-                cases_grid.append((rec, label, col, lstyle))
-
-            max_rmse_grid = 0.0
-            for rec, label, col, lstyle in cases_grid:
-                if rec is None:
-                    continue
-                c_data = load_grid(rec, 1)
-                if c_data is None:
-                    continue
-                _, c_v = c_data
-                d_v = c_v - rv_grid
-                d_v_masked = np.where(mask_grid, np.nan, d_v)
-
-                col_rmses = []
-                for col_idx in range(W):
-                    err2 = d_v_masked[:, col_idx] ** 2
-                    if np.any(np.isfinite(err2)):
-                        col_rmses.append(float(np.sqrt(np.nanmean(err2))))
-                    else:
-                        col_rmses.append(np.nan)
-
-                valid_rmses = [r for r in col_rmses if np.isfinite(r)]
-                if valid_rmses:
-                    max_rmse_grid = max(max_rmse_grid, max(valid_rmses))
-
-                axes[3, 1].plot(
-                    np.arange(W),
-                    col_rmses,
-                    color=col,
-                    linestyle=lstyle,
-                    linewidth=EXP3_LINE_WIDTH_PT,
-                    label=label,
-                )
-                profile_handles.append(Line2D([], [], color=col, linestyle=lstyle,
-                                              linewidth=EXP3_LINE_WIDTH_PT, label=label))
-
-            axes[3, 1].set_title(TITLE_FIG4_H, fontsize=FONT_SIZE_PT)
-            if max_rmse_grid > 0:
-                axes[3, 1].set_ylim(bottom=-0.04 * max_rmse_grid)
-            else:
-                axes[3, 1].set_ylim(bottom=-1e-5)
-            axes[3, 1].grid(True, linestyle=":", alpha=0.6)
-
-    # Format ticks and labels for all subplots
-    for r in range(4):
-        for c in range(2):
-            ax = axes[r, c]
-            ax.tick_params(labelsize=TICK_FONT_SIZE_PT)
-            if r == 3:
-                ax.set_xlabel(LABEL_HORIZ_COORD_PX, fontsize=FONT_SIZE_PT)
-                ax.set_ylabel(LABEL_COLUMN_RMSE_PX, fontsize=FONT_SIZE_PT)
-            else:
-                ax.set_xlabel(LABEL_HORIZ_COORD_PX, fontsize=FONT_SIZE_PT)
-                ax.set_ylabel(LABEL_VERT_COORD_PX, fontsize=FONT_SIZE_PT)
-
-    unique_profiles = {handle.get_label(): handle for handle in profile_handles}
-    add_figure_legend(
-        fig, list(unique_profiles.values()), font_size=LEGEND_FONT_SIZE_PT,
-        columns=3,
-    )
-
-    save_path = (
-        Path(PAPER_OUTPUT_DIR) / "exp3_riley_gauss_fig4_finite_star_combined_b12"
-    )
-    written = save_figure(fig, save_path, PAPER_FORMATS, PAPER_DPI)
     fig.clear()
     return written
 

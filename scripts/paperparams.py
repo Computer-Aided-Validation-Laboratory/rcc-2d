@@ -46,11 +46,11 @@ PAPER_TEX_PREAMBLE = r"\usepackage[T1]{fontenc}\usepackage{lmodern}"
 
 # Sized for approximately 10 pt article text: labels are only slightly smaller
 # while legends remain readable in the A4 preview article.
-FONT_SIZE_PT = 9.0
-TICK_FONT_SIZE_PT = 8.0
-AXIS_LABEL_FONT_SIZE_PT = 9.0
-LEGEND_FONT_SIZE_PT = 8.0
-COLORBAR_FONT_SIZE_PT = 8.0
+FONT_SIZE_PT = 10.0
+TICK_FONT_SIZE_PT = 8.5
+AXIS_LABEL_FONT_SIZE_PT = 10.0
+LEGEND_FONT_SIZE_PT = 9.0
+COLORBAR_FONT_SIZE_PT = 8.5
 # Extra leading for two-line panel titles, e.g. ``(a) Case`` / ``Ref: ...``.
 # With ``PAPER_USE_TEX=True`` this is passed to TeX as ``\\[...ex]``.  The
 # export helper applies this consistently to all two-line panel titles.
@@ -98,6 +98,7 @@ class PaperLayout:
     panel_height_cm: float
     extra_height_cm: float
     legend_band: float = 0.11
+    legend_anchor_y: float = 0.01
     w_pad: float = 0.08
     h_pad: float = 0.08
     wspace: float = 0.08
@@ -137,6 +138,11 @@ LAYOUT_LINE_1X3 = PaperLayout(
 LAYOUT_LINE_2X3 = PaperLayout(
     PAPER_FIGURE_WIDTH_CM, LINE_PANEL_HEIGHT_CM, 1.35, legend_band=0.13,
 )
+# Dedicated lower legend reserve for Exp. 1 Fig. 2's two-row texture legend.
+LAYOUT_LINE_2X3_EXP1_FIG2 = PaperLayout(
+    PAPER_FIGURE_WIDTH_CM, LINE_PANEL_HEIGHT_CM, 1.65,
+    legend_band=0.17, legend_anchor_y=0.005,
+)
 LAYOUT_LINE_2X2_WIDE = PaperLayout(
     PAPER_FIGURE_WIDTH_CM, LINE_PANEL_HEIGHT_CM, 1.20,
 )
@@ -145,16 +151,41 @@ LAYOUT_LINE_2X2_WIDE = PaperLayout(
 # Exp. 1/2-style four-panel convergence figures rather than stretching them
 # across the page.
 LAYOUT_LINE_2X2_BALANCED = PaperLayout(
-    PAPER_FIGURE_WIDTH_CM * (2.0 / 3.0), LINE_PANEL_HEIGHT_CM, 1.20,
+    PAPER_FIGURE_WIDTH_CM * (2.0 / 3.0) * 1.2, LINE_PANEL_HEIGHT_CM, 1.20,
+)
+# Exp. 2 legends need separate reserves after the publication font increase.
+LAYOUT_LINE_2X2_BALANCED_EXP2_FIG1 = PaperLayout(
+    PAPER_FIGURE_WIDTH_CM * (2.0 / 3.0) * 1.2, LINE_PANEL_HEIGHT_CM, 1.65,
+    legend_band=0.17, legend_anchor_y=0.005,
+)
+LAYOUT_LINE_2X2_BALANCED_EXP2_FIG2 = PaperLayout(
+    PAPER_FIGURE_WIDTH_CM * (2.0 / 3.0) * 1.2, LINE_PANEL_HEIGHT_CM, 1.75,
+    legend_band=0.18, legend_anchor_y=0.005,
+)
+LAYOUT_LINE_2X2_BALANCED_EXP2_FIG3 = PaperLayout(
+    PAPER_FIGURE_WIDTH_CM * (2.0 / 3.0) * 1.2, LINE_PANEL_HEIGHT_CM, 3.00,
+    legend_band=0.26, legend_anchor_y=0.005,
 )
 LAYOUT_LINE_2X2_WIDE_DETACHED = PaperLayout(
-    PAPER_FIGURE_WIDTH_CM, LINE_PANEL_HEIGHT_CM, 2.00, legend_band=0.23,
+    PAPER_FIGURE_WIDTH_CM, LINE_PANEL_HEIGHT_CM, 2.05,
+    legend_band=0.24, legend_anchor_y=0.005,
 )
-# Exp. 3 Fig. 3 has a two-line title and inset in every panel.  Preserve the
-# shared line-panel height by reserving their additional vertical overhead in
-# the canvas rather than silently shrinking the axes.
+# Exp. 3 Fig. 3 has a two-line title and inset in every panel.  These named
+# controls are intentionally local to that figure: edit them when tuning its
+# canvas height, legend proximity, or inter-row spacing without changing the
+# other line-plot families.
+EXP3_FIG3_EXTRA_HEIGHT_CM = 2.0
+EXP3_FIG3_LEGEND_BAND = 0.05
+# Keep just one legend-height of lower canvas below Figure 3's legend.
+EXP3_FIG3_LEGEND_ANCHOR_Y = 0.018
+EXP3_FIG3_HSPACE = 0.02
+# Preserve the shared line-panel height by reserving the title/inset overhead
+# in the canvas rather than silently shrinking the axes.
 LAYOUT_LINE_2X2_TITLED = PaperLayout(
-    PAPER_FIGURE_WIDTH_CM, LINE_PANEL_HEIGHT_CM, 4.10, legend_band=0.11,
+    PAPER_FIGURE_WIDTH_CM, LINE_PANEL_HEIGHT_CM, EXP3_FIG3_EXTRA_HEIGHT_CM,
+    legend_band=EXP3_FIG3_LEGEND_BAND,
+    legend_anchor_y=EXP3_FIG3_LEGEND_ANCHOR_Y,
+    hspace=EXP3_FIG3_HSPACE,
 )
 LAYOUT_IMAGE_1X3 = PaperLayout(
     PAPER_FIGURE_WIDTH_CM, IMAGE_PANEL_HEIGHT_CM, 0.70,
@@ -168,9 +199,16 @@ LAYOUT_IMAGE_3X3 = PaperLayout(
 LAYOUT_IMAGE_MATRIX = PaperLayout(
     PAPER_FIGURE_WIDTH_CM, IMAGE_PANEL_HEIGHT_CM, 0.80,
 )
+# Exp. 3 Fig. 4 combines equal-aspect finite-star maps and profile axes in one
+# canvas.  The colourbars sit on the left, where their labels occupy the same
+# horizontal allowance as a profile panel's y axis.
 LAYOUT_FIELD_4X2 = PaperLayout(
-    PAPER_FIGURE_WIDTH_CM, FIELD_PANEL_HEIGHT_CM, 0.90, legend_band=0.08,
-    w_pad=0.025, h_pad=0.035, wspace=0.045, hspace=0.055,
+    # Maps occupy the first three compact rows; the final row is a normal
+    # profile plot.  Each map's left-side colourbar takes the same horizontal
+    # role as the profile y axis, keeping the two panel families balanced.
+    PAPER_FIGURE_WIDTH_CM, FIELD_PANEL_HEIGHT_CM * 0.70, 1.10,
+    legend_band=0.13, legend_anchor_y=0.018,
+    w_pad=0.12, h_pad=0.045, wspace=0.07, hspace=0.045,
 )
 
 # Paper selections.  Texf is evaluated at this camera digitisation depth;
@@ -256,6 +294,12 @@ EXP3_FIG4_MAP_LEVEL = 2
 # Diagonal refinements included in the Figure 4 DIC and Grid Method profiles.
 # Each level is plotted for both cubic B-spline and Catmull--Rom interpolation.
 EXP3_FIG4_PROFILE_LEVELS = (2, 4, 8)
+# Figure-coordinate dimensions for the manually positioned finite-star map
+# colourbars.  A fixed gap keeps the left and right map columns identical.
+EXP3_FIG4_COLORBAR_WIDTH_FIG = 0.010
+EXP3_FIG4_COLORBAR_PAD_FIG = 0.014
+# Shared symmetric limit for Figure 4 reference and selected displacement maps.
+EXP3_FIG4_FIELD_LIMIT_PX = 0.5
 
 # Generated-figure registry: layout, caption, and LaTeX label share one key.
 PAPER_FIGURES = {
@@ -263,19 +307,19 @@ PAPER_FIGURES = {
         LAYOUT_LINE_2X3, CAPTION_EXP1_FIG1, LABEL_EXP1_FIG1,
     ),
     "exp1_fig2_riley_textures_b12_rmse": PaperFigure(
-        LAYOUT_LINE_2X3, CAPTION_EXP1_FIG2, LABEL_EXP1_FIG2,
+        LAYOUT_LINE_2X3_EXP1_FIG2, CAPTION_EXP1_FIG2, LABEL_EXP1_FIG2,
     ),
     "exp1_fig3_riley_textures_u12_diagonal_refinement_rmse": PaperFigure(
         LAYOUT_LINE_2X3, CAPTION_EXP1_FIG3, LABEL_EXP1_FIG3,
     ),
     "exp2_fig1_speck2d_gauss_disk_rmse": PaperFigure(
-        LAYOUT_LINE_2X2_BALANCED, CAPTION_EXP2_FIG1, LABEL_EXP2_FIG1,
+        LAYOUT_LINE_2X2_BALANCED_EXP2_FIG1, CAPTION_EXP2_FIG1, LABEL_EXP2_FIG1,
     ),
     EXP2_FIG2_STEM: PaperFigure(
-        LAYOUT_LINE_2X2_BALANCED, CAPTION_EXP2_FIG2, LABEL_EXP2_FIG2,
+        LAYOUT_LINE_2X2_BALANCED_EXP2_FIG2, CAPTION_EXP2_FIG2, LABEL_EXP2_FIG2,
     ),
     EXP2_FIG3_STEM: PaperFigure(
-        LAYOUT_LINE_2X2_BALANCED, CAPTION_EXP2_FIG3, LABEL_EXP2_FIG3,
+        LAYOUT_LINE_2X2_BALANCED_EXP2_FIG3, CAPTION_EXP2_FIG3, LABEL_EXP2_FIG3,
     ),
     "exp3_riley_gauss_fig1_rigid_translation_bias_rmse_refinement_b12": PaperFigure(
         LAYOUT_LINE_2X2_WIDE_DETACHED, CAPTION_EXP3_FIG1, LABEL_EXP3_FIG1,

@@ -208,7 +208,7 @@ def add_figure_legend(
             handles=handles,
             # The legend lives in the canvas band reserved above.
             loc="lower center",
-            bbox_to_anchor=(0.5, 0.01),
+            bbox_to_anchor=(0.5, figure._paper_layout.legend_anchor_y),
             ncol=columns,
             fontsize=font_size,
             frameon=False,
@@ -242,6 +242,27 @@ def _mirrored_stems(stem: Path) -> tuple[Path, ...]:
 def save_figure(
     figure: Figure, stem: Path, formats: Sequence[str], dpi: int
 ) -> list[Path]:
+    prepare_panel_titles(figure)
+
+    written: list[Path] = []
+    for output_stem in _mirrored_stems(stem):
+        output_stem.parent.mkdir(parents=True, exist_ok=True)
+        for extension in formats:
+            path = output_stem.with_suffix(f".{extension.lstrip('.')}")
+            figure.savefig(
+                path,
+                dpi=dpi,
+                # Do not crop the canvas: its configured dimensions are the
+                # physical dimensions used by the corresponding TeX block.
+                bbox_inches=None,
+            )
+            written.append(path)
+    figure.clear()
+    return written
+
+
+def prepare_panel_titles(figure: Figure) -> None:
+    """Apply publication title leading before a constrained-layout draw."""
     from paperparams import (
         PANEL_TITLE_LINE_GAP_EX, PANEL_TITLE_LINE_SPACING, PAPER_USE_TEX,
     )
@@ -259,22 +280,6 @@ def save_figure(
             separator = rf"\\[{PANEL_TITLE_LINE_GAP_EX:g}ex]"
             title.set_text(r"\shortstack{" + separator.join(text.splitlines()) + "}")
         title.set_linespacing(PANEL_TITLE_LINE_SPACING)
-
-    written: list[Path] = []
-    for output_stem in _mirrored_stems(stem):
-        output_stem.parent.mkdir(parents=True, exist_ok=True)
-        for extension in formats:
-            path = output_stem.with_suffix(f".{extension.lstrip('.')}")
-            figure.savefig(
-                path,
-                dpi=dpi,
-                # Do not crop the canvas: its configured dimensions are the
-                # physical dimensions used by the corresponding TeX block.
-                bbox_inches=None,
-            )
-            written.append(path)
-    figure.clear()
-    return written
 
 
 def write_latex_preview(

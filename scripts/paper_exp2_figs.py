@@ -33,6 +33,9 @@ from paperparams import (
     AXIS_LABEL_FONT_SIZE_PT,
     DIFFERENCE_CMAP,
     LAYOUT_LINE_2X2_BALANCED,
+    LAYOUT_LINE_2X2_BALANCED_EXP2_FIG1,
+    LAYOUT_LINE_2X2_BALANCED_EXP2_FIG2,
+    LAYOUT_LINE_2X2_BALANCED_EXP2_FIG3,
     LAYOUT_IMAGE_3X3,
     FONT_SIZE_PT,
     LEGEND_FONT_SIZE_PT,
@@ -264,7 +267,8 @@ def display_speck_reference(reference: str) -> str:
 def figure_speck2d_combined() -> list[Path]:
     """Fig. 1: Gaussian and disk Speck2D convergence in a common 2x3 grid."""
     figure, axes = make_figure(
-        LAYOUT_LINE_2X2_BALANCED, rows=2, columns=2, tick_font_size=TICK_FONT_SIZE_PT,
+        LAYOUT_LINE_2X2_BALANCED_EXP2_FIG1, rows=2, columns=2,
+        tick_font_size=TICK_FONT_SIZE_PT,
     )
     handles: list[Line2D] = []
     # Gaussian first, then the sharper disk texture as requested.
@@ -283,7 +287,7 @@ def figure_speck2d_combined() -> list[Path]:
     unique = {handle.get_label(): handle for handle in handles}
     add_figure_legend(
         figure, list(unique.values()), font_size=LEGEND_FONT_SIZE_PT,
-        columns=3,
+        columns=2,
     )
     return save_figure(
         figure, PAPER_OUTPUT_DIR / "exp2_fig1_speck2d_gauss_disk_rmse",
@@ -294,7 +298,7 @@ def figure_speck2d_combined() -> list[Path]:
 def figure_riley_texf() -> list[Path]:
     """Fig. 2: f64 textures at u12 camera output, Gaussian above disk."""
     figure, axes = make_figure(
-        LAYOUT_LINE_2X2_BALANCED, rows=2, columns=2,
+        LAYOUT_LINE_2X2_BALANCED_EXP2_FIG2, rows=2, columns=2,
         tick_font_size=TICK_FONT_SIZE_PT,
     )
     handles: list[Line2D] = []
@@ -315,7 +319,7 @@ def figure_riley_texf() -> list[Path]:
     unique = {handle.get_label(): handle for handle in handles}
     add_figure_legend(
         figure, list(unique.values()), font_size=LEGEND_FONT_SIZE_PT,
-        columns=4,
+        columns=5,
     )
     return save_figure(
         figure, PAPER_OUTPUT_DIR / EXP2_FIG2_STEM, PAPER_FORMATS, PAPER_DPI,
@@ -325,7 +329,7 @@ def figure_riley_texf() -> list[Path]:
 def figure_diagonal_refinement() -> list[Path]:
     """Figure 3: f64 diagonal refinement for all selected interpolants."""
     figure, axes = make_figure(
-        LAYOUT_LINE_2X2_BALANCED, rows=2, columns=2,
+        LAYOUT_LINE_2X2_BALANCED_EXP2_FIG3, rows=2, columns=2,
         tick_font_size=TICK_FONT_SIZE_PT,
     )
     handles: list[Line2D] = []
@@ -349,7 +353,7 @@ def figure_diagonal_refinement() -> list[Path]:
             )
     add_figure_legend(
         figure, list({item.get_label(): item for item in handles}.values()),
-        font_size=LEGEND_FONT_SIZE_PT, columns=3,
+        font_size=LEGEND_FONT_SIZE_PT, columns=2,
     )
     return save_figure(
         figure, PAPER_OUTPUT_DIR / EXP2_FIG3_STEM, PAPER_FORMATS, PAPER_DPI,
