@@ -147,6 +147,28 @@ def finish_axis(axis, *, title: str, samples: Sequence[int], bit_depth: int, val
     axis.grid(True, which="both", linestyle=":", linewidth=0.6, alpha=0.55)
 
 
+def finish_floating_error_axis(
+    axis, *, title: str, samples: Sequence[int], values: Iterable[float],
+    ylabel: str, title_font_size: float, axis_label_font_size: float,
+) -> None:
+    """Format a zero-inclusive floating-point image-error convergence axis.
+
+    Pixel-integral errors can reach exact floating-point zero, so a pure log
+    axis would silently lose valid samples.  A positive symlog axis preserves
+    those points while retaining the useful logarithmic view of convergence.
+    """
+    valid = [float(value) for value in values if np.isfinite(value) and value >= 0.0]
+    positive = [value for value in valid if value > 0.0]
+    ceiling = 1.15 * max(valid + [1.0e-16])
+    linthresh = min(positive) if positive else max(ceiling * 1.0e-3, 1.0e-16)
+    axis.set_yscale("symlog", linthresh=linthresh, linscale=0.8)
+    axis.set_ylim(0.0, ceiling)
+    axis.set_ylabel(ylabel, fontsize=axis_label_font_size)
+    set_sample_axis(axis, samples, LABEL_AXIS_INTEGRATION, axis_label_font_size)
+    axis.set_title(title, fontsize=title_font_size, pad=4)
+    axis.grid(True, which="both", linestyle=":", linewidth=0.6, alpha=0.55)
+
+
 def set_signed_error_axis(
     axis, values: Iterable[float], *, bit_depth: int, ylabel: str,
     label_font_size: float,

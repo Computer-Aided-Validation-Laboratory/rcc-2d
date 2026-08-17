@@ -10,14 +10,17 @@ FIGURE_PLACEMENT = "!htbp"
 CAPTION_EXP1_FIG1 = (
     r"Digitised image RMSE (top) and maximum digitised error (bottom) "
     r"convergence of the eggbox function shaders for numerical integration "
-    r"with \texttt{Grid2D} and \texttt{Riley} against analytic renders."
+    r"with \texttt{Grid2D} and \texttt{Riley}. All panels use the analytic "
+    r"image reference."
 )
 LABEL_EXP1_FIG1 = "fig:exp1_eggbox_function_shader_rmse"
 
 CAPTION_EXP1_FIG2 = (
-    r"Digitised image RMSE convergence for \texttt{Riley} texture renders "
+    r"Digitised image RMSE convergence for \texttt{Riley} texture renders using " 
+    r"a Catmul-Rom interpolant with "
     r"output at 12 bits. f64 represents a double precision floating point "
-    r"value and u12 is an unsigned 12 bit integer."
+    r"value and u12 is an unsigned 12 bit integer. All panels use the "
+    r"analytic image reference."
 )
 LABEL_EXP1_FIG2 = "fig:exp1_riley_textures_u12_rmse"
 
@@ -32,15 +35,17 @@ LABEL_EXP1_FIG3 = "fig:exp1_riley_u12_diagonal_refinement"
 CAPTION_EXP2_FIG1 = (
     r"Digitised image RMSE convergence of \texttt{Speck2D} for Gaussian "
     r"(a) undeformed, (b) rigid shift of $0.3$~px and additive-disk (c) "
-    r"undeformed, (d) rigid shift of $0.3$~px speckles."
+    r"undeformed, (d) rigid shift of $0.3$~px speckles. All panels use the "
+    r"analytic image reference."
 )
 LABEL_EXP2_FIG1 = "fig:exp2_speck2d_gauss_disk_rmse"
 
 CAPTION_EXP2_FIG2 = (
-    r"Digitised RMSE convergence of \texttt{Riley} f64 texture renders at "
-    r"12-bit camera output: Gaussian speckles (a) undeformed, (b) rigid "
+    r"Digitised RMSE convergence of \texttt{Riley} f64 texture renders using a "
+    r"Catmul-Rom interpolant with "
+    r"12-bit output: Gaussian speckles (a) undeformed, (b) rigid "
     r"shift of $0.3$~px and disk speckles (c) undeformed, (d) rigid shift "
-    r"of $0.3$~px."
+    r"of $0.3$~px. All panels use the analytic image reference."
 )
 LABEL_EXP2_FIG2 = "fig:exp2_texf_gauss_disk_u12_rmse"
 
@@ -60,10 +65,11 @@ CAPTION_EXP3_FIG1 = (
 LABEL_EXP3_FIG1 = "fig:exp3_rigid_translation_bias_rmse_refinement"
 
 CAPTION_EXP3_FIG2 = (
-    r"Displacement RMSE convergence for rigid body motion: (a) fixed texture oversampling "
-    r"$r_{tex}=1$ sweeping $r_{px}$, (b) fixed pixel integration "
-    r"$r_{px}=1$ sweeping $r_{tex}$, and (c) simultaneous "
-    r"$r_{px}=r_{tex}$ refinement."
+    r"Displacement RMSE convergence for rigid body motion. The top row applies "
+    r"DIC to Gaussian blob speckles and the bottom row applies the Grid Method "
+    r"to the eggbox pattern. Columns refine (a, d) $r_{px}$ at $r_{tex}=1$, "
+    r"(b, e) $r_{tex}$ at $r_{px}=1$, and (c, f) both jointly. All panels "
+    r"use their corresponding analytic image reference."
 )
 LABEL_EXP3_FIG2 = "fig:exp3_rigid_refinement_independence_os_vs_ss"
 

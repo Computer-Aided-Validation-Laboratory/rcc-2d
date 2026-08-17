@@ -26,11 +26,11 @@ from paperfiglabels import (
     LABEL_DIGITISED_RMSE, LABEL_MAX_DIGITISED_ERROR, LABEL_DIGITISED_DIFF,
     TITLE_UNDEFORMED, TITLE_RIGID_03PX, TITLE_AFFINE_03PX,
     LABEL_PIXEL_X, LABEL_PIXEL_Y, LABEL_NO_DATA, PANEL_PREFIX_TEMPLATE,
-    TITLE_REFERENCE_TEMPLATE, TITLE_PANEL_CASE_REFERENCE_TEMPLATE,
+    TITLE_REFERENCE_TEMPLATE, TITLE_PANEL_CASE_TEMPLATE,
     TITLE_PANEL_PX_SS_TEMPLATE, TITLE_PANEL_PX_SS_TEX_OS_TEMPLATE,
     TITLE_EXP1_TEXTURE_ROW_F64_U8, TITLE_EXP1_TEXTURE_ROW_U8_U8,
     TITLE_EXP1_TEXTURE_ROW_F64_U12, TITLE_EXP1_TEXTURE_ROW_U12_U12,
-    LABEL_TEX_OS_TEMPLATE, TITLE_TEXTURE_CONVERGENCE_PANEL_TEMPLATE,
+    LABEL_TEX_OS_TEMPLATE, TITLE_TEXTURE_CONVERGENCE_PANEL_NO_REFERENCE_TEMPLATE,
     LABEL_GRID2D_METHOD_TEMPLATE, LABEL_RILEY_RECT_TEMPLATE,
     INTERPOLATOR_LABELS, TITLE_EXP1_DIAGONAL_PANEL_TEMPLATE,
     LABEL_DIAGONAL_ANALYTIC_TEMPLATE, LABEL_DIAGONAL_H2_TEMPLATE,
@@ -283,9 +283,8 @@ def figure_function_shaders() -> list[Path]:
                 axes[row, col], data, metric_label, label,
             ))
             axes[row, col].set_title(
-                TITLE_PANEL_CASE_REFERENCE_TEMPLATE.format(
-                    panel=panel_prefix(row * len(studies) + col),
-                    case=subtitle, reference=label,
+                TITLE_PANEL_CASE_TEMPLATE.format(
+                    panel=panel_prefix(row * len(studies) + col), case=subtitle,
                 ),
                 fontsize=FONT_SIZE_PT,
             )
@@ -332,10 +331,9 @@ def figure_texture_convergence() -> list[Path]:
                     axes[row, column], data, LABEL_DIGITISED_RMSE, reference,
                 ))
                 axes[row, column].set_title(
-                    TITLE_TEXTURE_CONVERGENCE_PANEL_TEMPLATE.format(
+                    TITLE_TEXTURE_CONVERGENCE_PANEL_NO_REFERENCE_TEMPLATE.format(
                         panel=panel_prefix(row * len(TEXTURE_STUDIES) + column),
                         texture=row_label, deformation=deformation,
-                        reference=reference,
                     ),
                     fontsize=FONT_SIZE_PT,
                 )

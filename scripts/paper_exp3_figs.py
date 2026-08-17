@@ -58,9 +58,13 @@ from paperfiglabels import (
     LABEL_TEX_OVERSAMPLING,
     LABEL_REF_LEVEL_OS_SS,
     LABEL_RMSE_AT_03PX,
-    TITLE_FIG2_A,
-    TITLE_FIG2_B,
-    TITLE_FIG2_C,
+    TITLE_FIG2_PANEL_TEMPLATE,
+    TITLE_FIG2_A_ACTION,
+    TITLE_FIG2_A_CONSTRAINT,
+    TITLE_FIG2_B_ACTION,
+    TITLE_FIG2_B_CONSTRAINT,
+    TITLE_FIG2_C_ACTION,
+    TITLE_FIG2_C_CONSTRAINT,
     LABEL_FIG2_A_TEMPLATE,
     LABEL_FIG2_B_TEMPLATE,
     LABEL_FIG2_C_TEMPLATE,
@@ -85,6 +89,8 @@ from paperparams import (
     EXP3_CHIRP_CASE,
     EXP3_FIG1_ZOOM_BIAS_YLIM,
     EXP3_FIG1_ZOOM_RMSE_YLIM,
+    EXP3_FIG2_TEX_INSET_YLIM,
+    EXP3_FIG2_TEX_INSET_YTICKS,
     EXP3_FIG4_REFERENCE_OSAMP,
     EXP3_FIG4_REFERENCE_SSAA,
     EXP3_FIG4_MAP_LEVEL,
@@ -94,6 +100,7 @@ from paperparams import (
     EXP3_FIG4_FIELD_LIMIT_PX,
     LAYOUT_FIELD_4X2,
     LAYOUT_LINE_1X3,
+    LAYOUT_LINE_2X3,
     LAYOUT_LINE_2X2_WIDE,
     LAYOUT_LINE_2X2_WIDE_DETACHED,
     LAYOUT_LINE_2X2_TITLED,
@@ -514,198 +521,127 @@ def generate_figure1(dic_records) -> None:
     return written
 
 
-def generate_figure2(dic_records) -> None:
-    """Figure 2: Texture representation and pixel integration independence."""
+def generate_figure2(dic_records, grid_records) -> list[Path]:
+    """Figure 2: DIC/Grid refinement independence under rigid translation."""
     fig, axes = make_figure(
-        LAYOUT_LINE_1X3, rows=1, columns=3, tick_font_size=TICK_FONT_SIZE_PT
+        LAYOUT_LINE_2X3, rows=2, columns=3, tick_font_size=TICK_FONT_SIZE_PT,
     )
-    axes_flat = axes.flatten()
-
-    subset = [
-        r for r in dic_records
-        if r.case == EXP3_RIGID_CASE
-        and r.pattern == "gausscont"
-        and r.bit_depth == EXP3_BIT_DEPTH
+    samplers = [
+        ("cubic_bspline", LABEL_RILEY_BSPLINE, COLOR_BSPLINE, "-", "o"),
+        ("cubiccm", LABEL_RILEY_CATMULL_ROM, COLOR_CUBICCM, "--", "x"),
+        ("line", LABEL_RILEY_TEMPLATE.format(name=INTERPOLATOR_LABELS["line"]),
+         LINE_COLOURS[2], ":", "d"),
     ]
-    anal_ref = find_rec(subset, "analytic", analytic=True)
+    levels = [1, 2, 4, 8, 16, 32, 64, 128]
+    panel_specs = (
+        (TITLE_FIG2_A_ACTION, TITLE_FIG2_A_CONSTRAINT, "ssaa"),
+        (TITLE_FIG2_B_ACTION, TITLE_FIG2_B_CONSTRAINT, "osamp"),
+        (TITLE_FIG2_C_ACTION, TITLE_FIG2_C_CONSTRAINT, "diagonal"),
+    )
+    method_rows = (
+        (METHOD_DIC, dic_records, "gausscont", True),
+        (METHOD_GRID, grid_records, "eggbox", False),
+    )
 
-    if anal_ref is None:
-        for ax in axes_flat:
-            annotate_no_data(ax, LABEL_NO_REFERENCE, font_size=FONT_SIZE_PT)
-    else:
-        samplers = [
-            ("cubic_bspline", LABEL_RILEY_BSPLINE, COLOR_BSPLINE, "-", "o"),
-            ("cubiccm", LABEL_RILEY_CATMULL_ROM, COLOR_CUBICCM, "--", "x"),
-            (
-                "line",
-                LABEL_RILEY_TEMPLATE.format(
-                    name=INTERPOLATOR_LABELS["line"],
+    for row, (method, records, pattern, is_dic) in enumerate(method_rows):
+        subset = [
+            record for record in records
+            if record.case == EXP3_RIGID_CASE
+            and record.pattern == pattern
+            and record.bit_depth == EXP3_BIT_DEPTH
+        ]
+        analytic_reference = find_rec(subset, "analytic", analytic=True)
+        for column, (action, constraint, sweep) in enumerate(panel_specs):
+            axis = axes[row, column]
+            panel = chr(ord("a") + row * len(panel_specs) + column)
+            axis.set_title(
+                TITLE_FIG2_PANEL_TEMPLATE.format(
+                    panel=panel, method=method, action=action,
+                    constraint=constraint,
                 ),
-                LINE_COLOURS[2], ":", "d",
-            ),
-        ]
-
-        # Panel a: Fixed Tex-OS=1, Refine Px-SS
-        ssaa_levels = [1, 2, 4, 8, 16, 32, 64, 128]
-        for interp, name, col, lstyle, marker in samplers:
-            x_vals = []
-            y_vals = []
-            for ss in ssaa_levels:
-                rec = find_rec(
-                    subset, "riley_render_texf", interp, ssaa=ss, osamp=1
-                )
-                if rec:
-                    rmses = get_rmse_vs_ref(rec, anal_ref, is_dic=True)
-                    if rmses and len(rmses) > 3:
-                        x_vals.append(ss)
-                        y_vals.append(rmses[3])
-            axes_flat[0].plot(
-                x_vals,
-                y_vals,
-                color=col,
-                marker=marker,
-                linestyle=lstyle,
-                linewidth=EXP3_LINE_WIDTH_PT,
-                markersize=EXP3_MARKER_SIZE_PT,
-                label=LABEL_FIG2_A_TEMPLATE.format(name=name),
+                fontsize=FONT_SIZE_PT,
             )
+            if analytic_reference is None:
+                annotate_no_data(axis, LABEL_NO_REFERENCE, font_size=FONT_SIZE_PT)
+                continue
 
-        # Panel b: Fixed Px-SS=1, Refine Tex-OS
-        os_levels = [1, 2, 4, 8, 16, 32, 64, 128]
-        for interp, name, col, lstyle, marker in samplers:
-            x_vals = []
-            y_vals = []
-            for osamp in os_levels:
-                rec = find_rec(
-                    subset, "riley_render_texf", interp, ssaa=1, osamp=osamp
-                )
-                if rec:
-                    rmses = get_rmse_vs_ref(rec, anal_ref, is_dic=True)
-                    if rmses and len(rmses) > 3:
-                        x_vals.append(osamp)
-                        y_vals.append(rmses[3])
-            axes_flat[1].plot(
-                x_vals,
-                y_vals,
-                color=col,
-                marker=marker,
-                linestyle=lstyle,
-                linewidth=EXP3_LINE_WIDTH_PT,
-                markersize=EXP3_MARKER_SIZE_PT,
-                label=LABEL_FIG2_B_TEMPLATE.format(name=name),
-            )
-
-        # Panel c: Simultaneous Refinement (Tex-OS=Px-SS)
-        diag_levels = [1, 2, 4, 8, 16, 32, 64, 128]
-        for interp, name, col, lstyle, marker in samplers:
-            x_vals = []
-            y_vals = []
-            for lvl in diag_levels:
-                rec = find_rec(
-                    subset,
-                    "riley_render_texf",
-                    interp,
-                    ssaa=lvl,
-                    osamp=lvl,
-                )
-                if rec:
-                    rmses = get_rmse_vs_ref(rec, anal_ref, is_dic=True)
-                    if rmses and len(rmses) > 3:
-                        x_vals.append(lvl)
-                        y_vals.append(rmses[3])
-            axes_flat[2].plot(
-                x_vals,
-                y_vals,
-                color=col,
-                marker=marker,
-                linestyle=lstyle,
-                linewidth=EXP3_LINE_WIDTH_PT,
-                markersize=EXP3_MARKER_SIZE_PT,
-                label=LABEL_FIG2_C_TEMPLATE.format(name=name),
-            )
-            # Inset on panel c
-            x_in = [x for x in x_vals if x >= 4]
-            y_in = [y_vals[i] for i, x in enumerate(x_vals) if x >= 4]
-            if x_in:
-                if not hasattr(axes_flat[2], "inset_ax"):
-                    axes_flat[2].inset_ax = axes_flat[2].inset_axes(
-                        [0.45, 0.45, 0.5, 0.5]
+            for interpolator, name, colour, linestyle, marker in samplers:
+                points: list[tuple[int, float]] = []
+                for level in levels:
+                    ssaa, osamp = (
+                        (level, 1) if sweep == "ssaa" else
+                        (1, level) if sweep == "osamp" else
+                        (level, level)
                     )
-                axes_flat[2].inset_ax.plot(
-                    x_in,
-                    y_in,
-                    color=col,
-                    marker=marker,
-                    linestyle=lstyle,
-                    linewidth=EXP3_LINE_WIDTH_PT * 0.8,
-                    markersize=EXP3_MARKER_SIZE_PT * 0.8,
+                    record = find_rec(
+                        subset, "riley_render_texf", interpolator,
+                        ssaa=ssaa, osamp=osamp,
+                    )
+                    if record is None:
+                        continue
+                    rmses = get_rmse_vs_ref(
+                        record, analytic_reference, is_dic=is_dic,
+                    )
+                    if len(rmses) > 3 and np.isfinite(rmses[3]):
+                        points.append((level, rmses[3]))
+                if not points:
+                    continue
+                x_values, y_values = zip(*points, strict=True)
+                axis.plot(
+                    x_values, y_values, color=colour, marker=marker,
+                    linestyle=linestyle, linewidth=EXP3_LINE_WIDTH_PT,
+                    markersize=EXP3_MARKER_SIZE_PT,
                 )
+                # Show the resolved texture-refinement regime in the fixed
+                # pixel-integration and diagonal panels.  The Px-SS-only
+                # panels remain uncluttered because their convergence is
+                # already clear at full scale.
+                if sweep in {"osamp", "diagonal"}:
+                    inset_points = [point for point in points if point[0] >= 4]
+                    if inset_points:
+                        inset = getattr(axis, "inset_ax", None)
+                        if inset is None:
+                            inset = axis.inset_axes([0.45, 0.45, 0.5, 0.5])
+                            axis.inset_ax = inset
+                        inset_x, inset_y = zip(*inset_points, strict=True)
+                        inset.plot(
+                            inset_x, inset_y, color=colour, marker=marker,
+                            linestyle=linestyle,
+                            linewidth=EXP3_LINE_WIDTH_PT * 0.8,
+                            markersize=EXP3_MARKER_SIZE_PT * 0.8,
+                        )
 
-        set_sample_axis(
-            axes_flat[0],
-            ssaa_levels,
-            LABEL_PX_INTEGRATION,
-            FONT_SIZE_PT,
-        )
-        set_sample_axis(
-            axes_flat[1],
-            os_levels,
-            LABEL_TEX_OVERSAMPLING,
-            FONT_SIZE_PT,
-        )
-        set_sample_axis(
-            axes_flat[2],
-            diag_levels,
-            LABEL_REF_LEVEL_OS_SS,
-            FONT_SIZE_PT,
-        )
-
-        for ax in axes_flat:
-            ax.grid(True, which="both", linestyle=":", alpha=0.6)
-            ax.set_ylim(bottom=0.0)
-
-        # Format inset axis if present on panel c
-        if hasattr(axes_flat[2], "inset_ax"):
-            inset_levels = [4, 8, 16, 32, 64, 128]
-            set_sample_axis(
-                axes_flat[2].inset_ax,
-                inset_levels,
-                "",
-                FONT_SIZE_PT - 1,
+            xlabel = (
+                LABEL_PX_INTEGRATION if sweep == "ssaa" else
+                LABEL_TEX_OVERSAMPLING if sweep == "osamp" else
+                LABEL_REF_LEVEL_OS_SS
             )
-            axes_flat[2].inset_ax.grid(
-                True, which="both", linestyle=":", alpha=0.4
-            )
-            axes_flat[2].inset_ax.tick_params(
-                labelsize=TICK_FONT_SIZE_PT - 1
-            )
-            axes_flat[2].inset_ax.set_ylim(bottom=0.0)
+            set_sample_axis(axis, levels, xlabel, FONT_SIZE_PT)
+            axis.grid(True, which="both", linestyle=":", alpha=0.6)
+            axis.set_ylim(bottom=0.0)
+            if column == 0:
+                axis.set_ylabel(LABEL_RMSE_AT_03PX, fontsize=FONT_SIZE_PT)
+            inset = getattr(axis, "inset_ax", None)
+            if inset is not None:
+                set_sample_axis(inset, levels[2:], "", FONT_SIZE_PT - 1)
+                inset.grid(True, which="both", linestyle=":", alpha=0.4)
+                inset.tick_params(labelsize=TICK_FONT_SIZE_PT - 1)
+                if sweep == "osamp":
+                    inset.set_ylim(EXP3_FIG2_TEX_INSET_YLIM)
+                    inset.set_yticks(EXP3_FIG2_TEX_INSET_YTICKS)
+                else:
+                    inset.set_ylim(bottom=0.0)
 
-        axes_flat[0].set_ylabel(
-            LABEL_RMSE_AT_03PX, fontsize=FONT_SIZE_PT
+    handles = [
+        Line2D(
+            [0], [0], color=colour, marker=marker, linestyle=linestyle,
+            markersize=EXP3_MARKER_SIZE_PT, label=name,
         )
-        axes_flat[0].set_title(TITLE_FIG2_A, fontsize=FONT_SIZE_PT)
-        axes_flat[1].set_title(TITLE_FIG2_B, fontsize=FONT_SIZE_PT)
-        axes_flat[2].set_title(TITLE_FIG2_C, fontsize=FONT_SIZE_PT)
-
-        handles = [
-            Line2D(
-                [0],
-                [0],
-                color=col,
-                marker=marker,
-                linestyle=lstyle,
-                markersize=EXP3_MARKER_SIZE_PT,
-                label=name,
-            )
-            for _, name, col, lstyle, marker in samplers
-        ]
-        add_figure_legend(
-            fig,
-            handles,
-            font_size=LEGEND_FONT_SIZE_PT,
-            columns=3,
-        )
+        for _, name, colour, linestyle, marker in samplers
+    ]
+    add_figure_legend(
+        fig, handles, font_size=LEGEND_FONT_SIZE_PT, columns=3,
+    )
 
     save_path = (
         Path(PAPER_OUTPUT_DIR)
@@ -1223,15 +1159,23 @@ def generate_figure4(dic_records, grid_records) -> list[Path]:
             continue
         selected = data["selected"]
         name = INTERPOLATOR_NAMES.get(selected.interpolator, selected.interpolator)
+        reference = data["reference"]
+        reference_name = INTERPOLATOR_NAMES.get(
+            reference.interpolator, reference.interpolator,
+        )
         values = (
-            (data["ref_v"], ref_title.format(ref_level=EXP3_FIG4_REFERENCE_SSAA),
+            (data["ref_v"], ref_title.format(
+                name=reference_name, method=method,
+                ref_level=EXP3_FIG4_REFERENCE_SSAA,
+            ),
              EXP3_FIG4_FIELD_LIMIT_PX),
             (data["selected_v"], selected_title.format(
                 name=name, osamp=selected.osamp or 1, ssaa=selected.ssaa or 1,
-                ref_level=EXP3_FIG4_REFERENCE_SSAA,
+                method=method, ref_level=EXP3_FIG4_REFERENCE_SSAA,
             ), EXP3_FIG4_FIELD_LIMIT_PX),
             (data["diff_v"], diff_title.format(
-                name=name, osamp=selected.osamp or 1, ssaa=selected.ssaa or 1,
+                name=name, method=method, osamp=selected.osamp or 1,
+                ssaa=selected.ssaa or 1,
             ), max(float(np.nanpercentile(
                 np.abs(np.where(data["mask"], np.nan, data["diff_v"])), 95)), 1e-5)),
         )
@@ -1292,7 +1236,7 @@ def generate_figure4(dic_records, grid_records) -> list[Path]:
                       linewidth=EXP3_LINE_WIDTH_PT, label=label)
             handles.append(Line2D([], [], color=colour, linestyle=linestyle,
                                   linewidth=EXP3_LINE_WIDTH_PT, label=label))
-        axis.set_title(title, fontsize=FONT_SIZE_PT)
+        axis.set_title(title.format(method=method), fontsize=FONT_SIZE_PT)
         axis.set_xlabel(LABEL_HORIZ_COORD_PX, fontsize=FONT_SIZE_PT)
         axis.set_ylabel(LABEL_COLUMN_RMSE_PX, fontsize=FONT_SIZE_PT)
         axis.tick_params(labelsize=TICK_FONT_SIZE_PT)
@@ -1378,7 +1322,7 @@ def generate_figures() -> list[Path]:
     print("Generating Figure 1 (Rigid Subpixel Bias/RMSE)...")
     written = generate_figure1(dic_records)
     print("Generating Figure 2 (Px-SS vs. Tex-OS Refinement)...")
-    written.extend(generate_figure2(dic_records))
+    written.extend(generate_figure2(dic_records, grid_records))
     print("Generating Figure 3 (Rigid Self-Convergence)...")
     written.extend(generate_figure3(dic_records, grid_records))
     print("Generating Figure 4 (Combined Finite-star Case)...")

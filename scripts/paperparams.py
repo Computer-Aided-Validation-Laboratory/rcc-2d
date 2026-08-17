@@ -84,6 +84,10 @@ LINE_COLOURS = [
 # these fixed zoom windows.  Edit them directly when changing the paper view.
 EXP3_FIG1_ZOOM_BIAS_YLIM = (-0.0012, 0.0012)
 EXP3_FIG1_ZOOM_RMSE_YLIM = (-0.0001, 0.0030)
+# Fixed vertical scale for Fig. 2's texture-only refinement insets (b, e),
+# making the DIC and Grid Method resolved regimes directly comparable.
+EXP3_FIG2_TEX_INSET_YLIM = (0.0, 0.0011)
+EXP3_FIG2_TEX_INSET_YTICKS = (0.0, 0.0005, 0.0010)
 
 @dataclass(frozen=True)
 class PaperLayout:
@@ -128,6 +132,9 @@ PAPER_FIGURE_WIDTH_CM = 16.0
 LINE_PANEL_HEIGHT_CM = 5.25
 IMAGE_PANEL_HEIGHT_CM = 5.0
 FIELD_PANEL_HEIGHT_CM = 5.0
+# Vertical separation between rows in line-plot-only figures.  Keep this
+# tighter than image-map layouts because line panels share the same axes.
+LINE_MULTIROW_HSPACE = 0.06
 
 # Derived figure families.  Their short fixed allowances are not user-facing
 # sizing knobs: they reserve room for labels, titles, and legends so that the
@@ -137,14 +144,16 @@ LAYOUT_LINE_1X3 = PaperLayout(
 )
 LAYOUT_LINE_2X3 = PaperLayout(
     PAPER_FIGURE_WIDTH_CM, LINE_PANEL_HEIGHT_CM, 1.35, legend_band=0.13,
+    hspace=LINE_MULTIROW_HSPACE,
 )
 # Dedicated lower legend reserve for Exp. 1 Fig. 2's two-row texture legend.
 LAYOUT_LINE_2X3_EXP1_FIG2 = PaperLayout(
     PAPER_FIGURE_WIDTH_CM, LINE_PANEL_HEIGHT_CM, 1.65,
-    legend_band=0.17, legend_anchor_y=0.005,
+    legend_band=0.17, legend_anchor_y=0.005, hspace=LINE_MULTIROW_HSPACE,
 )
 LAYOUT_LINE_2X2_WIDE = PaperLayout(
     PAPER_FIGURE_WIDTH_CM, LINE_PANEL_HEIGHT_CM, 1.20,
+    hspace=LINE_MULTIROW_HSPACE,
 )
 # Two columns at two-thirds of the standard figure width give each line panel
 # the same width as a panel in the full-width 2x3 figures.  Use this for the
@@ -152,19 +161,20 @@ LAYOUT_LINE_2X2_WIDE = PaperLayout(
 # across the page.
 LAYOUT_LINE_2X2_BALANCED = PaperLayout(
     PAPER_FIGURE_WIDTH_CM * (2.0 / 3.0) * 1.2, LINE_PANEL_HEIGHT_CM, 1.20,
+    hspace=LINE_MULTIROW_HSPACE,
 )
 # Exp. 2 legends need separate reserves after the publication font increase.
 LAYOUT_LINE_2X2_BALANCED_EXP2_FIG1 = PaperLayout(
     PAPER_FIGURE_WIDTH_CM * (2.0 / 3.0) * 1.2, LINE_PANEL_HEIGHT_CM, 1.65,
-    legend_band=0.17, legend_anchor_y=0.005,
+    legend_band=0.17, legend_anchor_y=0.005, hspace=LINE_MULTIROW_HSPACE,
 )
 LAYOUT_LINE_2X2_BALANCED_EXP2_FIG2 = PaperLayout(
     PAPER_FIGURE_WIDTH_CM * (2.0 / 3.0) * 1.2, LINE_PANEL_HEIGHT_CM, 1.75,
-    legend_band=0.18, legend_anchor_y=0.005,
+    legend_band=0.18, legend_anchor_y=0.005, hspace=LINE_MULTIROW_HSPACE,
 )
 LAYOUT_LINE_2X2_BALANCED_EXP2_FIG3 = PaperLayout(
     PAPER_FIGURE_WIDTH_CM * (2.0 / 3.0) * 1.2, LINE_PANEL_HEIGHT_CM, 3.00,
-    legend_band=0.26, legend_anchor_y=0.005,
+    legend_band=0.26, legend_anchor_y=0.005, hspace=LINE_MULTIROW_HSPACE,
 )
 LAYOUT_LINE_2X2_WIDE_DETACHED = PaperLayout(
     PAPER_FIGURE_WIDTH_CM, LINE_PANEL_HEIGHT_CM, 2.05,
@@ -294,6 +304,10 @@ EXP3_FIG4_MAP_LEVEL = 2
 # Diagonal refinements included in the Figure 4 DIC and Grid Method profiles.
 # Each level is plotted for both cubic B-spline and Catmull--Rom interpolation.
 EXP3_FIG4_PROFILE_LEVELS = (2, 4, 8)
+# Supplementary Fig. 4 profile groups.  The rows deliberately overlap at 8
+# and 16 so the low/high-resolution views can be compared directly.
+EXP3_FIG4_EXT_LOW_RES_LEVELS = (2, 4, 8, 16)
+EXP3_FIG4_EXT_HIGH_RES_LEVELS = (8, 16, 32, 64)
 # Figure-coordinate dimensions for the manually positioned finite-star map
 # colourbars.  A fixed gap keeps the left and right map columns identical.
 EXP3_FIG4_COLORBAR_WIDTH_FIG = 0.010
@@ -325,7 +339,7 @@ PAPER_FIGURES = {
         LAYOUT_LINE_2X2_WIDE_DETACHED, CAPTION_EXP3_FIG1, LABEL_EXP3_FIG1,
     ),
     "exp3_riley_gauss_fig2_rigid_refinement_independence_os_vs_ss_b12": PaperFigure(
-        LAYOUT_LINE_1X3, CAPTION_EXP3_FIG2, LABEL_EXP3_FIG2,
+        LAYOUT_LINE_2X3, CAPTION_EXP3_FIG2, LABEL_EXP3_FIG2,
     ),
     "exp3_riley_gauss_fig3_rigid_self_convergence_dic_vs_grid_b12": PaperFigure(
         LAYOUT_LINE_2X2_TITLED, CAPTION_EXP3_FIG3, LABEL_EXP3_FIG3,

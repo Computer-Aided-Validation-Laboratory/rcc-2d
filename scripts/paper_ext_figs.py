@@ -22,16 +22,22 @@ from exp3_analysis_conv_rmse import discover_dic, discover_grid
 from modules.exp_common_analysis import image_error_metrics
 from modules.paperfigs import (
     add_figure_legend, annotate_no_data, finish_axis, make_figure,
-    save_figure, set_sample_axis, texture_os_style,
+    finish_floating_error_axis, save_figure, set_sample_axis, texture_os_style,
 )
 from modules.render_outputs import quantise_camera
 from paperfiglabels import (
     LABEL_DIGITISED_RMSE, LABEL_MAX_DIGITISED_ERROR,
+    LABEL_FLOATING_IMAGE_RMSE, LABEL_MAX_FLOATING_IMAGE_ERROR,
     LABEL_NO_DATA, LABEL_DISP_RMSE_PX,
+    LABEL_COLUMN_RMSE_PX, LABEL_HORIZ_COORD_PX,
     LABEL_AXIS_REFINEMENT_LEVEL,
     TITLE_H2_DIAGONAL, TITLE_H2_DISPLACEMENT, TITLE_H2_PX_SS,
     TITLE_EXT_DIAGONAL_TEXTURE_PANEL_TEMPLATE,
     LABEL_EXT_ANALYTIC_REFERENCE, LABEL_EXT_H2_DIAGONAL_REFERENCE,
+    TITLE_EXT_FIG4_PROFILE_TEMPLATE, LABEL_EXT_LOW_RESOLUTION,
+    LABEL_EXT_HIGH_RESOLUTION, METHOD_DIC, METHOD_GRID,
+    INTERPOLATOR_LABELS, LABEL_EXT_FIG4_LEVEL_TEMPLATE,
+    LABEL_EXT_FIG4_BSPLINE, LABEL_EXT_FIG4_CATMULL_ROM,
 )
 from paperparams import (
     AXIS_LABEL_FONT_SIZE_PT, FONT_SIZE_PT, LINE_WIDTH_PT, MARKER_SIZE_PT,
@@ -43,10 +49,15 @@ from paperparams import (
     PAPER_TEXTURE_INTERPOLATOR,
     EXP2_DIFF_TEX_CASE, EXP2_DIFF_TEX_FRAME,
     EXP2_FIG7_DIFF_LIMIT_BITS, EXP2_FIG8_DIFF_LIMIT_BITS,
+    EXP3_FIG4_EXT_LOW_RES_LEVELS, EXP3_FIG4_EXT_HIGH_RES_LEVELS,
 )
 
 
 METRICS = (("max_eb", LABEL_MAX_DIGITISED_ERROR, "max_digitised_error"),)
+FLOAT_METRICS = (
+    ("e_f64", LABEL_FLOATING_IMAGE_RMSE, "floating_rmse"),
+    ("e_inf", LABEL_MAX_FLOATING_IMAGE_ERROR, "max_floating_error"),
+)
 H2_METRICS = (("e_b", LABEL_DIGITISED_RMSE, "rmse"), *METRICS)
 # Supplementary self-convergence uses only simultaneous texture/pixel
 # refinement.  The former fixed-OS and fixed-SSAA h/2 figures were removed.
@@ -104,7 +115,9 @@ def _dedupe(handles: list[Line2D]) -> list[Line2D]:
     return list({handle.get_label(): handle for handle in handles}.values())
 
 
-def _draw(axis, rows, ylabel: str, title: str) -> list[Line2D]:
+def _draw(
+    axis, rows, ylabel: str, title: str, *, floating: bool = False,
+) -> list[Line2D]:
     """Draw Exp1/2-style rows with the common paper axis treatment."""
     handles: list[Line2D] = []
     samples: list[int] = []
@@ -120,10 +133,17 @@ def _draw(axis, rows, ylabel: str, title: str) -> list[Line2D]:
     if not rows:
         annotate_no_data(axis, LABEL_NO_DATA, font_size=FONT_SIZE_PT)
         return handles
-    finish_axis(axis, title=title, samples=samples,
-                bit_depth=max(row.bit_depth for row in rows), values=values,
-                ylabel=ylabel, title_font_size=FONT_SIZE_PT,
-                axis_label_font_size=AXIS_LABEL_FONT_SIZE_PT)
+    if floating:
+        finish_floating_error_axis(
+            axis, title=title, samples=samples, values=values, ylabel=ylabel,
+            title_font_size=FONT_SIZE_PT,
+            axis_label_font_size=AXIS_LABEL_FONT_SIZE_PT,
+        )
+    else:
+        finish_axis(axis, title=title, samples=samples,
+                    bit_depth=max(row.bit_depth for row in rows), values=values,
+                    ylabel=ylabel, title_font_size=FONT_SIZE_PT,
+                    axis_label_font_size=AXIS_LABEL_FONT_SIZE_PT)
     return handles
 
 
@@ -375,7 +395,9 @@ def _exp2_speck_h2(case: str, pattern: str, frame: int, bits: int):
     return result
 
 
-def _plot_exp2_speck(metric: str, ylabel: str, token: str, h2: bool) -> list[Path]:
+def _plot_exp2_speck(
+    metric: str, ylabel: str, token: str, h2: bool, *, floating: bool = False,
+) -> list[Path]:
     figure, axes = make_figure(LAYOUT_LINE_2X2_BALANCED, rows=2, columns=2, tick_font_size=TICK_FONT_SIZE_PT)
     handles = []
     for row, (pattern, name) in enumerate((("gaussadd", "Gauss"), ("diskadd", "Disk"))):
@@ -386,9 +408,14 @@ def _plot_exp2_speck(metric: str, ylabel: str, token: str, h2: bool) -> list[Pat
             else:
                 rows, reference = exp2.speck_series(case, pattern, frame, metric)
                 ref = exp2.display_speck_reference(reference)
-            handles.extend(_draw(axes[row, col], rows, ylabel,
-                f"{exp2.panel_prefix(row * 2 + col)} {name} Speckle, {deformation}\nRef: {ref}"))
-    add_figure_legend(figure, _dedupe(handles), font_size=LEGEND_FONT_SIZE_PT, columns=4)
+            handles.extend(_draw(
+                axes[row, col], rows, ylabel,
+                f"{exp2.panel_prefix(row * 2 + col)} {name} Speckle, {deformation}\nRef: {ref}",
+                floating=floating,
+            ))
+    # Four method/bit-depth entries fit cleanly as a two-by-two legend on the
+    # balanced two-column Speck2D diagnostic canvas.
+    add_figure_legend(figure, _dedupe(handles), font_size=LEGEND_FONT_SIZE_PT, columns=2)
     return _save(figure, f"ext_exp2_fig1_speck2d_{'h2_' if h2 else ''}{token}")
 
 
@@ -573,6 +600,125 @@ def _plot_exp3_h2_figure3(dic_records, grid_records) -> list[Path]:
     return _save(figure, "ext_exp3_fig3_h2_displacement_rmse")
 
 
+def _finite_star_column_rmse(data: dict[str, object], current) -> tuple[np.ndarray, np.ndarray] | None:
+    """Return the Fig. 4 column-wise displacement RMSE for one render."""
+    if data["is_dic"]:
+        current_data = exp3.load_dic(current, 1)
+        if current_data is None:
+            return None
+        _, _, _, current_v = current_data
+        reference_v = data["ref_v"]
+        if current_v.shape != reference_v.shape:
+            return None
+        x = data["x"]
+        difference = np.where(data["mask"], np.nan, current_v - reference_v)
+        x_values = np.unique(x[np.isfinite(x)])
+        errors = np.asarray([
+            float(np.sqrt(np.nanmean(difference[x == value] ** 2)))
+            if np.any(np.isfinite(difference[x == value])) else np.nan
+            for value in x_values
+        ])
+        return x_values, errors
+
+    current_data = exp3.load_grid(current, 1)
+    if current_data is None:
+        return None
+    _, current_v = current_data
+    reference_v = data["ref_v"]
+    if current_v.shape != reference_v.shape:
+        return None
+    difference = np.where(data["mask"], np.nan, current_v - reference_v)
+    x_values = np.asarray(data["x"], dtype=float)
+    errors = np.asarray([
+        float(np.sqrt(np.nanmean(difference[:, index] ** 2)))
+        if np.any(np.isfinite(difference[:, index])) else np.nan
+        for index in range(difference.shape[1])
+    ])
+    return x_values, errors
+
+
+def _plot_exp3_finite_star_profile_levels(dic_records, grid_records) -> list[Path]:
+    """Plot low/high diagonal finite-star profile sets without map panels."""
+    figure, axes = make_figure(
+        LAYOUT_LINE_2X2_BALANCED, rows=2, columns=2,
+        tick_font_size=TICK_FONT_SIZE_PT,
+    )
+    method_columns = (
+        (METHOD_DIC, exp3._figure4_data(dic_records, is_dic=True)),
+        (METHOD_GRID, exp3._figure4_data(grid_records, is_dic=False)),
+    )
+    resolution_rows = (
+        (LABEL_EXT_LOW_RESOLUTION, EXP3_FIG4_EXT_LOW_RES_LEVELS),
+        (LABEL_EXT_HIGH_RESOLUTION, EXP3_FIG4_EXT_HIGH_RES_LEVELS),
+    )
+    interpolators = (
+        ("cubic_bspline", "-"),
+        ("cubiccm", "--"),
+    )
+    for row, (resolution, levels) in enumerate(resolution_rows):
+        for column, (method, data) in enumerate(method_columns):
+            axis = axes[row, column]
+            panel = exp1.panel_prefix(row * len(method_columns) + column)
+            axis.set_title(
+                TITLE_EXT_FIG4_PROFILE_TEMPLATE.format(
+                    panel=panel, method=method, resolution=resolution,
+                    levels=",".join(str(level) for level in levels),
+                ),
+                fontsize=FONT_SIZE_PT,
+            )
+            if data is None:
+                annotate_no_data(axis, LABEL_NO_DATA, font_size=FONT_SIZE_PT)
+                continue
+            for interpolator, linestyle in interpolators:
+                name = INTERPOLATOR_LABELS.get(interpolator, interpolator)
+                for level in levels:
+                    record = exp3.find_rec(
+                        data["subset"], "riley_render_texf", interpolator,
+                        ssaa=level, osamp=level,
+                    )
+                    if record is None:
+                        continue
+                    profile = _finite_star_column_rmse(data, record)
+                    if profile is None:
+                        continue
+                    x_values, errors = profile
+                    colour = LINE_COLOURS[
+                        int(np.log2(level)) % len(LINE_COLOURS)
+                    ]
+                    axis.plot(
+                        x_values, errors, color=colour, linestyle=linestyle,
+                        linewidth=LINE_WIDTH_PT,
+                    )
+            axis.set_xlabel(LABEL_HORIZ_COORD_PX, fontsize=AXIS_LABEL_FONT_SIZE_PT)
+            axis.set_ylabel(LABEL_COLUMN_RMSE_PX, fontsize=AXIS_LABEL_FONT_SIZE_PT)
+            axis.tick_params(labelsize=TICK_FONT_SIZE_PT)
+            axis.set_ylim(bottom=0.0)
+            axis.grid(True, linestyle=":", alpha=0.6)
+    # A compact two-part key is clearer than twelve combined level/interpolant
+    # entries: colour identifies the common diagonal level; line style
+    # identifies the texture interpolator.
+    all_levels = tuple(sorted({
+        *EXP3_FIG4_EXT_LOW_RES_LEVELS,
+        *EXP3_FIG4_EXT_HIGH_RES_LEVELS,
+    }))
+    handles = [
+        Line2D(
+            [], [], color=LINE_COLOURS[int(np.log2(level)) % len(LINE_COLOURS)],
+            linestyle="-", linewidth=LINE_WIDTH_PT,
+            label=LABEL_EXT_FIG4_LEVEL_TEMPLATE.format(level=level),
+        )
+        for level in all_levels
+    ]
+    handles.extend((
+        Line2D([], [], color="0.2", linestyle="-", linewidth=LINE_WIDTH_PT,
+               label=LABEL_EXT_FIG4_BSPLINE),
+        Line2D([], [], color="0.2", linestyle="--", linewidth=LINE_WIDTH_PT,
+               label=LABEL_EXT_FIG4_CATMULL_ROM),
+    ))
+    add_figure_legend(figure, handles, font_size=LEGEND_FONT_SIZE_PT, columns=4)
+    return _save(figure, "ext_exp3_fig4_finite_star_column_rmse_low_high")
+
+
 def generate_figures() -> list[Path]:
     """Generate all extension figures without touching journal article assets."""
     Path(PAPER_EXT_OUTPUT_DIR).mkdir(parents=True, exist_ok=True)
@@ -611,6 +757,12 @@ def generate_figures() -> list[Path]:
             written.extend(_plot_exp2_tex(
                 metric, ylabel, token, False, interpolator=interpolator,
             ))
+    # Exp. 2 Figure 1 diagnostics: continuous analytic speckles, sweeping
+    # only pixel integration, with the same Gaussian/disk 8-/12-bit series.
+    for metric, ylabel, token in FLOAT_METRICS:
+        written.extend(_plot_exp2_speck(
+            metric, ylabel, token, False, floating=True,
+        ))
     for metric, ylabel, token in H2_METRICS:
         written.extend(_plot_exp1_function(metric, ylabel, token, True))
         for _, _, relation in H2_MODES:
@@ -630,6 +782,7 @@ def generate_figures() -> list[Path]:
     grid_records = discover_grid()
     written.extend(_plot_exp3_h2_figure2(dic_records))
     written.extend(_plot_exp3_h2_figure3(dic_records, grid_records))
+    written.extend(_plot_exp3_finite_star_profile_levels(dic_records, grid_records))
     written.extend(_plot_main_paper_difference_maps())
     return written
 

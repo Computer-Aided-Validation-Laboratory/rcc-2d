@@ -3,7 +3,7 @@
 # ----------------------------------------------------
 # Shared / General Labels
 # ----------------------------------------------------
-LABEL_AXIS_INTEGRATION = r"Axis pixel samples ($r_{px}$)"
+LABEL_AXIS_INTEGRATION = r"Pixel samples ($r_{px}$)"
 LABEL_1_LSB = "1 LSB"
 LABEL_025_LSB = "0.25 LSB"
 LABEL_NO_DATA = "No completed render data"
@@ -13,6 +13,10 @@ PANEL_PREFIX_TEMPLATE = "({letter})"
 TITLE_REFERENCE_TEMPLATE = "Ref: {reference}"
 TITLE_PANEL_REFERENCE_TEMPLATE = "{panel} {case}, Ref: {reference}"
 TITLE_PANEL_CASE_REFERENCE_TEMPLATE = "{panel} {case}\nRef: {reference}"
+# Use these variants only where every panel in a figure shares the analytic
+# reference.  The common reference belongs in that figure's caption, leaving
+# the panel title to identify the varying render/deformation case.
+TITLE_PANEL_CASE_TEMPLATE = "{panel} {case}"
 TITLE_PANEL_PX_SS_TEMPLATE = r"{panel} $r_{{px}}$={ssaa}"
 TITLE_PANEL_PX_SS_TEX_OS_TEMPLATE = r"{panel} $r_{{px}}$={ssaa}, $r_{{tex}}$={osamp}"
 LABEL_TEX_OS_TEMPLATE = r"$r_{{tex}}$={osamp}"
@@ -29,12 +33,16 @@ LABEL_FIG1_CATMULL_ROM_BASELINE = r"Riley Catmull-Rom ($r_{{px}}$=1, $r_{{tex}}$
 # ----------------------------------------------------
 # Experiment 1 & 2 Labels
 # ----------------------------------------------------
-LABEL_DIGITISED_RMSE = "Image RMSE [bits]"
-LABEL_MAX_DIGITISED_ERR = "Max. image err. [bits]"
-LABEL_DIGITISED_DIFF = "Image difference [bits]"
-LABEL_MAX_DIGITISED_ERROR = "Max. digitised err. [bits]"
+LABEL_DIGITISED_RMSE = "Image RMSE [GL]"
+LABEL_MAX_DIGITISED_ERR = "Max. image err. [GL]"
+LABEL_DIGITISED_DIFF = "Image difference [GL]"
+LABEL_MAX_DIGITISED_ERROR = "Max. digitised err. [GL]"
+# These diagnostics retain the image's native normalised floating-point
+# values; unlike the digitised metrics, they are not measured in codes/bits.
+LABEL_FLOATING_IMAGE_RMSE = "Image RMSE [float]"
+LABEL_MAX_FLOATING_IMAGE_ERROR = "Max. image err. [float]"
 LABEL_MISMATCHED_PIXEL_FRACTION = "Mismatched pixel fraction"
-LABEL_AXIS_REFINEMENT_LEVEL = "Axis refinement level"
+LABEL_AXIS_REFINEMENT_LEVEL = "Refinement level"
 TITLE_H2_PX_SS = r"2x $r_{px}$"
 TITLE_H2_TEX_OS = r"2x $r_{tex}$"
 TITLE_H2_DIAGONAL = r"2x ($r_{px}$, $r_{tex}$)"
@@ -50,8 +58,14 @@ TITLE_EXP1_TEXTURE_ROW_U12_U12 = "In: u12, Out: u12"
 TITLE_EXP2_SPECK2D_PANEL_TEMPLATE = (
     "{panel} {pattern} Speckle, {deformation}\nRef: {reference}"
 )
+TITLE_EXP2_SPECK2D_PANEL_NO_REFERENCE_TEMPLATE = (
+    "{panel} {pattern} Speckle, {deformation}"
+)
 TITLE_TEXTURE_CONVERGENCE_PANEL_TEMPLATE = (
     "{panel} {texture}\n{deformation}, Ref: {reference}"
+)
+TITLE_TEXTURE_CONVERGENCE_PANEL_NO_REFERENCE_TEMPLATE = (
+    "{panel} {texture}\n{deformation}"
 )
 # Supplementary diagonal self-convergence panels identify the render only;
 # their two reference definitions are stated in the shared legend.
@@ -100,13 +114,17 @@ TITLE_FIG1_D = "(d) Image RMSE vs. analytic (zoom)"
 LABEL_FIG1_RILEY_TEMPLATE = r"Riley {name} ($r_{{px}}$={ssaa}, $r_{{tex}}$={osamp})"
 
 # Figure 2 Labels
-LABEL_PX_INTEGRATION = r"Axis pixel samples ($r_{px}$)"
+LABEL_PX_INTEGRATION = r"Pixel samples ($r_{px}$)"
 LABEL_TEX_OVERSAMPLING = r"Texture oversampling ($r_{tex}$)"
 LABEL_REF_LEVEL_OS_SS = r"Refinement level ($r_{px}$=$r_{tex}$)"
 LABEL_RMSE_AT_03PX = "Disp. RMSE [px] at 0.3 px def."
-TITLE_FIG2_A = "(a) Refine $r_{px}$\nFixed $r_{tex}$=1"
-TITLE_FIG2_B = "(b) Fixed $r_{px}$=1\nRefine $r_{tex}$"
-TITLE_FIG2_C = "(c) Diagonal refinement\n$r_{px}$=$r_{tex}$"
+TITLE_FIG2_PANEL_TEMPLATE = "({panel}) {method}\n{action}; {constraint}"
+TITLE_FIG2_A_ACTION = r"Refine $r_{px}$"
+TITLE_FIG2_A_CONSTRAINT = r"Fixed $r_{tex}$=1"
+TITLE_FIG2_B_ACTION = r"Refine $r_{tex}$"
+TITLE_FIG2_B_CONSTRAINT = r"Fixed $r_{px}$=1"
+TITLE_FIG2_C_ACTION = "Diagonal refine."
+TITLE_FIG2_C_CONSTRAINT = r"$r_{px}=r_{tex}$"
 LABEL_FIG2_A_TEMPLATE = r"{name} ($r_{{tex}}$=1)"
 LABEL_FIG2_B_TEMPLATE = r"{name} ($r_{{px}}$=1)"
 LABEL_FIG2_C_TEMPLATE = r"{name} ($r_{{px}}$=$r_{{tex}}$)"
@@ -130,27 +148,38 @@ LABEL_NO_METHOD_DEFORMATION_REFERENCE_TEMPLATE = "No {method} {deformation} refe
 
 # Figure 4 & 5 Labels
 TITLE_FIG4_A_TEMPLATE = (
-    "(a) Ref. disp. $u_y$ [px]\n($r_{{px}}$,$r_{{tex}}$={ref_level})"
+    "(a) Ref. {name} ($r_{{px}}$,$r_{{tex}}$={ref_level})\n"
+    "{method} disp. $u_y$ [px]"
 )
 TITLE_FIG4_B_TEMPLATE = (
     "(b) {name} ($r_{{px}}$,$r_{{tex}}$={ssaa})\n"
-    "disp. $u_y$ [px]"
+    "{method} disp. $u_y$ [px]"
 )
 TITLE_FIG4_C_TEMPLATE = (
     r"(c) {name} ($r_{{px}}$,$r_{{tex}}$={ssaa})" "\n"
-    r"$u_y$ [px] diff. map"
+    r"{method} $u_y$ [px] diff. map"
 )
 TITLE_FIG4_E_TEMPLATE = (
-    "(e) Ref. disp. $u_y$ [px]\n($r_{{px}}$,$r_{{tex}}$={ref_level})"
+    "(e) Ref. {name} ($r_{{px}}$,$r_{{tex}}$={ref_level})\n"
+    "{method} disp. $u_y$ [px]"
 )
 TITLE_FIG4_F_TEMPLATE = (
     "(f) {name} ($r_{{px}}$,$r_{{tex}}$={ssaa})\n"
-    "disp. $u_y$ [px]"
+    "{method} disp. $u_y$ [px]"
 )
 TITLE_FIG4_G_TEMPLATE = (
     r"(g) {name} ($r_{{px}}$,$r_{{tex}}$={ssaa})" "\n"
-    r"$u_y$ [px] diff. map"
+    r"{method} $u_y$ [px] diff. map"
 )
-TITLE_FIG4_D = "(d) $u_y$ RMSE along\nfrequency gradient"
-TITLE_FIG4_H = "(h) $u_y$ RMSE along\nfrequency gradient"
+TITLE_FIG4_D = "(d) {method}: $u_y$ RMSE along\nfrequency gradient"
+TITLE_FIG4_H = "(h) {method}: $u_y$ RMSE\nfrequency gradient"
 LABEL_FIG4_5_PROFILE_TEMPLATE = r"{name} ($r_{{px}}$,$r_{{tex}}$={ssaa})"
+TITLE_EXT_FIG4_PROFILE_TEMPLATE = (
+    "{panel} {method}\n"
+    r"{resolution}: $r$={levels}"
+)
+LABEL_EXT_LOW_RESOLUTION = "Low res."
+LABEL_EXT_HIGH_RESOLUTION = "High res."
+LABEL_EXT_FIG4_LEVEL_TEMPLATE = r"$r_{{px}}$=$r_{{tex}}$={level}"
+LABEL_EXT_FIG4_BSPLINE = "B-spline"
+LABEL_EXT_FIG4_CATMULL_ROM = "Catmull--Rom"

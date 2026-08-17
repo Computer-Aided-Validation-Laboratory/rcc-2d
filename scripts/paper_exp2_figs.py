@@ -21,8 +21,8 @@ from paperfiglabels import (
     TITLE_UNDEFORMED, TITLE_RIGID_03PX,
     LABEL_PIXEL_X, LABEL_PIXEL_Y, LABEL_NO_DATA, PANEL_PREFIX_TEMPLATE,
     LABEL_TEX_OS_TEMPLATE, LABEL_REFERENCE_PX_SS_TEMPLATE,
-    TITLE_EXP2_SPECK2D_PANEL_TEMPLATE,
-    TITLE_TEXTURE_CONVERGENCE_PANEL_TEMPLATE,
+    TITLE_EXP2_SPECK2D_PANEL_NO_REFERENCE_TEMPLATE,
+    TITLE_TEXTURE_CONVERGENCE_PANEL_NO_REFERENCE_TEMPLATE,
     TITLE_PANEL_PX_SS_TEX_OS_TEMPLATE,
     LABEL_SPECK2D_METHOD_TEMPLATE,
     TITLE_EXP2_TEXF_GAUSS, TITLE_EXP2_TEXF_DISK,
@@ -274,14 +274,13 @@ def figure_speck2d_combined() -> list[Path]:
     # Gaussian first, then the sharper disk texture as requested.
     for row, (pattern, name) in enumerate((("gaussadd", "Gauss"), ("diskadd", "Disk"))):
         for column, (case, frame, deformation) in enumerate(CASES):
-            data, reference = speck_series(case, pattern, frame, "e_b")
+            data, _reference = speck_series(case, pattern, frame, "e_b")
             index = row * len(CASES) + column
             handles.extend(draw(
                 axes[row, column], data, LABEL_DIGITISED_RMSE,
-                TITLE_EXP2_SPECK2D_PANEL_TEMPLATE.format(
+                TITLE_EXP2_SPECK2D_PANEL_NO_REFERENCE_TEMPLATE.format(
                     panel=panel_prefix(index), pattern=name,
                     deformation=deformation,
-                    reference=display_speck_reference(reference),
                 ),
             ))
     unique = {handle.get_label(): handle for handle in handles}
@@ -307,13 +306,12 @@ def figure_riley_texf() -> list[Path]:
         ("diskadd", TITLE_EXP2_TEXF_DISK),
     )):
         for column, (case, frame, deformation) in enumerate(CASES):
-            data, reference = texf_series(case, pattern, frame, "e_b", 12)
+            data, _reference = texf_series(case, pattern, frame, "e_b", 12)
             handles.extend(draw(
                 axes[row, column], data, LABEL_DIGITISED_RMSE,
-                TITLE_TEXTURE_CONVERGENCE_PANEL_TEMPLATE.format(
+                TITLE_TEXTURE_CONVERGENCE_PANEL_NO_REFERENCE_TEMPLATE.format(
                     panel=panel_prefix(row * len(CASES) + column),
                     texture=texture_label, deformation=deformation,
-                    reference=reference,
                 ),
             ))
     unique = {handle.get_label(): handle for handle in handles}
